@@ -64,10 +64,12 @@ func parseFullArenaNodeCapacity(sourceLen, hint int) int {
 	if sourceLen <= 0 {
 		return base
 	}
-	// Conservative first-pass sizing. A smaller initial multiplier keeps
-	// large external-scanner languages from front-loading arena bytes that
-	// never become live, while adaptive hints still scale subsequent parses.
-	estimate := sourceLen * 4
+	// First-pass sizing when no adaptive hint exists yet. Empirically our Go
+	// grammar consumes ~1 node per 5-10 input bytes, so sourceLen/4 gives
+	// comfortable headroom without front-loading arena memory that never
+	// becomes live. Any shortfall is absorbed by overflow slabs and the
+	// adaptive hint on the next parse trims to observed peak + 25%.
+	estimate := sourceLen / 4
 	const maxPreallocNodes = 1_500_000
 	if estimate > maxPreallocNodes {
 		estimate = maxPreallocNodes

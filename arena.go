@@ -417,8 +417,12 @@ func (a *nodeArena) reset() {
 	a.fieldSlabCursor = 0
 	a.fieldSourceSlabCursor = 0
 
-	if len(a.nodes) > maxRetainedNodeCapacityForClass(a.class) {
-		a.nodes = make([]Node, nodeCapacityForClass(a.class))
+	if limit := maxRetainedNodeCapacityForClass(a.class); len(a.nodes) > limit {
+		// Trim down to the retention ceiling rather than all the way back to
+		// the default slab size. This preserves the adaptive capacity reached
+		// during the previous parse so warm-reuse workloads don't reallocate
+		// the primary slab every parse when the adaptive hint is stable.
+		a.nodes = make([]Node, limit)
 		a.externalScannerNodeCheckpoints = nil
 	}
 	if len(a.childSlabs) == 0 {
