@@ -371,8 +371,13 @@ func lookupNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int) (bool
 		a, b = b, a
 	}
 	idx := nodeEquivCacheIndex(a, b, depth)
-	entry := scratch.equivCache[idx]
-	if entry.epoch != scratch.equivEpoch || entry.a != a || entry.b != b || entry.depth != uint8(depth) {
+	entry := &scratch.equivCache[idx]
+	// Epoch is the most selective — check it first and bail without touching the rest
+	// of the 32-byte slot.
+	if entry.epoch != scratch.equivEpoch {
+		return false, false
+	}
+	if entry.a != a || entry.b != b || entry.depth != uint8(depth) {
 		return false, false
 	}
 	if entry.aVersion != a.equivVersion || entry.bVersion != b.equivVersion {
