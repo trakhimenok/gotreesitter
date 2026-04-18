@@ -12,6 +12,9 @@ for tags and release notes while still in `0.x`.
   updated the harness docs and scripts to use the new paths.
 - GLR stack culling now shares the keyed retention path across full and
   incremental parses while preserving the previous incremental tie-breaks.
+- Parser-result compatibility dispatch is now separated from core tree
+  assembly, with mixed compatibility shims split into language-owned files and
+  shared node helpers moved out of language-specific modules.
 
 ### Removed
 - Dropped unused query matcher rollback compatibility wrappers now that

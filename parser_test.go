@@ -2444,7 +2444,7 @@ func TestNormalizeTypeScriptRecoveredNamespaceRootRewrapsNamespaceBody(t *testin
 	}
 }
 
-func TestNormalizeKnownSpanAttributionDispatchesUppercaseCobol(t *testing.T) {
+func TestNormalizeResultCompatibilityDispatchesUppercaseCobol(t *testing.T) {
 	lang := &Language{
 		Name:        "COBOL",
 		SymbolNames: []string{"EOF", "start", "program_definition", "identification_division"},
@@ -2466,7 +2466,7 @@ func TestNormalizeKnownSpanAttributionDispatchesUppercaseCobol(t *testing.T) {
 	root.startByte = 0
 	root.endByte = uint32(len(source))
 
-	normalizeKnownSpanAttribution(root, source, &Parser{language: lang})
+	normalizeResultCompatibility(root, source, &Parser{language: lang})
 
 	if got, want := root.StartByte(), uint32(7); got != want {
 		t.Fatalf("root.StartByte = %d, want %d", got, want)
