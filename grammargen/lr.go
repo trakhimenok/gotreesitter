@@ -224,14 +224,6 @@ func buildLRTablesWithProvenance(ng *NormalizedGrammar) (*LRTables, *lrContext, 
 	return buildLRTablesInternal(context.Background(), ng, true)
 }
 
-// buildLRTablesWithProvenanceCtx is like buildLRTablesWithProvenance but
-// accepts a context for cancellation of the LR build. When the context is
-// cancelled, the LR item set construction loop aborts promptly, allowing
-// the goroutine to release multi-GB builder state.
-func buildLRTablesWithProvenanceCtx(bgCtx context.Context, ng *NormalizedGrammar) (*LRTables, *lrContext, error) {
-	return buildLRTablesInternal(bgCtx, ng, true)
-}
-
 func buildLRTablesInternal(bgCtx context.Context, ng *NormalizedGrammar, trackProvenance bool) (*LRTables, *lrContext, error) {
 	newCtx := func() *lrContext {
 		ctx := &lrContext{
@@ -1345,10 +1337,6 @@ func (b *extraChainBuilder) unionSyntheticStates(a, c int) int {
 					b.tables.GotoTable[stateIdx][sym] = b.unionSyntheticStates(existing, target)
 					continue
 				}
-				if os.Getenv("GTS_TMP_EXTRA_CHAIN_GOTO_CONFLICTS") == "1" {
-					fmt.Printf("[extra-goto-conflict] union state=%d sym=%s existing=%d new=%d\n",
-						stateIdx, b.ng.Symbols[sym].Name, existing, target)
-				}
 			}
 		}
 	}
@@ -1395,9 +1383,6 @@ func (b *extraChainBuilder) addProdContinuation(stateIdx, prodIdx, pos int, foll
 		b.tables.GotoTable[stateIdx][nextSym] = targetState
 	} else if existing >= b.syntheticStart && targetState >= b.syntheticStart {
 		b.tables.GotoTable[stateIdx][nextSym] = b.unionSyntheticStates(existing, targetState)
-	} else if os.Getenv("GTS_TMP_EXTRA_CHAIN_GOTO_CONFLICTS") == "1" {
-		fmt.Printf("[extra-goto-conflict] prod-cont state=%d sym=%s existing=%d new=%d follow=%s\n",
-			stateIdx, b.ng.Symbols[nextSym].Name, existing, targetState, dumpExtraChainBitset(b.ng, &follow))
 	}
 	nextFollow := b.ctx.firstOfSequenceWithFallback(prod.RHS[pos+1:], &follow)
 	b.addNonterminalEntries(stateIdx, nextSym, nextFollow)
@@ -1449,28 +1434,10 @@ func (b *extraChainBuilder) addNonterminalEntries(stateIdx, sym int, follow bits
 			b.tables.GotoTable[stateIdx][firstSym] = targetState
 		} else if existing >= b.syntheticStart && targetState >= b.syntheticStart {
 			b.tables.GotoTable[stateIdx][firstSym] = b.unionSyntheticStates(existing, targetState)
-		} else if os.Getenv("GTS_TMP_EXTRA_CHAIN_GOTO_CONFLICTS") == "1" {
-			fmt.Printf("[extra-goto-conflict] nt-entry state=%d sym=%s existing=%d new=%d follow=%s\n",
-				stateIdx, b.ng.Symbols[firstSym].Name, existing, targetState, dumpExtraChainBitset(b.ng, &follow))
 		}
 		nextFollow := b.ctx.firstOfSequenceWithFallback(prod.RHS[1:], &follow)
 		b.addNonterminalEntries(stateIdx, firstSym, nextFollow)
 	}
-}
-
-func dumpExtraChainBitset(ng *NormalizedGrammar, bs *bitset) string {
-	if bs == nil {
-		return "<nil>"
-	}
-	names := make([]string, 0)
-	bs.forEach(func(sym int) {
-		if sym >= 0 && sym < len(ng.Symbols) {
-			names = append(names, ng.Symbols[sym].Name)
-		} else {
-			names = append(names, fmt.Sprintf("%d", sym))
-		}
-	})
-	return strings.Join(names, ",")
 }
 
 func buildTerminalStartMatchers(patterns []TerminalPattern) map[int]terminalStartMatcher {

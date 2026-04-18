@@ -19,6 +19,8 @@ for tags and release notes while still in `0.x`.
 - Removed stale internal planning/spec docs from the OSS tree.
 - Removed unused private grammar and grammargen helper code found by the
   maintenance sweep.
+- Moved ad-hoc grammargen diagnostic tests behind an explicit build tag and
+  removed the print-only disassembly lexer probe from the normal test suite.
 
 ## [0.15.1] - 2026-04-18
 
