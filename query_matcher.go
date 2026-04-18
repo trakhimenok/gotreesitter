@@ -7,16 +7,6 @@ type queryChildStepInfo struct {
 	field   FieldID
 }
 
-// matchSteps matches a contiguous slice of steps starting at stepIdx
-// against the given node at the expected depth.
-func (q *Query) matchSteps(steps []QueryStep, stepIdx int, node *Node, lang *Language, source []byte, captures *[]QueryCapture) bool {
-	return q.matchStepsWithPredicates(steps, stepIdx, node, lang, source, nil, captures)
-}
-
-func (q *Query) matchStepsWithParent(steps []QueryStep, stepIdx int, node *Node, parent *Node, childIdx int, lang *Language, source []byte, captures *[]QueryCapture) bool {
-	return q.matchStepsWithParentPredicates(steps, stepIdx, node, parent, childIdx, lang, source, nil, captures)
-}
-
 func (q *Query) matchStepsWithPredicates(steps []QueryStep, stepIdx int, node *Node, lang *Language, source []byte, predicates []QueryPredicate, captures *[]QueryCapture) bool {
 	return q.matchStepsWithParentPredicates(steps, stepIdx, node, nil, -1, lang, source, predicates, captures)
 }

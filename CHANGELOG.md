@@ -7,7 +7,9 @@ for tags and release notes while still in `0.x`.
 
 ## [Unreleased]
 
-- Nothing yet.
+### Removed
+- Dropped unused query matcher rollback compatibility wrappers now that
+  predicate-aware matching is the only call path.
 
 ## [0.15.1] - 2026-04-18
 
