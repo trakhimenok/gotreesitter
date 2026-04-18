@@ -10,6 +10,8 @@ for tags and release notes while still in `0.x`.
 ### Removed
 - Dropped unused query matcher rollback compatibility wrappers now that
   predicate-aware matching is the only call path.
+- Removed unused internal parser, reduce, incremental, and parser-result helpers
+  left behind by recent recovery and normalization rewrites.
 
 ## [0.15.1] - 2026-04-18
 
