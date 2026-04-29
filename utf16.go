@@ -86,8 +86,8 @@ func DecodeUTF16Bytes(source []byte, order UTF16ByteOrder) ([]uint16, error) {
 // IncludedRangesForUTF16 converts UTF-16 included ranges into the parser's
 // internal UTF-8 byte ranges. The returned Range points use UTF-8 columns.
 func IncludedRangesForUTF16(source []uint16, ranges []UTF16Range) ([]Range, bool) {
-	utf8Source, sourceMap := encodeUTF16ToUTF8WithMap(source)
-	out, ok := sourceMap.includedRangesForUTF16(utf8Source, ranges)
+	_, sourceMap := encodeUTF16ToUTF8WithMap(source)
+	out, ok := sourceMap.includedRangesForUTF16(ranges)
 	if !ok {
 		return nil, false
 	}
@@ -143,17 +143,23 @@ type utf16SourceMap struct {
 
 	// lineStartUnits stores the UTF-16 code-unit offset at each line start.
 	lineStartUnits []uint32
+
+	// lineStartBytes stores the UTF-8 byte offset at each line start.
+	lineStartBytes []uint32
 }
 
 func encodeUTF16ToUTF8WithMap(source []uint16) ([]byte, *utf16SourceMap) {
+	lineStartCap := min(len(source)+1, 128)
 	m := &utf16SourceMap{
 		source:         source,
 		unitToByte:     make([]uint32, len(source)+1),
 		unitBoundary:   make([]bool, len(source)+1),
-		byteToUnit:     []uint32{0},
-		byteBoundary:   []bool{true},
-		lineStartUnits: []uint32{0},
+		byteToUnit:     make([]uint32, 1, len(source)+1),
+		byteBoundary:   make([]bool, 1, len(source)+1),
+		lineStartUnits: make([]uint32, 1, lineStartCap),
+		lineStartBytes: make([]uint32, 1, lineStartCap),
 	}
+	m.byteBoundary[0] = true
 	m.unitBoundary[0] = true
 	if len(source) == 0 {
 		return nil, m
@@ -192,6 +198,7 @@ func encodeUTF16ToUTF8WithMap(source []uint16) ([]byte, *utf16SourceMap) {
 		}
 		if r == '\n' {
 			m.lineStartUnits = append(m.lineStartUnits, uint32(unitEnd))
+			m.lineStartBytes = append(m.lineStartBytes, uint32(byteEnd))
 		}
 	}
 	m.utf8 = out
@@ -257,6 +264,20 @@ func (m *utf16SourceMap) pointForByte(offset uint32) (Point, bool) {
 	return m.pointForUnit(unit)
 }
 
+func (m *utf16SourceMap) pointForUTF8Byte(offset uint32) (Point, bool) {
+	if m == nil || offset > uint32(len(m.utf8)) {
+		return Point{}, false
+	}
+	row := sort.Search(len(m.lineStartBytes), func(i int) bool {
+		return m.lineStartBytes[i] > offset
+	}) - 1
+	if row < 0 {
+		row = 0
+	}
+	lineStart := m.lineStartBytes[row]
+	return Point{Row: uint32(row), Column: offset - lineStart}, true
+}
+
 func (m *utf16SourceMap) rangeForNode(n *Node) (UTF16Range, bool) {
 	if m == nil || n == nil {
 		return UTF16Range{}, false
@@ -292,7 +313,7 @@ func (m *utf16SourceMap) rangeForByteRange(startByte, endByte uint32) (UTF16Rang
 	}, true
 }
 
-func (m *utf16SourceMap) includedRangesForUTF16(utf8Source []byte, ranges []UTF16Range) ([]Range, bool) {
+func (m *utf16SourceMap) includedRangesForUTF16(ranges []UTF16Range) ([]Range, bool) {
 	if len(ranges) == 0 {
 		return nil, true
 	}
@@ -312,11 +333,11 @@ func (m *utf16SourceMap) includedRangesForUTF16(utf8Source []byte, ranges []UTF1
 		if !ok {
 			return nil, false
 		}
-		startPoint, ok := utf8PointAtByte(utf8Source, startByte)
+		startPoint, ok := m.pointForUTF8Byte(startByte)
 		if !ok {
 			return nil, false
 		}
-		endPoint, ok := utf8PointAtByte(utf8Source, endByte)
+		endPoint, ok := m.pointForUTF8Byte(endByte)
 		if !ok {
 			return nil, false
 		}
@@ -330,9 +351,47 @@ func (m *utf16SourceMap) includedRangesForUTF16(utf8Source []byte, ranges []UTF1
 	return normalizeIncludedRanges(out), true
 }
 
-func utf8PointAtByte(source []byte, offset uint32) (Point, bool) {
+func utf16Boundary(source []uint16, offset uint32) bool {
 	if offset > uint32(len(source)) {
-		return Point{}, false
+		return false
 	}
-	return advancePointByBytes(Point{}, source[:offset]), true
+	if offset == 0 || offset == uint32(len(source)) {
+		return true
+	}
+	prev := source[offset-1]
+	next := source[offset]
+	return !isUTF16LeadSurrogate(prev) || !isUTF16TrailSurrogate(next)
+}
+
+func measureUTF16AsUTF8(source []uint16) (uint32, Point) {
+	var byteLen uint32
+	point := Point{}
+	for unitPos := 0; unitPos < len(source); {
+		r, unitSize := decodeUTF16Rune(source, unitPos)
+		unitPos += unitSize
+		byteSize := uint32(utf8.RuneLen(r))
+		byteLen += byteSize
+		if r == '\n' {
+			point.Row++
+			point.Column = 0
+			continue
+		}
+		point.Column += byteSize
+	}
+	return byteLen, point
+}
+
+func addPointDelta(start, delta Point) Point {
+	if delta.Row == 0 {
+		return Point{Row: start.Row, Column: start.Column + delta.Column}
+	}
+	return Point{Row: start.Row + delta.Row, Column: delta.Column}
+}
+
+func isUTF16LeadSurrogate(u uint16) bool {
+	return 0xD800 <= u && u <= 0xDBFF
+}
+
+func isUTF16TrailSurrogate(u uint16) bool {
+	return 0xDC00 <= u && u <= 0xDFFF
 }

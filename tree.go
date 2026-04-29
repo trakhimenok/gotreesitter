@@ -1285,7 +1285,12 @@ func (t *Tree) InputEditForUTF16(edit UTF16Edit, newSource []uint16) (InputEdit,
 	if t == nil || t.utf16Map == nil {
 		return InputEdit{}, false
 	}
-	newUTF8, newMap := encodeUTF16ToUTF8WithMap(newSource)
+	if edit.OldEndCodeUnit < edit.StartCodeUnit || edit.NewEndCodeUnit < edit.StartCodeUnit {
+		return InputEdit{}, false
+	}
+	if !utf16Boundary(newSource, edit.StartCodeUnit) || !utf16Boundary(newSource, edit.NewEndCodeUnit) {
+		return InputEdit{}, false
+	}
 
 	startByte, ok := t.utf16Map.utf16UnitToByte(edit.StartCodeUnit)
 	if !ok {
@@ -1295,22 +1300,20 @@ func (t *Tree) InputEditForUTF16(edit UTF16Edit, newSource []uint16) (InputEdit,
 	if !ok {
 		return InputEdit{}, false
 	}
-	newEndByte, ok := newMap.utf16UnitToByte(edit.NewEndCodeUnit)
+	replacementByteLen, replacementPoint := measureUTF16AsUTF8(newSource[edit.StartCodeUnit:edit.NewEndCodeUnit])
+	if replacementByteLen > ^uint32(0)-startByte {
+		return InputEdit{}, false
+	}
+	newEndByte := startByte + replacementByteLen
+	startPoint, ok := t.utf16Map.pointForUTF8Byte(startByte)
 	if !ok {
 		return InputEdit{}, false
 	}
-	startPoint, ok := utf8PointAtByte(t.source, startByte)
+	oldEndPoint, ok := t.utf16Map.pointForUTF8Byte(oldEndByte)
 	if !ok {
 		return InputEdit{}, false
 	}
-	oldEndPoint, ok := utf8PointAtByte(t.source, oldEndByte)
-	if !ok {
-		return InputEdit{}, false
-	}
-	newEndPoint, ok := utf8PointAtByte(newUTF8, newEndByte)
-	if !ok {
-		return InputEdit{}, false
-	}
+	newEndPoint := addPointDelta(startPoint, replacementPoint)
 	return InputEdit{
 		StartByte:   startByte,
 		OldEndByte:  oldEndByte,

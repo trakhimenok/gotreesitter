@@ -521,6 +521,10 @@ func (r *UTF16InjectionResult) toByteResult() *InjectionResult {
 		Tree:       r.Tree,
 		Injections: make([]Injection, 0, len(r.Injections)),
 	}
+	if r.Tree == nil || r.Tree.utf16Map == nil {
+		return out
+	}
+	sourceMap := r.Tree.utf16Map
 	for _, inj := range r.Injections {
 		byteInjection := Injection{
 			Language: inj.Language,
@@ -536,8 +540,14 @@ func (r *UTF16InjectionResult) toByteResult() *InjectionResult {
 			if !ok {
 				continue
 			}
-			startPoint, _ := utf8PointAtByte(r.Tree.Source(), startByte)
-			endPoint, _ := utf8PointAtByte(r.Tree.Source(), endByte)
+			startPoint, ok := sourceMap.pointForUTF8Byte(startByte)
+			if !ok {
+				continue
+			}
+			endPoint, ok := sourceMap.pointForUTF8Byte(endByte)
+			if !ok {
+				continue
+			}
 			byteInjection.Ranges = append(byteInjection.Ranges, Range{
 				StartByte:  startByte,
 				EndByte:    endByte,

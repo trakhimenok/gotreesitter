@@ -118,6 +118,26 @@ func TestEncodeUTF16ToUTF8WithMapSurrogatePair(t *testing.T) {
 		}
 	}
 
+	utf8PointTests := []struct {
+		byteOffset uint32
+		point      Point
+	}{
+		{byteOffset: 0, point: Point{Row: 0, Column: 0}},
+		{byteOffset: 1, point: Point{Row: 0, Column: 1}},
+		{byteOffset: 5, point: Point{Row: 0, Column: 5}},
+		{byteOffset: 6, point: Point{Row: 1, Column: 0}},
+		{byteOffset: 7, point: Point{Row: 1, Column: 1}},
+	}
+	for _, tc := range utf8PointTests {
+		point, ok := sourceMap.pointForUTF8Byte(tc.byteOffset)
+		if !ok {
+			t.Fatalf("pointForUTF8Byte(%d) returned !ok", tc.byteOffset)
+		}
+		if point != tc.point {
+			t.Fatalf("pointForUTF8Byte(%d) = %+v, want %+v", tc.byteOffset, point, tc.point)
+		}
+	}
+
 	for _, unitOffset := range []uint32{0, 1, 3, 4, 5} {
 		byteOffset, ok := sourceMap.utf16UnitToByte(unitOffset)
 		if !ok {
@@ -574,6 +594,49 @@ func TestParseIncrementalUTF16WithEdit(t *testing.T) {
 	}
 	if got, want := incrTree.RootNode().Text(incrTree.Source()), "1+3"; got != want {
 		t.Fatalf("incremental UTF16 root text = %q, want %q", got, want)
+	}
+}
+
+func TestInputEditForUTF16MeasuresReplacementSegment(t *testing.T) {
+	parser := NewParser(buildArithmeticLanguage())
+	oldTree, err := parser.ParseUTF16(utf16Units("1+2"))
+	if err != nil {
+		t.Fatalf("ParseUTF16 old source failed: %v", err)
+	}
+
+	inputEdit, ok := oldTree.InputEditForUTF16(UTF16Edit{
+		StartCodeUnit:  2,
+		OldEndCodeUnit: 3,
+		NewEndCodeUnit: 5,
+	}, utf16Units("1+3\n4"))
+	if !ok {
+		t.Fatal("InputEditForUTF16 returned !ok")
+	}
+	want := InputEdit{
+		StartByte:   2,
+		OldEndByte:  3,
+		NewEndByte:  5,
+		StartPoint:  Point{Row: 0, Column: 2},
+		OldEndPoint: Point{Row: 0, Column: 3},
+		NewEndPoint: Point{Row: 1, Column: 1},
+	}
+	if inputEdit != want {
+		t.Fatalf("InputEditForUTF16 = %+v, want %+v", inputEdit, want)
+	}
+
+	inputEdit, ok = oldTree.InputEditForUTF16(UTF16Edit{
+		StartCodeUnit:  2,
+		OldEndCodeUnit: 3,
+		NewEndCodeUnit: 4,
+	}, utf16Units("1+😀"))
+	if !ok {
+		t.Fatal("InputEditForUTF16 surrogate replacement returned !ok")
+	}
+	if got, want := inputEdit.NewEndByte, uint32(6); got != want {
+		t.Fatalf("surrogate replacement NewEndByte = %d, want %d", got, want)
+	}
+	if got, want := inputEdit.NewEndPoint, (Point{Row: 0, Column: 6}); got != want {
+		t.Fatalf("surrogate replacement NewEndPoint = %+v, want %+v", got, want)
 	}
 }
 
