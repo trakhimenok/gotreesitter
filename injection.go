@@ -111,6 +111,38 @@ func releaseResult(r *InjectionResult) {
 	}
 }
 
+func releaseResultExcept(r, keep *InjectionResult) {
+	if r == nil {
+		return
+	}
+	if keep == nil {
+		releaseResult(r)
+		return
+	}
+
+	keptTrees := map[*Tree]struct{}{}
+	if keep.Tree != nil {
+		keptTrees[keep.Tree] = struct{}{}
+	}
+	for _, inj := range keep.Injections {
+		if inj.Tree != nil {
+			keptTrees[inj.Tree] = struct{}{}
+		}
+	}
+
+	if _, ok := keptTrees[r.Tree]; !ok {
+		r.Tree.Release()
+	}
+	for _, inj := range r.Injections {
+		if _, ok := keptTrees[inj.Tree]; ok {
+			continue
+		}
+		if inj.Tree != nil {
+			inj.Tree.Release()
+		}
+	}
+}
+
 // Parse parses source as parentLang, then recursively parses injected regions.
 func (ip *InjectionParser) Parse(source []byte, parentLang string) (*InjectionResult, error) {
 	// Release previous result to allow arena reuse.
@@ -149,7 +181,7 @@ func (ip *InjectionParser) ParseUTF16(source []uint16, parentLang string) (*UTF1
 	if err != nil {
 		return nil, err
 	}
-	attachUTF16Source(result.Tree, source, sourceMap)
+	attachUTF16SourceToInjectionResult(result, source, sourceMap)
 	return ip.utf16InjectionResult(result)
 }
 
@@ -170,7 +202,9 @@ func (ip *InjectionParser) ParseIncremental(source []byte, parentLang string,
 	// (which may be the same object) remains valid throughout the parse.
 	prev := ip.prevResult
 	ip.prevResult = nil
-	defer releaseResult(prev)
+	defer func() {
+		releaseResultExcept(prev, ip.prevResult)
+	}()
 
 	lang, ok := ip.languages[parentLang]
 	if !ok {
@@ -268,7 +302,7 @@ func (ip *InjectionParser) ParseIncrementalUTF16(source []uint16, parentLang str
 	if err != nil {
 		return nil, err
 	}
-	attachUTF16Source(result.Tree, source, sourceMap)
+	attachUTF16SourceToInjectionResult(result, source, sourceMap)
 	return ip.utf16InjectionResult(result)
 }
 
@@ -511,6 +545,16 @@ func (ip *InjectionParser) utf16InjectionResult(result *InjectionResult) (*UTF16
 		out.Injections = append(out.Injections, converted)
 	}
 	return out, nil
+}
+
+func attachUTF16SourceToInjectionResult(result *InjectionResult, source []uint16, sourceMap *utf16SourceMap) {
+	if result == nil {
+		return
+	}
+	attachUTF16Source(result.Tree, source, sourceMap)
+	for _, inj := range result.Injections {
+		attachUTF16Source(inj.Tree, source, sourceMap)
+	}
 }
 
 func (r *UTF16InjectionResult) toByteResult() *InjectionResult {
