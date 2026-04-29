@@ -335,6 +335,21 @@ func (p *Parser) Parse(source []byte) (*Tree, error) {
 	return tree, nil
 }
 
+// ParseUTF16 parses UTF-16 source represented as Go UTF-16 code units.
+//
+// The parser core uses a canonical UTF-8 view internally so existing byte-based
+// APIs remain unchanged. The returned tree retains the original UTF-16 source
+// and can convert node ranges back to UTF-16 code-unit coordinates.
+func (p *Parser) ParseUTF16(source []uint16) (*Tree, error) {
+	utf8Source, sourceMap := encodeUTF16ToUTF8WithMap(source)
+	tree, err := p.Parse(utf8Source)
+	if err != nil {
+		return nil, err
+	}
+	attachUTF16Source(tree, source, sourceMap)
+	return tree, nil
+}
+
 // ParseWithTokenSource parses source using a custom token source.
 // This is used for real grammars where the lexer DFA isn't available
 // as data tables (e.g., Go grammar using go/scanner as a bridge).
@@ -386,6 +401,19 @@ func (p *Parser) ParseIncremental(source []byte, oldTree *Tree) (*Tree, error) {
 	return tree, nil
 }
 
+// ParseIncrementalUTF16 re-parses UTF-16 source after edits were applied to
+// oldTree. oldTree should have been produced by ParseUTF16, and UTF-16 edits
+// can be recorded with Tree.EditUTF16.
+func (p *Parser) ParseIncrementalUTF16(source []uint16, oldTree *Tree) (*Tree, error) {
+	utf8Source, sourceMap := encodeUTF16ToUTF8WithMap(source)
+	tree, err := p.ParseIncremental(utf8Source, oldTree)
+	if err != nil {
+		return nil, err
+	}
+	attachUTF16Source(tree, source, sourceMap)
+	return tree, nil
+}
+
 // ParseIncrementalWithTokenSource is like ParseIncremental but uses a custom
 // token source.
 func (p *Parser) ParseIncrementalWithTokenSource(source []byte, oldTree *Tree, ts TokenSource) (*Tree, error) {
@@ -405,6 +433,15 @@ func (p *Parser) ParseIncrementalWithTokenSource(source []byte, oldTree *Tree, t
 	tree := p.parseIncrementalInternal(source, oldTree, p.wrapIncludedRanges(ts), nil)
 	normalizeReturnedIncrementalTree(tree, oldTree, source, p.language)
 	return tree, nil
+}
+
+func attachUTF16Source(tree *Tree, source []uint16, sourceMap *utf16SourceMap) {
+	if tree == nil {
+		return
+	}
+	tree.sourceEncoding = InputEncodingUTF16
+	tree.sourceUTF16 = source
+	tree.utf16Map = sourceMap
 }
 
 // ParseIncrementalProfiled is like ParseIncremental and also returns runtime
