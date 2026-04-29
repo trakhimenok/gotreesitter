@@ -350,6 +350,16 @@ func (p *Parser) ParseUTF16(source []uint16) (*Tree, error) {
 	return tree, nil
 }
 
+// ParseUTF16Bytes parses UTF-16 source encoded as bytes with an explicit byte
+// order.
+func (p *Parser) ParseUTF16Bytes(source []byte, order UTF16ByteOrder) (*Tree, error) {
+	units, err := DecodeUTF16Bytes(source, order)
+	if err != nil {
+		return nil, err
+	}
+	return p.ParseUTF16(units)
+}
+
 // ParseWithTokenSource parses source using a custom token source.
 // This is used for real grammars where the lexer DFA isn't available
 // as data tables (e.g., Go grammar using go/scanner as a bridge).
@@ -412,6 +422,16 @@ func (p *Parser) ParseIncrementalUTF16(source []uint16, oldTree *Tree) (*Tree, e
 	}
 	attachUTF16Source(tree, source, sourceMap)
 	return tree, nil
+}
+
+// ParseIncrementalUTF16Bytes re-parses UTF-16 bytes after edits were applied
+// to oldTree.
+func (p *Parser) ParseIncrementalUTF16Bytes(source []byte, oldTree *Tree, order UTF16ByteOrder) (*Tree, error) {
+	units, err := DecodeUTF16Bytes(source, order)
+	if err != nil {
+		return nil, err
+	}
+	return p.ParseIncrementalUTF16(units, oldTree)
 }
 
 // ParseIncrementalWithTokenSource is like ParseIncremental but uses a custom

@@ -1,6 +1,8 @@
 package gotreesitter
 
 import (
+	"encoding/binary"
+	"errors"
 	"sort"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -23,6 +25,58 @@ func (e InputEncoding) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+// UTF16ByteOrder identifies the byte order used by a UTF-16 byte source.
+type UTF16ByteOrder uint8
+
+const (
+	UTF16LittleEndian UTF16ByteOrder = iota
+	UTF16BigEndian
+)
+
+func (o UTF16ByteOrder) String() string {
+	switch o {
+	case UTF16LittleEndian:
+		return "utf16le"
+	case UTF16BigEndian:
+		return "utf16be"
+	default:
+		return "unknown"
+	}
+}
+
+var (
+	// ErrInvalidUTF16ByteLength is returned when a UTF-16 byte source has a
+	// dangling trailing byte.
+	ErrInvalidUTF16ByteLength = errors.New("utf16: byte source length must be even")
+
+	// ErrInvalidUTF16ByteOrder is returned for an unknown UTF-16ByteOrder.
+	ErrInvalidUTF16ByteOrder = errors.New("utf16: invalid byte order")
+)
+
+// DecodeUTF16Bytes decodes an endian-specific UTF-16 byte source into Go
+// UTF-16 code units.
+func DecodeUTF16Bytes(source []byte, order UTF16ByteOrder) ([]uint16, error) {
+	if len(source)%2 != 0 {
+		return nil, ErrInvalidUTF16ByteLength
+	}
+
+	var byteOrder binary.ByteOrder
+	switch order {
+	case UTF16LittleEndian:
+		byteOrder = binary.LittleEndian
+	case UTF16BigEndian:
+		byteOrder = binary.BigEndian
+	default:
+		return nil, ErrInvalidUTF16ByteOrder
+	}
+
+	out := make([]uint16, len(source)/2)
+	for i := range out {
+		out[i] = byteOrder.Uint16(source[i*2:])
+	}
+	return out, nil
 }
 
 // UTF16Range is a source range in UTF-16 code units.

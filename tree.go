@@ -959,6 +959,21 @@ func (t *Tree) UTF16RangeForNode(n *Node) (UTF16Range, bool) {
 	return t.utf16Map.rangeForNode(n)
 }
 
+// UTF16SourceForNode returns the original UTF-16 code units covered by n.
+func (t *Tree) UTF16SourceForNode(n *Node) ([]uint16, bool) {
+	rng, ok := t.UTF16RangeForNode(n)
+	if !ok || rng.EndCodeUnit < rng.StartCodeUnit {
+		return nil, false
+	}
+	source := t.SourceUTF16()
+	start := int(rng.StartCodeUnit)
+	end := int(rng.EndCodeUnit)
+	if start > len(source) || end > len(source) {
+		return nil, false
+	}
+	return source[start:end], true
+}
+
 // Language returns the language used to parse this tree.
 func (t *Tree) Language() *Language { return t.language }
 
