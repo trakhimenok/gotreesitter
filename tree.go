@@ -959,6 +959,21 @@ func (t *Tree) UTF16RangeForNode(n *Node) (UTF16Range, bool) {
 	return t.utf16Map.rangeForNode(n)
 }
 
+// UTF16RangeForByteRange converts a canonical UTF-8 byte range into UTF-16
+// code-unit coordinates.
+func (t *Tree) UTF16RangeForByteRange(startByte, endByte uint32) (UTF16Range, bool) {
+	if t == nil || t.utf16Map == nil {
+		return UTF16Range{}, false
+	}
+	return t.utf16Map.rangeForByteRange(startByte, endByte)
+}
+
+// UTF16RangeForRange converts a canonical UTF-8 Range into UTF-16 code-unit
+// coordinates.
+func (t *Tree) UTF16RangeForRange(r Range) (UTF16Range, bool) {
+	return t.UTF16RangeForByteRange(r.StartByte, r.EndByte)
+}
+
 // UTF16SourceForNode returns the original UTF-16 code units covered by n.
 func (t *Tree) UTF16SourceForNode(n *Node) ([]uint16, bool) {
 	rng, ok := t.UTF16RangeForNode(n)

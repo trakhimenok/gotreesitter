@@ -172,6 +172,15 @@ func (c QueryCapture) Text(source []byte) string {
 	return c.Node.Text(source)
 }
 
+// UTF16Range returns this capture's node range in UTF-16 code-unit
+// coordinates for trees produced by UTF-16 parse APIs.
+func (c QueryCapture) UTF16Range(tree *Tree) (UTF16Range, bool) {
+	if c.Node == nil {
+		return UTF16Range{}, false
+	}
+	return tree.UTF16RangeForNode(c.Node)
+}
+
 type queryUnknownNodeTypeError struct {
 	name string
 }
@@ -306,6 +315,24 @@ func (c *QueryCursor) SetByteRange(startByte, endByte uint32) {
 	c.hasByteRange = true
 	c.startByte = startByte
 	c.endByte = endByte
+}
+
+// SetUTF16Range restricts matches to nodes that intersect the given UTF-16
+// code-unit range. tree must have been produced by a UTF-16 parse API.
+func (c *QueryCursor) SetUTF16Range(tree *Tree, startCodeUnit, endCodeUnit uint32) bool {
+	if c == nil || tree == nil || endCodeUnit < startCodeUnit {
+		return false
+	}
+	startByte, ok := tree.UTF8ByteForUTF16Offset(startCodeUnit)
+	if !ok {
+		return false
+	}
+	endByte, ok := tree.UTF8ByteForUTF16Offset(endCodeUnit)
+	if !ok {
+		return false
+	}
+	c.SetByteRange(startByte, endByte)
+	return true
 }
 
 // SetPointRange restricts matches to nodes that intersect [startPoint, endPoint).

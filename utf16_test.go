@@ -256,6 +256,161 @@ func TestParserSetIncludedUTF16Ranges(t *testing.T) {
 	}
 }
 
+func TestQueryUTF16RangeHelpers(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+	source := utf16Units("1+2")
+	tree, err := parser.ParseUTF16(source)
+	if err != nil {
+		t.Fatalf("ParseUTF16 failed: %v", err)
+	}
+	q, err := NewQuery(`(NUMBER) @number`, lang)
+	if err != nil {
+		t.Fatalf("NewQuery failed: %v", err)
+	}
+
+	cursor := q.Exec(tree.RootNode(), lang, tree.Source())
+	if ok := cursor.SetUTF16Range(tree, 2, 3); !ok {
+		t.Fatal("SetUTF16Range returned false")
+	}
+	match, ok := cursor.NextMatch()
+	if !ok {
+		t.Fatal("NextMatch returned !ok")
+	}
+	if got, want := match.Captures[0].Node.Text(tree.Source()), "2"; got != want {
+		t.Fatalf("captured text = %q, want %q", got, want)
+	}
+	rng, ok := match.Captures[0].UTF16Range(tree)
+	if !ok {
+		t.Fatal("capture UTF16Range returned !ok")
+	}
+	if got, want := rng.StartCodeUnit, uint32(2); got != want {
+		t.Fatalf("capture UTF16 start = %d, want %d", got, want)
+	}
+	if got, want := rng.EndCodeUnit, uint32(3); got != want {
+		t.Fatalf("capture UTF16 end = %d, want %d", got, want)
+	}
+	if _, ok := cursor.NextMatch(); ok {
+		t.Fatal("SetUTF16Range matched more than the right-hand number")
+	}
+
+	if ok := q.Exec(tree.RootNode(), lang, tree.Source()).SetUTF16Range(tree, 3, 2); ok {
+		t.Fatal("SetUTF16Range accepted inverted range")
+	}
+}
+
+func TestHighlighterUTF16(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	hl, err := NewHighlighter(lang, `(NUMBER) @number`)
+	if err != nil {
+		t.Fatalf("NewHighlighter failed: %v", err)
+	}
+
+	ranges := hl.HighlightUTF16(utf16Units("1+2"))
+	if len(ranges) != 2 {
+		t.Fatalf("HighlightUTF16 len = %d, want 2: %+v", len(ranges), ranges)
+	}
+	if got, want := ranges[1].StartCodeUnit, uint32(2); got != want {
+		t.Fatalf("right range start = %d, want %d", got, want)
+	}
+	if got, want := ranges[1].EndCodeUnit, uint32(3); got != want {
+		t.Fatalf("right range end = %d, want %d", got, want)
+	}
+
+	byteRanges, err := hl.HighlightUTF16Bytes(utf16BytesForTest(t, "1+2", UTF16BigEndian), UTF16BigEndian)
+	if err != nil {
+		t.Fatalf("HighlightUTF16Bytes failed: %v", err)
+	}
+	if len(byteRanges) != len(ranges) {
+		t.Fatalf("HighlightUTF16Bytes len = %d, want %d", len(byteRanges), len(ranges))
+	}
+}
+
+func TestHighlighterIncrementalUTF16(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	hl, err := NewHighlighter(lang, `(NUMBER) @number`)
+	if err != nil {
+		t.Fatalf("NewHighlighter failed: %v", err)
+	}
+
+	oldSource := utf16Units("1+2")
+	_, oldTree := hl.HighlightIncrementalUTF16(oldSource, nil)
+	newSource := utf16Units("1+3")
+	if ok := oldTree.EditUTF16(UTF16Edit{
+		StartCodeUnit:  2,
+		OldEndCodeUnit: 3,
+		NewEndCodeUnit: 3,
+	}, newSource); !ok {
+		t.Fatal("EditUTF16 returned false")
+	}
+	ranges, newTree := hl.HighlightIncrementalUTF16(newSource, oldTree)
+	if newTree == nil {
+		t.Fatal("HighlightIncrementalUTF16 returned nil tree")
+	}
+	if len(ranges) != 2 {
+		t.Fatalf("HighlightIncrementalUTF16 len = %d, want 2: %+v", len(ranges), ranges)
+	}
+	if got, want := ranges[1].StartCodeUnit, uint32(2); got != want {
+		t.Fatalf("incremental right range start = %d, want %d", got, want)
+	}
+}
+
+func TestTaggerUTF16(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	tagger, err := NewTagger(lang, `(NUMBER) @name @definition.number`)
+	if err != nil {
+		t.Fatalf("NewTagger failed: %v", err)
+	}
+
+	tags := tagger.TagUTF16(utf16Units("1+2"))
+	if len(tags) != 2 {
+		t.Fatalf("TagUTF16 len = %d, want 2: %+v", len(tags), tags)
+	}
+	if got, want := tags[1].Name, "2"; got != want {
+		t.Fatalf("right tag name = %q, want %q", got, want)
+	}
+	if got, want := tags[1].NameRange.StartCodeUnit, uint32(2); got != want {
+		t.Fatalf("right tag name start = %d, want %d", got, want)
+	}
+
+	byteTags, err := tagger.TagUTF16Bytes(utf16BytesForTest(t, "1+2", UTF16LittleEndian), UTF16LittleEndian)
+	if err != nil {
+		t.Fatalf("TagUTF16Bytes failed: %v", err)
+	}
+	if len(byteTags) != len(tags) {
+		t.Fatalf("TagUTF16Bytes len = %d, want %d", len(byteTags), len(tags))
+	}
+}
+
+func TestTaggerIncrementalUTF16(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	tagger, err := NewTagger(lang, `(NUMBER) @name @definition.number`)
+	if err != nil {
+		t.Fatalf("NewTagger failed: %v", err)
+	}
+
+	oldSource := utf16Units("1+2")
+	_, oldTree := tagger.TagIncrementalUTF16(oldSource, nil)
+	newSource := utf16Units("1+4")
+	if ok := oldTree.EditUTF16(UTF16Edit{
+		StartCodeUnit:  2,
+		OldEndCodeUnit: 3,
+		NewEndCodeUnit: 3,
+	}, newSource); !ok {
+		t.Fatal("EditUTF16 returned false")
+	}
+	tags, newTree := tagger.TagIncrementalUTF16(newSource, oldTree)
+	if newTree == nil {
+		t.Fatal("TagIncrementalUTF16 returned nil tree")
+	}
+	if len(tags) != 2 {
+		t.Fatalf("TagIncrementalUTF16 len = %d, want 2: %+v", len(tags), tags)
+	}
+	if got, want := tags[1].Name, "4"; got != want {
+		t.Fatalf("incremental right tag name = %q, want %q", got, want)
+	}
+}
+
 func TestParseUTF16ArithmeticPreservesUTF16Metadata(t *testing.T) {
 	lang := buildArithmeticLanguage()
 	parser := NewParser(lang)

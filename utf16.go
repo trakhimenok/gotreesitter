@@ -261,11 +261,18 @@ func (m *utf16SourceMap) rangeForNode(n *Node) (UTF16Range, bool) {
 	if m == nil || n == nil {
 		return UTF16Range{}, false
 	}
-	startUnit, ok := m.byteToUTF16Unit(n.StartByte())
+	return m.rangeForByteRange(n.StartByte(), n.EndByte())
+}
+
+func (m *utf16SourceMap) rangeForByteRange(startByte, endByte uint32) (UTF16Range, bool) {
+	if m == nil || endByte < startByte {
+		return UTF16Range{}, false
+	}
+	startUnit, ok := m.byteToUTF16Unit(startByte)
 	if !ok {
 		return UTF16Range{}, false
 	}
-	endUnit, ok := m.byteToUTF16Unit(n.EndByte())
+	endUnit, ok := m.byteToUTF16Unit(endByte)
 	if !ok {
 		return UTF16Range{}, false
 	}

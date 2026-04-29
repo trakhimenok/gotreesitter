@@ -10,6 +10,15 @@ type Tag struct {
 	NameRange Range  // span of the @name capture
 }
 
+// UTF16Tag represents a tagged symbol with ranges in UTF-16 code-unit
+// coordinates.
+type UTF16Tag struct {
+	Kind      string
+	Name      string
+	Range     UTF16Range
+	NameRange UTF16Range
+}
+
 // Tagger extracts symbol definitions and references from source code using
 // tree-sitter tags queries. It is the tagging counterpart to Highlighter.
 //
@@ -74,12 +83,44 @@ func (tg *Tagger) Tag(source []byte) []Tag {
 	return tg.tagTree(tree)
 }
 
+// TagUTF16 parses UTF-16 source and returns all tags with UTF-16 ranges.
+func (tg *Tagger) TagUTF16(source []uint16) []UTF16Tag {
+	if len(source) == 0 {
+		return nil
+	}
+
+	tree := tg.parseUTF16(source, nil)
+	if tree.RootNode() == nil {
+		return nil
+	}
+	defer tree.Release()
+
+	return tg.tagTreeUTF16(tree)
+}
+
+// TagUTF16Bytes is like TagUTF16 for endian-specific UTF-16 bytes.
+func (tg *Tagger) TagUTF16Bytes(source []byte, order UTF16ByteOrder) ([]UTF16Tag, error) {
+	units, err := DecodeUTF16Bytes(source, order)
+	if err != nil {
+		return nil, err
+	}
+	return tg.TagUTF16(units), nil
+}
+
 // TagTree extracts tags from an already-parsed tree.
 func (tg *Tagger) TagTree(tree *Tree) []Tag {
 	if tree == nil || tree.RootNode() == nil {
 		return nil
 	}
 	return tg.tagTree(tree)
+}
+
+// TagTreeUTF16 extracts tags from an already-parsed UTF-16 tree.
+func (tg *Tagger) TagTreeUTF16(tree *Tree) []UTF16Tag {
+	if tree == nil || tree.RootNode() == nil {
+		return nil
+	}
+	return tg.tagTreeUTF16(tree)
 }
 
 // TagIncremental re-tags source after edits to oldTree.
@@ -97,8 +138,39 @@ func (tg *Tagger) TagIncremental(source []byte, oldTree *Tree) ([]Tag, *Tree) {
 	return tg.tagTree(tree), tree
 }
 
+// TagIncrementalUTF16 re-tags UTF-16 source after edits to oldTree. Call
+// oldTree.EditUTF16 before calling this.
+func (tg *Tagger) TagIncrementalUTF16(source []uint16, oldTree *Tree) ([]UTF16Tag, *Tree) {
+	if len(source) == 0 {
+		tree := dispatchParseUTF16(tg.parser, source, nil, tg.tokenSourceFactory, tg.lang)
+		return nil, tree
+	}
+
+	tree := tg.parseUTF16(source, oldTree)
+	if tree.RootNode() == nil {
+		return nil, tree
+	}
+
+	return tg.tagTreeUTF16(tree), tree
+}
+
+// TagIncrementalUTF16Bytes is like TagIncrementalUTF16 for endian-specific
+// UTF-16 bytes.
+func (tg *Tagger) TagIncrementalUTF16Bytes(source []byte, oldTree *Tree, order UTF16ByteOrder) ([]UTF16Tag, *Tree, error) {
+	units, err := DecodeUTF16Bytes(source, order)
+	if err != nil {
+		return nil, nil, err
+	}
+	tags, tree := tg.TagIncrementalUTF16(units, oldTree)
+	return tags, tree, nil
+}
+
 func (tg *Tagger) parse(source []byte, oldTree *Tree) *Tree {
 	return dispatchParse(tg.parser, source, oldTree, tg.tokenSourceFactory, tg.lang)
+}
+
+func (tg *Tagger) parseUTF16(source []uint16, oldTree *Tree) *Tree {
+	return dispatchParseUTF16(tg.parser, source, oldTree, tg.tokenSourceFactory, tg.lang)
 }
 
 func (tg *Tagger) tagTree(tree *Tree) []Tag {
@@ -119,6 +191,31 @@ func (tg *Tagger) tagTree(tree *Tree) []Tag {
 		}
 	}
 	return tags
+}
+
+func (tg *Tagger) tagTreeUTF16(tree *Tree) []UTF16Tag {
+	tags := tg.tagTree(tree)
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]UTF16Tag, 0, len(tags))
+	for _, tag := range tags {
+		tagRange, ok := tree.UTF16RangeForRange(tag.Range)
+		if !ok {
+			continue
+		}
+		nameRange, ok := tree.UTF16RangeForRange(tag.NameRange)
+		if !ok {
+			continue
+		}
+		out = append(out, UTF16Tag{
+			Kind:      tag.Kind,
+			Name:      tag.Name,
+			Range:     tagRange,
+			NameRange: nameRange,
+		})
+	}
+	return out
 }
 
 func (tg *Tagger) extractTag(m QueryMatch, source []byte) Tag {

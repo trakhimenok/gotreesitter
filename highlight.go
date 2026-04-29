@@ -16,6 +16,17 @@ type HighlightRange struct {
 	PatternIndex int    // query pattern index; later patterns override earlier for identical ranges
 }
 
+// UTF16HighlightRange is a styled source range in UTF-16 code-unit
+// coordinates.
+type UTF16HighlightRange struct {
+	StartCodeUnit uint32
+	EndCodeUnit   uint32
+	StartPoint    Point
+	EndPoint      Point
+	Capture       string
+	PatternIndex  int
+}
+
 // Highlighter is a high-level API that takes source code and returns styled
 // ranges. It combines a Parser, a compiled Query, and a Language to provide
 // a single Highlight() call for the editor.
@@ -94,6 +105,33 @@ func (h *Highlighter) HighlightIncremental(source []byte, oldTree *Tree) ([]High
 	return h.highlightTree(tree, source), tree
 }
 
+// HighlightIncrementalUTF16 re-highlights UTF-16 source after edits were
+// applied to oldTree with Tree.EditUTF16.
+func (h *Highlighter) HighlightIncrementalUTF16(source []uint16, oldTree *Tree) ([]UTF16HighlightRange, *Tree) {
+	if len(source) == 0 {
+		tree := dispatchParseUTF16(h.parser, source, nil, h.tokenSourceFactory, h.lang)
+		return nil, tree
+	}
+
+	tree := h.parseUTF16(source, oldTree)
+	if tree.RootNode() == nil {
+		return nil, tree
+	}
+
+	return h.highlightTreeUTF16(tree), tree
+}
+
+// HighlightIncrementalUTF16Bytes is like HighlightIncrementalUTF16 for
+// endian-specific UTF-16 bytes.
+func (h *Highlighter) HighlightIncrementalUTF16Bytes(source []byte, oldTree *Tree, order UTF16ByteOrder) ([]UTF16HighlightRange, *Tree, error) {
+	units, err := DecodeUTF16Bytes(source, order)
+	if err != nil {
+		return nil, nil, err
+	}
+	ranges, tree := h.HighlightIncrementalUTF16(units, oldTree)
+	return ranges, tree, nil
+}
+
 // Highlight parses the source code and executes the highlight query, returning
 // a slice of HighlightRange sorted by StartByte. When ranges overlap, inner
 // (more specific) captures take priority over outer ones.
@@ -114,8 +152,66 @@ func (h *Highlighter) Highlight(source []byte) []HighlightRange {
 	return h.highlightTree(tree, source)
 }
 
+// HighlightUTF16 parses UTF-16 source and returns highlight ranges in UTF-16
+// code-unit coordinates.
+func (h *Highlighter) HighlightUTF16(source []uint16) []UTF16HighlightRange {
+	if len(source) == 0 {
+		return nil
+	}
+
+	tree := h.parseUTF16(source, nil)
+	if tree == nil || tree.RootNode() == nil {
+		if tree != nil {
+			tree.Release()
+		}
+		return nil
+	}
+	defer tree.Release()
+
+	return h.highlightTreeUTF16(tree)
+}
+
+// HighlightUTF16Bytes is like HighlightUTF16 for endian-specific UTF-16 bytes.
+func (h *Highlighter) HighlightUTF16Bytes(source []byte, order UTF16ByteOrder) ([]UTF16HighlightRange, error) {
+	units, err := DecodeUTF16Bytes(source, order)
+	if err != nil {
+		return nil, err
+	}
+	return h.HighlightUTF16(units), nil
+}
+
 func (h *Highlighter) parse(source []byte, oldTree *Tree) *Tree {
 	return dispatchParse(h.parser, source, oldTree, h.tokenSourceFactory, h.lang)
+}
+
+func (h *Highlighter) parseUTF16(source []uint16, oldTree *Tree) *Tree {
+	return dispatchParseUTF16(h.parser, source, oldTree, h.tokenSourceFactory, h.lang)
+}
+
+func (h *Highlighter) highlightTreeUTF16(tree *Tree) []UTF16HighlightRange {
+	return highlightRangesToUTF16(tree, h.highlightTree(tree, tree.Source()))
+}
+
+func highlightRangesToUTF16(tree *Tree, ranges []HighlightRange) []UTF16HighlightRange {
+	if tree == nil || len(ranges) == 0 {
+		return nil
+	}
+	out := make([]UTF16HighlightRange, 0, len(ranges))
+	for _, r := range ranges {
+		utf16Range, ok := tree.UTF16RangeForByteRange(r.StartByte, r.EndByte)
+		if !ok {
+			continue
+		}
+		out = append(out, UTF16HighlightRange{
+			StartCodeUnit: utf16Range.StartCodeUnit,
+			EndCodeUnit:   utf16Range.EndCodeUnit,
+			StartPoint:    utf16Range.StartPoint,
+			EndPoint:      utf16Range.EndPoint,
+			Capture:       r.Capture,
+			PatternIndex:  r.PatternIndex,
+		})
+	}
+	return out
 }
 
 func (h *Highlighter) highlightTree(tree *Tree, source []byte) []HighlightRange {

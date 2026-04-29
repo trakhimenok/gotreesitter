@@ -13,6 +13,17 @@ type InjectionResult struct {
 	Injections []Injection
 }
 
+// UTF16InjectionResult holds parse results for a UTF-16 multi-language
+// document. Injection ranges are expressed in UTF-16 code units.
+type UTF16InjectionResult struct {
+	// Tree is the parent language's parse tree.
+	Tree *Tree
+	// Injections contains child language parse results, ordered by position.
+	Injections []UTF16Injection
+
+	byteResult *InjectionResult
+}
+
 // Injection is a single embedded language region.
 type Injection struct {
 	// Language is the detected language name (e.g., "javascript").
@@ -22,6 +33,20 @@ type Injection struct {
 	Tree *Tree
 	// Ranges are the source ranges this tree covers.
 	Ranges []Range
+	// Node is the parent tree node that triggered the injection.
+	Node *Node
+}
+
+// UTF16Injection is a single embedded language region with ranges in UTF-16
+// code-unit coordinates.
+type UTF16Injection struct {
+	// Language is the detected language name (e.g., "javascript").
+	Language string
+	// Tree is the parse tree for this region, or nil if the language
+	// was not registered.
+	Tree *Tree
+	// Ranges are the source ranges this tree covers in UTF-16 code units.
+	Ranges []UTF16Range
 	// Node is the parent tree node that triggered the injection.
 	Node *Node
 }
@@ -116,6 +141,27 @@ func (ip *InjectionParser) Parse(source []byte, parentLang string) (*InjectionRe
 	return ip.prevResult, nil
 }
 
+// ParseUTF16 parses UTF-16 source as parentLang, then recursively parses
+// injected regions. The returned injection ranges are in UTF-16 code units.
+func (ip *InjectionParser) ParseUTF16(source []uint16, parentLang string) (*UTF16InjectionResult, error) {
+	utf8Source, sourceMap := encodeUTF16ToUTF8WithMap(source)
+	result, err := ip.Parse(utf8Source, parentLang)
+	if err != nil {
+		return nil, err
+	}
+	attachUTF16Source(result.Tree, source, sourceMap)
+	return ip.utf16InjectionResult(result)
+}
+
+// ParseUTF16Bytes is like ParseUTF16 for endian-specific UTF-16 bytes.
+func (ip *InjectionParser) ParseUTF16Bytes(source []byte, parentLang string, order UTF16ByteOrder) (*UTF16InjectionResult, error) {
+	units, err := DecodeUTF16Bytes(source, order)
+	if err != nil {
+		return nil, err
+	}
+	return ip.ParseUTF16(units, parentLang)
+}
+
 // ParseIncremental re-parses after edits, reusing unchanged child trees.
 func (ip *InjectionParser) ParseIncremental(source []byte, parentLang string,
 	oldResult *InjectionResult) (*InjectionResult, error) {
@@ -203,6 +249,39 @@ func (ip *InjectionParser) ParseIncremental(source []byte, parentLang string,
 	}
 
 	return ip.prevResult, nil
+}
+
+// ParseIncrementalUTF16 re-parses UTF-16 source after edits, reusing unchanged
+// child trees. Call oldResult.Tree.EditUTF16 before calling this.
+func (ip *InjectionParser) ParseIncrementalUTF16(source []uint16, parentLang string,
+	oldResult *UTF16InjectionResult) (*UTF16InjectionResult, error) {
+
+	if oldResult == nil {
+		return ip.ParseUTF16(source, parentLang)
+	}
+	utf8Source, sourceMap := encodeUTF16ToUTF8WithMap(source)
+	byteResult := oldResult.byteResult
+	if byteResult == nil {
+		byteResult = oldResult.toByteResult()
+	}
+	result, err := ip.ParseIncremental(utf8Source, parentLang, byteResult)
+	if err != nil {
+		return nil, err
+	}
+	attachUTF16Source(result.Tree, source, sourceMap)
+	return ip.utf16InjectionResult(result)
+}
+
+// ParseIncrementalUTF16Bytes is like ParseIncrementalUTF16 for endian-specific
+// UTF-16 bytes.
+func (ip *InjectionParser) ParseIncrementalUTF16Bytes(source []byte, parentLang string,
+	oldResult *UTF16InjectionResult, order UTF16ByteOrder) (*UTF16InjectionResult, error) {
+
+	units, err := DecodeUTF16Bytes(source, order)
+	if err != nil {
+		return nil, err
+	}
+	return ip.ParseIncrementalUTF16(units, parentLang, oldResult)
 }
 
 // defaultMaxInjectionDepth limits recursion to prevent infinite loops.
@@ -402,6 +481,73 @@ func (ip *InjectionParser) findOldInjection(oldResult *InjectionResult, lang str
 		}
 	}
 	return nil
+}
+
+func (ip *InjectionParser) utf16InjectionResult(result *InjectionResult) (*UTF16InjectionResult, error) {
+	if result == nil {
+		return nil, nil
+	}
+	out := &UTF16InjectionResult{
+		Tree:       result.Tree,
+		Injections: make([]UTF16Injection, 0, len(result.Injections)),
+		byteResult: result,
+	}
+	for _, inj := range result.Injections {
+		converted := UTF16Injection{
+			Language: inj.Language,
+			Tree:     inj.Tree,
+			Node:     inj.Node,
+		}
+		if len(inj.Ranges) > 0 {
+			converted.Ranges = make([]UTF16Range, 0, len(inj.Ranges))
+			for _, r := range inj.Ranges {
+				utf16Range, ok := result.Tree.UTF16RangeForRange(r)
+				if !ok {
+					return nil, ErrInvalidUTF16Range
+				}
+				converted.Ranges = append(converted.Ranges, utf16Range)
+			}
+		}
+		out.Injections = append(out.Injections, converted)
+	}
+	return out, nil
+}
+
+func (r *UTF16InjectionResult) toByteResult() *InjectionResult {
+	if r == nil {
+		return nil
+	}
+	out := &InjectionResult{
+		Tree:       r.Tree,
+		Injections: make([]Injection, 0, len(r.Injections)),
+	}
+	for _, inj := range r.Injections {
+		byteInjection := Injection{
+			Language: inj.Language,
+			Tree:     inj.Tree,
+			Node:     inj.Node,
+		}
+		for _, rng := range inj.Ranges {
+			startByte, ok := r.Tree.UTF8ByteForUTF16Offset(rng.StartCodeUnit)
+			if !ok {
+				continue
+			}
+			endByte, ok := r.Tree.UTF8ByteForUTF16Offset(rng.EndCodeUnit)
+			if !ok {
+				continue
+			}
+			startPoint, _ := utf8PointAtByte(r.Tree.Source(), startByte)
+			endPoint, _ := utf8PointAtByte(r.Tree.Source(), endByte)
+			byteInjection.Ranges = append(byteInjection.Ranges, Range{
+				StartByte:  startByte,
+				EndByte:    endByte,
+				StartPoint: startPoint,
+				EndPoint:   endPoint,
+			})
+		}
+		out.Injections = append(out.Injections, byteInjection)
+	}
+	return out
 }
 
 func rebaseInjectionTree(tree *Tree, source []byte, span Range) {
