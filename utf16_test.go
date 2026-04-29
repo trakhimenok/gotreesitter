@@ -44,6 +44,15 @@ func assertUTF16UnitsEqual(t *testing.T, got, want []uint16) {
 	}
 }
 
+func dfaTokenSourceFactoryForTest(t *testing.T, parser *Parser) TokenSourceFactory {
+	t.Helper()
+	factory := parser.dfaReparseFactory()
+	if factory == nil {
+		t.Fatal("DFA token source factory is nil")
+	}
+	return factory
+}
+
 func TestDecodeUTF16BytesLittleAndBigEndian(t *testing.T) {
 	want := utf16Units("a😀\nb")
 	tests := []struct {
@@ -219,6 +228,49 @@ func TestParseUTF16Bytes(t *testing.T) {
 	}
 }
 
+func TestParseUTF16WithTokenSourceFactory(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+	baseFactory := dfaTokenSourceFactoryForTest(t, parser)
+	var factoryInputs []string
+	factory := func(source []byte) (TokenSource, error) {
+		factoryInputs = append(factoryInputs, string(source))
+		return baseFactory(source)
+	}
+
+	source := utf16Units("1+2")
+	tree, err := parser.ParseUTF16WithTokenSourceFactory(source, factory)
+	if err != nil {
+		t.Fatalf("ParseUTF16WithTokenSourceFactory failed: %v", err)
+	}
+	freshTree, err := parser.ParseUTF16(source)
+	if err != nil {
+		t.Fatalf("fresh ParseUTF16 failed: %v", err)
+	}
+	if len(factoryInputs) == 0 || factoryInputs[0] != "1+2" {
+		t.Fatalf("factory inputs = %v, want first input %q", factoryInputs, "1+2")
+	}
+	if got, want := tree.RootNode().SExpr(lang), freshTree.RootNode().SExpr(lang); got != want {
+		t.Fatalf("ParseUTF16WithTokenSourceFactory SExpr = %q, want %q", got, want)
+	}
+	assertUTF16UnitsEqual(t, tree.SourceUTF16(), source)
+}
+
+func TestParseUTF16BytesWithTokenSourceFactory(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+	factory := dfaTokenSourceFactoryForTest(t, parser)
+
+	tree, err := parser.ParseUTF16BytesWithTokenSourceFactory(utf16BytesForTest(t, "1+2", UTF16LittleEndian), UTF16LittleEndian, factory)
+	if err != nil {
+		t.Fatalf("ParseUTF16BytesWithTokenSourceFactory failed: %v", err)
+	}
+	if got, want := tree.RootNode().Text(tree.Source()), "1+2"; got != want {
+		t.Fatalf("UTF16 byte factory root text = %q, want %q", got, want)
+	}
+	assertUTF16UnitsEqual(t, tree.SourceUTF16(), utf16Units("1+2"))
+}
+
 func TestParseIncrementalUTF16WithEdit(t *testing.T) {
 	lang := buildArithmeticLanguage()
 	parser := NewParser(lang)
@@ -282,4 +334,57 @@ func TestParseIncrementalUTF16BytesWithEdit(t *testing.T) {
 		t.Fatalf("incremental UTF16 byte root text = %q, want %q", got, want)
 	}
 	assertUTF16UnitsEqual(t, incrTree.SourceUTF16(), newSource)
+}
+
+func TestParseIncrementalUTF16WithTokenSourceFactory(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+	factory := dfaTokenSourceFactoryForTest(t, parser)
+
+	oldSource := utf16Units("1+2")
+	oldTree, err := parser.ParseUTF16WithTokenSourceFactory(oldSource, factory)
+	if err != nil {
+		t.Fatalf("ParseUTF16WithTokenSourceFactory old failed: %v", err)
+	}
+
+	newSource := utf16Units("1+5")
+	if ok := oldTree.EditUTF16(UTF16Edit{
+		StartCodeUnit:  2,
+		OldEndCodeUnit: 3,
+		NewEndCodeUnit: 3,
+	}, newSource); !ok {
+		t.Fatal("EditUTF16 returned false")
+	}
+
+	incrTree, err := parser.ParseIncrementalUTF16WithTokenSourceFactory(newSource, oldTree, factory)
+	if err != nil {
+		t.Fatalf("ParseIncrementalUTF16WithTokenSourceFactory failed: %v", err)
+	}
+	freshTree, err := parser.ParseUTF16WithTokenSourceFactory(newSource, factory)
+	if err != nil {
+		t.Fatalf("fresh ParseUTF16WithTokenSourceFactory failed: %v", err)
+	}
+	if got, want := incrTree.RootNode().SExpr(lang), freshTree.RootNode().SExpr(lang); got != want {
+		t.Fatalf("incremental UTF16 factory SExpr mismatch:\n  got:  %s\n  want: %s", got, want)
+	}
+	assertUTF16UnitsEqual(t, incrTree.SourceUTF16(), newSource)
+}
+
+func TestParseUTF16WithTokenSourceFactoryRejectsNilFactory(t *testing.T) {
+	parser := NewParser(buildArithmeticLanguage())
+	if _, err := parser.ParseUTF16WithTokenSourceFactory(utf16Units("1+2"), nil); !errors.Is(err, ErrNoTokenSourceFactory) {
+		t.Fatalf("nil UTF16 token source factory error = %v, want ErrNoTokenSourceFactory", err)
+	}
+}
+
+func TestParseWithTokenSourceRejectsNilTokenSource(t *testing.T) {
+	parser := NewParser(buildArithmeticLanguage())
+	if _, err := parser.ParseWithTokenSource([]byte("1+2"), nil); !errors.Is(err, ErrNoTokenSource) {
+		t.Fatalf("nil token source error = %v, want ErrNoTokenSource", err)
+	}
+	if _, err := parser.ParseWithTokenSourceFactory([]byte("1+2"), func([]byte) (TokenSource, error) {
+		return nil, nil
+	}); !errors.Is(err, ErrNoTokenSource) {
+		t.Fatalf("nil factory token source error = %v, want ErrNoTokenSource", err)
+	}
 }
