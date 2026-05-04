@@ -93,6 +93,42 @@ func EmitGrammarGo(g *Grammar, pkgName, funcName string) ([]byte, error) {
 		fmt.Fprintf(&buf, ")\n\n")
 	}
 
+	// Emit reserved word sets.
+	if len(g.ReservedWordSets) > 0 {
+		fmt.Fprintf(&buf, "\tg.ReservedWordSets = []ReservedWordSet{\n")
+		for _, set := range g.ReservedWordSets {
+			fmt.Fprintf(&buf, "\t\t{\n")
+			fmt.Fprintf(&buf, "\t\t\tName: %s,\n", goString(set.Name))
+			if len(set.Rules) > 0 {
+				fmt.Fprintf(&buf, "\t\t\tRules: []*Rule{\n")
+				for _, rule := range set.Rules {
+					emitRule(&buf, rule, 4)
+					fmt.Fprintf(&buf, ",\n")
+				}
+				fmt.Fprintf(&buf, "\t\t\t},\n")
+			}
+			fmt.Fprintf(&buf, "\t\t},\n")
+		}
+		fmt.Fprintf(&buf, "\t}\n\n")
+	}
+
+	// Emit precedence levels.
+	if len(g.Precedences) > 0 {
+		fmt.Fprintf(&buf, "\tg.Precedences = [][]PrecEntry{\n")
+		for _, level := range g.Precedences {
+			fmt.Fprintf(&buf, "\t\t{\n")
+			for _, entry := range level {
+				if entry.IsSymbol {
+					fmt.Fprintf(&buf, "\t\t\t{IsSymbol: true, Name: %s},\n", goString(entry.Name))
+				} else {
+					fmt.Fprintf(&buf, "\t\t\t{Name: %s},\n", goString(entry.Name))
+				}
+			}
+			fmt.Fprintf(&buf, "\t\t},\n")
+		}
+		fmt.Fprintf(&buf, "\t}\n\n")
+	}
+
 	// Emit EnableLRSplitting.
 	if g.EnableLRSplitting {
 		fmt.Fprintf(&buf, "\tg.EnableLRSplitting = true\n\n")
@@ -101,6 +137,21 @@ func EmitGrammarGo(g *Grammar, pkgName, funcName string) ([]byte, error) {
 	// Emit BinaryRepeatMode.
 	if g.BinaryRepeatMode {
 		fmt.Fprintf(&buf, "\tg.BinaryRepeatMode = true\n\n")
+	}
+
+	if g.ChoiceLiftThreshold != 0 {
+		fmt.Fprintf(&buf, "\tg.ChoiceLiftThreshold = %d\n\n", g.ChoiceLiftThreshold)
+	}
+
+	if len(g.Tests) > 0 {
+		for _, tc := range g.Tests {
+			if tc.ExpectError {
+				fmt.Fprintf(&buf, "\tg.TestError(%s, %s)\n", goString(tc.Name), goString(tc.Input))
+				continue
+			}
+			fmt.Fprintf(&buf, "\tg.Test(%s, %s, %s)\n", goString(tc.Name), goString(tc.Input), goString(tc.Expected))
+		}
+		fmt.Fprintf(&buf, "\n")
 	}
 
 	fmt.Fprintf(&buf, "\treturn g\n")

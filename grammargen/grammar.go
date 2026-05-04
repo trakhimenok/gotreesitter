@@ -307,16 +307,21 @@ func Braces(rule *Rule) *Rule {
 //	})
 func ExtendGrammar(name string, base *Grammar, customize func(g *Grammar)) *Grammar {
 	g := &Grammar{
-		Name:             name,
-		Rules:            make(map[string]*Rule, len(base.Rules)),
-		RuleOrder:        make([]string, len(base.RuleOrder)),
-		Extras:           make([]*Rule, len(base.Extras)),
-		Conflicts:        make([][]string, len(base.Conflicts)),
-		Externals:        make([]*Rule, len(base.Externals)),
-		Inline:           make([]string, len(base.Inline)),
-		Word:             base.Word,
-		ReservedWordSets: cloneReservedWordSets(base.ReservedWordSets),
-		Supertypes:       make([]string, len(base.Supertypes)),
+		Name:                name,
+		Rules:               make(map[string]*Rule, len(base.Rules)),
+		RuleOrder:           make([]string, len(base.RuleOrder)),
+		Extras:              make([]*Rule, len(base.Extras)),
+		Conflicts:           make([][]string, len(base.Conflicts)),
+		Externals:           make([]*Rule, len(base.Externals)),
+		Inline:              make([]string, len(base.Inline)),
+		Word:                base.Word,
+		ReservedWordSets:    cloneReservedWordSets(base.ReservedWordSets),
+		Supertypes:          make([]string, len(base.Supertypes)),
+		Tests:               make([]TestCase, len(base.Tests)),
+		EnableLRSplitting:   base.EnableLRSplitting,
+		BinaryRepeatMode:    base.BinaryRepeatMode,
+		Precedences:         clonePrecedenceLevels(base.Precedences),
+		ChoiceLiftThreshold: base.ChoiceLiftThreshold,
 	}
 
 	// Deep copy rules.
@@ -324,19 +329,39 @@ func ExtendGrammar(name string, base *Grammar, customize func(g *Grammar)) *Gram
 	for k, v := range base.Rules {
 		g.Rules[k] = cloneRule(v)
 	}
-	copy(g.Extras, base.Extras)
+	for i, extra := range base.Extras {
+		g.Extras[i] = cloneRule(extra)
+	}
 	for i, c := range base.Conflicts {
 		g.Conflicts[i] = make([]string, len(c))
 		copy(g.Conflicts[i], c)
 	}
-	copy(g.Externals, base.Externals)
+	for i, ext := range base.Externals {
+		g.Externals[i] = cloneRule(ext)
+	}
 	copy(g.Inline, base.Inline)
 	copy(g.Supertypes, base.Supertypes)
+	copy(g.Tests, base.Tests)
 
 	// Let the caller customize.
 	customize(g)
 
 	return g
+}
+
+func clonePrecedenceLevels(src [][]PrecEntry) [][]PrecEntry {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([][]PrecEntry, len(src))
+	for i, level := range src {
+		if len(level) == 0 {
+			continue
+		}
+		out[i] = make([]PrecEntry, len(level))
+		copy(out[i], level)
+	}
+	return out
 }
 
 func cloneReservedWordSets(src []ReservedWordSet) []ReservedWordSet {

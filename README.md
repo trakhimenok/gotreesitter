@@ -334,6 +334,12 @@ All shipped highlight and tags queries compile (`156/156` highlight, `69/69` tag
 - `grammars/languages.lock` stores pinned refs for grammar update + parity automation.
 - `cmd/grammar_updater` refreshes refs and emits a machine-readable report.
 - `.github/workflows/grammar-lock-update.yml` opens scheduled/dispatch update PRs.
+- Hand-written scanner ports can also declare `ExternalScannerSpec` metadata
+  with upstream source hashes and external-token names. When a grammar update
+  changes `src/scanner.c` or the external-token list, treat it as scanner work:
+  update the Go scanner binding/port before replacing generated blobs. Grammar
+  JSON-only changes with unchanged externals can usually follow the normal
+  `grammar.json -> grammargen Go DSL -> blob -> parity` path.
 
 Manual refresh:
 

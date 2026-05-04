@@ -19,6 +19,7 @@ const (
 	kotlinTokStringContent    = 6 // "string_content"
 	kotlinTokPrimaryCtorKW    = 7 // "_primary_constructor_keyword"
 	kotlinTokImportDot        = 8 // "_import_dot"
+	kotlinTokenCount          = 9
 )
 
 // Concrete symbol IDs from the generated kotlin grammar ExternalSymbols.
@@ -33,6 +34,43 @@ const (
 	kotlinSymPrimaryCtorKW    gotreesitter.Symbol = 152
 	kotlinSymImportDot        gotreesitter.Symbol = 153
 )
+
+var kotlinDefaultSymTable = [kotlinTokenCount]gotreesitter.Symbol{
+	kotlinSymAutoSemicolon,
+	kotlinSymImportListDelim,
+	kotlinSymSafeNav,
+	kotlinSymMultilineComment,
+	kotlinSymStringStart,
+	kotlinSymStringEnd,
+	kotlinSymStringContent,
+	kotlinSymPrimaryCtorKW,
+	kotlinSymImportDot,
+}
+
+var kotlinExternalScannerSpec = ExternalScannerSpec{
+	Language:       "kotlin",
+	UpstreamRepo:   "https://github.com/fwcd/tree-sitter-kotlin",
+	UpstreamCommit: "57170e50a32b29122b9e41a4a24aea8be1a16599",
+	SourceFiles: []ExternalScannerSourceFile{
+		{Path: "src/grammar.json", SHA256: "cda6f02c553962eeb62e87905e01a1de863d20795c2caf225623b0a03adf833b"},
+		{Path: "src/scanner.c", SHA256: "b90864ba11b69618c6c622c05a22bf210b4702e0a53dbdb5c28ef7b167ceff10"},
+	},
+	Externals: []string{
+		"_automatic_semicolon",
+		"_import_list_delimiter",
+		"safe_nav",
+		"multiline_comment",
+		"_string_start",
+		"_string_end",
+		"string_content",
+		"_primary_constructor_keyword",
+		"_import_dot",
+	},
+}
+
+func init() {
+	RegisterExternalScannerSpec(kotlinExternalScannerSpec)
+}
 
 // kotlinDelimiter stores a string delimiter on the stack. Exploits the
 // fact that '"' (34) is even: triple-quoted delimiters are stored as
@@ -54,7 +92,18 @@ type kotlinScannerState struct {
 // insertion (ASI), safe navigation (?.), nested multiline comments,
 // string start/end/content with interpolation support, primary constructor
 // keyword detection, and import path handling.
-type KotlinExternalScanner struct{}
+type KotlinExternalScanner struct {
+	symbols         [kotlinTokenCount]gotreesitter.Symbol
+	externalToToken []int
+}
+
+func (KotlinExternalScanner) ExternalScannerForLanguage(lang *gotreesitter.Language) gotreesitter.ExternalScanner {
+	s := KotlinExternalScanner{symbols: kotlinDefaultSymTable}
+	s.externalToToken = bindExternalScannerSpec(lang, kotlinExternalScannerSpec, func(tokenIdx int, sym gotreesitter.Symbol) {
+		s.symbols[tokenIdx] = sym
+	})
+	return s
+}
 
 func (KotlinExternalScanner) Create() any {
 	return &kotlinScannerState{}
@@ -82,14 +131,28 @@ func (KotlinExternalScanner) Deserialize(payload any, buf []byte) {
 	}
 }
 
-func (KotlinExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
+func (k KotlinExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
 	s := payload.(*kotlinScannerState)
+	symbols := k.symbolTable()
+	if len(k.externalToToken) > 0 {
+		var semanticValid [kotlinTokenCount]bool
+		for externalIdx, valid := range validSymbols {
+			if !valid || externalIdx >= len(k.externalToToken) {
+				continue
+			}
+			tokenIdx := k.externalToToken[externalIdx]
+			if tokenIdx >= 0 && tokenIdx < kotlinTokenCount {
+				semanticValid[tokenIdx] = true
+			}
+		}
+		validSymbols = semanticValid[:]
+	}
 
 	// ASI (automatic semicolon insertion).
 	if kotlinValid(validSymbols, kotlinTokAutoSemicolon) {
-		ret := kotlinScanAutoSemicolon(lexer, validSymbols)
+		ret := kotlinScanAutoSemicolon(lexer, validSymbols, symbols)
 		if !ret && kotlinValid(validSymbols, kotlinTokSafeNav) && lexer.Lookahead() == '?' {
-			return kotlinScanSafeNav(lexer)
+			return kotlinScanSafeNav(lexer, symbols)
 		}
 		if ret {
 			return ret
@@ -98,7 +161,7 @@ func (KotlinExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer
 
 	// Import dot.
 	if kotlinValid(validSymbols, kotlinTokImportDot) {
-		if kotlinScanImportDot(lexer) {
+		if kotlinScanImportDot(lexer, symbols) {
 			return true
 		}
 	}
@@ -111,19 +174,19 @@ func (KotlinExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer
 		}
 		if lexer.Lookahead() == 'c' && kotlinCheckWord(lexer, "constructor") {
 			lexer.MarkEnd()
-			lexer.SetResultSymbol(kotlinSymPrimaryCtorKW)
+			lexer.SetResultSymbol(symbols[kotlinTokPrimaryCtorKW])
 			return true
 		}
 	}
 
 	// Import list delimiter.
 	if kotlinValid(validSymbols, kotlinTokImportListDelim) {
-		return kotlinScanImportListDelim(lexer)
+		return kotlinScanImportListDelim(lexer, symbols)
 	}
 
 	// String content.
 	if kotlinValid(validSymbols, kotlinTokStringContent) {
-		if kotlinScanStringContent(s, lexer) {
+		if kotlinScanStringContent(s, lexer, symbols) {
 			return true
 		}
 	}
@@ -136,24 +199,31 @@ func (KotlinExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer
 	// String start.
 	if kotlinValid(validSymbols, kotlinTokStringStart) {
 		if kotlinScanStringStart(s, lexer) {
-			lexer.SetResultSymbol(kotlinSymStringStart)
+			lexer.SetResultSymbol(symbols[kotlinTokStringStart])
 			return true
 		}
 	}
 
 	// Multiline comment.
 	if kotlinValid(validSymbols, kotlinTokMultilineComment) {
-		if kotlinScanMultilineComment(lexer) {
+		if kotlinScanMultilineComment(lexer, symbols) {
 			return true
 		}
 	}
 
 	// Safe navigation.
 	if kotlinValid(validSymbols, kotlinTokSafeNav) {
-		return kotlinScanSafeNav(lexer)
+		return kotlinScanSafeNav(lexer, symbols)
 	}
 
 	return false
+}
+
+func (k KotlinExternalScanner) symbolTable() *[kotlinTokenCount]gotreesitter.Symbol {
+	if k.symbols == ([kotlinTokenCount]gotreesitter.Symbol{}) {
+		return &kotlinDefaultSymTable
+	}
+	return &k.symbols
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +253,7 @@ func kotlinScanStringStart(s *kotlinScannerState, lexer *gotreesitter.ExternalLe
 	return true
 }
 
-func kotlinScanStringContent(s *kotlinScannerState, lexer *gotreesitter.ExternalLexer) bool {
+func kotlinScanStringContent(s *kotlinScannerState, lexer *gotreesitter.ExternalLexer, symbols *[kotlinTokenCount]gotreesitter.Symbol) bool {
 	if len(s.delimiters) == 0 {
 		return false
 	}
@@ -199,7 +269,7 @@ func kotlinScanStringContent(s *kotlinScannerState, lexer *gotreesitter.External
 		if ch == '$' {
 			if hasContent {
 				lexer.MarkEnd()
-				lexer.SetResultSymbol(kotlinSymStringContent)
+				lexer.SetResultSymbol(symbols[kotlinTokStringContent])
 				return true
 			}
 			// Check if this starts an interpolation.
@@ -211,7 +281,7 @@ func kotlinScanStringContent(s *kotlinScannerState, lexer *gotreesitter.External
 			}
 			// Just a literal $ in the string.
 			lexer.MarkEnd()
-			lexer.SetResultSymbol(kotlinSymStringContent)
+			lexer.SetResultSymbol(symbols[kotlinTokStringContent])
 			return true
 		}
 
@@ -225,7 +295,7 @@ func kotlinScanStringContent(s *kotlinScannerState, lexer *gotreesitter.External
 					s.delimiters = s.delimiters[:len(s.delimiters)-1]
 					lexer.Advance(false)
 					lexer.MarkEnd()
-					lexer.SetResultSymbol(kotlinSymStringEnd)
+					lexer.SetResultSymbol(symbols[kotlinTokStringEnd])
 					return true
 				}
 			}
@@ -245,12 +315,12 @@ func kotlinScanStringContent(s *kotlinScannerState, lexer *gotreesitter.External
 				if count < 3 {
 					// Not enough quotes for closing triple — it's content.
 					lexer.MarkEnd()
-					lexer.SetResultSymbol(kotlinSymStringContent)
+					lexer.SetResultSymbol(symbols[kotlinTokStringContent])
 					return true
 				}
 				// If we had content before the quotes, emit it first.
 				if hasContent && lexer.Lookahead() == endCh {
-					lexer.SetResultSymbol(kotlinSymStringContent)
+					lexer.SetResultSymbol(symbols[kotlinTokStringContent])
 					return true
 				}
 				// Consume any trailing extra quotes.
@@ -260,20 +330,20 @@ func kotlinScanStringContent(s *kotlinScannerState, lexer *gotreesitter.External
 					lexer.MarkEnd()
 				}
 				s.delimiters = s.delimiters[:len(s.delimiters)-1]
-				lexer.SetResultSymbol(kotlinSymStringEnd)
+				lexer.SetResultSymbol(symbols[kotlinTokStringEnd])
 				return true
 			}
 
 			// Single-quoted string.
 			if hasContent {
 				lexer.MarkEnd()
-				lexer.SetResultSymbol(kotlinSymStringContent)
+				lexer.SetResultSymbol(symbols[kotlinTokStringContent])
 				return true
 			}
 			s.delimiters = s.delimiters[:len(s.delimiters)-1]
 			lexer.Advance(false)
 			lexer.MarkEnd()
-			lexer.SetResultSymbol(kotlinSymStringEnd)
+			lexer.SetResultSymbol(symbols[kotlinTokStringEnd])
 			return true
 		}
 
@@ -288,7 +358,7 @@ func kotlinScanStringContent(s *kotlinScannerState, lexer *gotreesitter.External
 // Multiline comment
 // ---------------------------------------------------------------------------
 
-func kotlinScanMultilineComment(lexer *gotreesitter.ExternalLexer) bool {
+func kotlinScanMultilineComment(lexer *gotreesitter.ExternalLexer, symbols *[kotlinTokenCount]gotreesitter.Symbol) bool {
 	if lexer.Lookahead() != '/' {
 		return false
 	}
@@ -314,7 +384,7 @@ func kotlinScanMultilineComment(lexer *gotreesitter.ExternalLexer) bool {
 				depth--
 				if depth == 0 {
 					lexer.MarkEnd()
-					lexer.SetResultSymbol(kotlinSymMultilineComment)
+					lexer.SetResultSymbol(symbols[kotlinTokMultilineComment])
 					return true
 				}
 			} else {
@@ -326,7 +396,7 @@ func kotlinScanMultilineComment(lexer *gotreesitter.ExternalLexer) bool {
 			}
 		case 0: // EOF — accept unterminated comments (matches C behavior).
 			lexer.MarkEnd()
-			lexer.SetResultSymbol(kotlinSymMultilineComment)
+			lexer.SetResultSymbol(symbols[kotlinTokMultilineComment])
 			return true
 		default:
 			lexer.Advance(false)
@@ -339,9 +409,9 @@ func kotlinScanMultilineComment(lexer *gotreesitter.ExternalLexer) bool {
 // Automatic semicolon insertion
 // ---------------------------------------------------------------------------
 
-func kotlinScanAutoSemicolon(lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
+func kotlinScanAutoSemicolon(lexer *gotreesitter.ExternalLexer, validSymbols []bool, symbols *[kotlinTokenCount]gotreesitter.Symbol) bool {
 	lexer.MarkEnd()
-	lexer.SetResultSymbol(kotlinSymAutoSemicolon)
+	lexer.SetResultSymbol(symbols[kotlinTokAutoSemicolon])
 
 	// Check for explicit semicolons and newlines.
 	sameLine := true
@@ -436,7 +506,7 @@ func kotlinScanAutoSemicolon(lexer *gotreesitter.ExternalLexer, validSymbols []b
 			!kotlinValid(validSymbols, kotlinTokStringContent) &&
 			kotlinCheckWord(lexer, "constructor") {
 			lexer.MarkEnd()
-			lexer.SetResultSymbol(kotlinSymPrimaryCtorKW)
+			lexer.SetResultSymbol(symbols[kotlinTokPrimaryCtorKW])
 			return true
 		}
 		return true
@@ -455,8 +525,8 @@ func kotlinScanAutoSemicolon(lexer *gotreesitter.ExternalLexer, validSymbols []b
 // Safe navigation (?.)
 // ---------------------------------------------------------------------------
 
-func kotlinScanSafeNav(lexer *gotreesitter.ExternalLexer) bool {
-	lexer.SetResultSymbol(kotlinSymSafeNav)
+func kotlinScanSafeNav(lexer *gotreesitter.ExternalLexer, symbols *[kotlinTokenCount]gotreesitter.Symbol) bool {
+	lexer.SetResultSymbol(symbols[kotlinTokSafeNav])
 	lexer.MarkEnd()
 
 	for unicode.IsSpace(lexer.Lookahead()) {
@@ -484,7 +554,7 @@ func kotlinScanSafeNav(lexer *gotreesitter.ExternalLexer) bool {
 // Import handling
 // ---------------------------------------------------------------------------
 
-func kotlinScanImportDot(lexer *gotreesitter.ExternalLexer) bool {
+func kotlinScanImportDot(lexer *gotreesitter.ExternalLexer, symbols *[kotlinTokenCount]gotreesitter.Symbol) bool {
 	if lexer.Lookahead() != '.' {
 		return false
 	}
@@ -500,17 +570,17 @@ func kotlinScanImportDot(lexer *gotreesitter.ExternalLexer) bool {
 	}
 
 	if foundNewline && lexer.Lookahead() == 'i' && kotlinScanWord(lexer, "import") {
-		lexer.SetResultSymbol(kotlinSymAutoSemicolon)
+		lexer.SetResultSymbol(symbols[kotlinTokAutoSemicolon])
 		return true
 	}
 
-	lexer.SetResultSymbol(kotlinSymImportDot)
+	lexer.SetResultSymbol(symbols[kotlinTokImportDot])
 	lexer.MarkEnd()
 	return true
 }
 
-func kotlinScanImportListDelim(lexer *gotreesitter.ExternalLexer) bool {
-	lexer.SetResultSymbol(kotlinSymImportListDelim)
+func kotlinScanImportListDelim(lexer *gotreesitter.ExternalLexer, symbols *[kotlinTokenCount]gotreesitter.Symbol) bool {
+	lexer.SetResultSymbol(symbols[kotlinTokImportListDelim])
 	lexer.MarkEnd()
 
 	if lexer.Lookahead() == 0 {

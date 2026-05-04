@@ -83,8 +83,8 @@ const (
 	swtSymFakeTryBang               gotreesitter.Symbol = 212
 )
 
-// swtSymTable maps token indexes to concrete symbol IDs.
-var swtSymTable = [swtTokenCount]gotreesitter.Symbol{
+// swtDefaultSymTable maps token indexes to concrete ts2go symbol IDs.
+var swtDefaultSymTable = [swtTokenCount]gotreesitter.Symbol{
 	swtSymBlockComment,
 	swtSymRawStrPart,
 	swtSymRawStrContinuingIndicator,
@@ -118,6 +118,55 @@ var swtSymTable = [swtTokenCount]gotreesitter.Symbol{
 	swtSymDirectiveElse,
 	swtSymDirectiveEndif,
 	swtSymFakeTryBang,
+}
+
+var swiftExternalScannerSpec = ExternalScannerSpec{
+	Language:       "swift",
+	UpstreamRepo:   "https://github.com/alex-pinkus/tree-sitter-swift",
+	UpstreamCommit: "64f26c3a6e9e6cf4f77165c8283e35a26b7825a7",
+	SourceFiles: []ExternalScannerSourceFile{
+		{Path: "src/grammar.json", SHA256: "4e2563022e6efde4c242e1bbbeed4da7067c3b94bffba518f6e3a33c0360b493"},
+		{Path: "src/scanner.c", SHA256: "f3d6271d64f58c39eed544104a70ca2cf9ecbf80c5d900620f1afd38836542cb"},
+	},
+	Externals: []string{
+		"multiline_comment",
+		"raw_str_part",
+		"raw_str_continuing_indicator",
+		"raw_str_end_part",
+		"_implicit_semi",
+		"_explicit_semi",
+		"_arrow_operator_custom",
+		"_dot_custom",
+		"_conjunction_operator_custom",
+		"_disjunction_operator_custom",
+		"_nil_coalescing_operator_custom",
+		"_eq_custom",
+		"_eq_eq_custom",
+		"_plus_then_ws",
+		"_minus_then_ws",
+		"_bang_custom",
+		"_throws_keyword",
+		"_rethrows_keyword",
+		"default_keyword",
+		"where_keyword",
+		"else",
+		"catch_keyword",
+		"_as_custom",
+		"_as_quest_custom",
+		"_as_bang_custom",
+		"_async_keyword_custom",
+		"_custom_operator",
+		"_hash_symbol_custom",
+		"_directive_if",
+		"_directive_elseif",
+		"_directive_else",
+		"_directive_endif",
+		"_fake_try_bang",
+	},
+}
+
+func init() {
+	RegisterExternalScannerSpec(swiftExternalScannerSpec)
 }
 
 // ---------- illegal terminator groups ----------
@@ -305,7 +354,18 @@ type swtScannerState struct {
 }
 
 // SwiftExternalScanner handles all external tokens for the Swift grammar.
-type SwiftExternalScanner struct{}
+type SwiftExternalScanner struct {
+	symbols         [swtTokenCount]gotreesitter.Symbol
+	externalToToken []int
+}
+
+func (SwiftExternalScanner) ExternalScannerForLanguage(lang *gotreesitter.Language) gotreesitter.ExternalScanner {
+	s := SwiftExternalScanner{symbols: swtDefaultSymTable}
+	s.externalToToken = bindExternalScannerSpec(lang, swiftExternalScannerSpec, func(tokenIdx int, sym gotreesitter.Symbol) {
+		s.symbols[tokenIdx] = sym
+	})
+	return s
+}
 
 func (SwiftExternalScanner) Create() any {
 	return &swtScannerState{}
@@ -338,9 +398,29 @@ func (SwiftExternalScanner) Deserialize(payload any, buf []byte) {
 		uint32(buf[3])
 }
 
-func (SwiftExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
-	s := payload.(*swtScannerState)
-	return swtScan(s, lexer, validSymbols)
+func (s SwiftExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
+	state := payload.(*swtScannerState)
+	if len(s.externalToToken) > 0 {
+		var semanticValid [swtTokenCount]bool
+		for externalIdx, valid := range validSymbols {
+			if !valid || externalIdx >= len(s.externalToToken) {
+				continue
+			}
+			tokenIdx := s.externalToToken[externalIdx]
+			if tokenIdx >= 0 && tokenIdx < swtTokenCount {
+				semanticValid[tokenIdx] = true
+			}
+		}
+		validSymbols = semanticValid[:]
+	}
+	return swtScan(state, lexer, validSymbols, s.symbolTable())
+}
+
+func (s SwiftExternalScanner) symbolTable() *[swtTokenCount]gotreesitter.Symbol {
+	if s.symbols == ([swtTokenCount]gotreesitter.Symbol{}) {
+		return &swtDefaultSymTable
+	}
+	return &s.symbols
 }
 
 // ---------- helpers ----------
@@ -349,8 +429,8 @@ func swtAdvance(lexer *gotreesitter.ExternalLexer) {
 	lexer.Advance(false)
 }
 
-func swtSetResult(lexer *gotreesitter.ExternalLexer, tok int) {
-	lexer.SetResultSymbol(swtSymTable[tok])
+func swtSetResult(lexer *gotreesitter.ExternalLexer, tok int, symbols *[swtTokenCount]gotreesitter.Symbol) {
+	lexer.SetResultSymbol(symbols[tok])
 }
 
 func swtShouldTreatAsWspace(ch rune) bool {
@@ -914,11 +994,11 @@ func swtEatRawStrPart(
 
 // ---------- main scan ----------
 
-func swtScan(state *swtScannerState, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
+func swtScan(state *swtScannerState, lexer *gotreesitter.ExternalLexer, validSymbols []bool, symbols *[swtTokenCount]gotreesitter.Symbol) bool {
 	// Consume any whitespace at the start.
 	wsDirective, wsResult := swtEatWhitespace(lexer, validSymbols)
 	if wsDirective == swtStopParsingTokenFound {
-		swtSetResult(lexer, wsResult)
+		swtSetResult(lexer, wsResult, symbols)
 		return true
 	}
 
@@ -937,7 +1017,7 @@ func swtScan(state *swtScannerState, lexer *gotreesitter.ExternalLexer, validSym
 		commentDirective, commentResult = swtEatComment(lexer, true)
 		if commentDirective == swtStopParsingTokenFound {
 			lexer.MarkEnd()
-			swtSetResult(lexer, commentResult)
+			swtSetResult(lexer, commentResult, symbols)
 			return true
 		}
 	}
@@ -954,7 +1034,7 @@ func swtScan(state *swtScannerState, lexer *gotreesitter.ExternalLexer, validSym
 
 	sawOp, opResult := swtEatOperators(lexer, validSymbols, !hasWsResult, priorChar)
 	if sawOp && (!hasWsResult || swtIsCrossSemiToken(opResult)) {
-		swtSetResult(lexer, opResult)
+		swtSetResult(lexer, opResult, symbols)
 		if hasWsResult {
 			lexer.MarkEnd()
 		}
@@ -963,14 +1043,14 @@ func swtScan(state *swtScannerState, lexer *gotreesitter.ExternalLexer, validSym
 
 	if hasWsResult {
 		// Don't mark_end since we may have advanced through operators.
-		swtSetResult(lexer, wsResult)
+		swtSetResult(lexer, wsResult, symbols)
 		return true
 	}
 
 	// Raw string parts — consumes '#' characters, so keep at the end.
 	sawRaw, rawResult := swtEatRawStrPart(state, lexer, validSymbols)
 	if sawRaw {
-		swtSetResult(lexer, rawResult)
+		swtSetResult(lexer, rawResult, symbols)
 		return true
 	}
 

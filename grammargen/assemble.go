@@ -371,10 +371,15 @@ func buildParseTables(
 
 		// Terminal actions.
 		if acts, ok := tables.ActionTable[state]; ok {
-			for sym, actionList := range acts {
+			syms := make([]int, 0, len(acts))
+			for sym := range acts {
 				if sym < tokenCount {
-					row[sym] = getOrAddActionGroup(actionList)
+					syms = append(syms, sym)
 				}
+			}
+			sort.Ints(syms)
+			for _, sym := range syms {
+				row[sym] = getOrAddActionGroup(acts[sym])
 			}
 		}
 
@@ -391,10 +396,15 @@ func buildParseTables(
 
 		// Nonterminal gotos: encode directly as state ID (ts2go convention).
 		if gotos, ok := tables.GotoTable[state]; ok {
-			for sym, target := range gotos {
+			syms := make([]int, 0, len(gotos))
+			for sym := range gotos {
 				if sym >= tokenCount && sym < symbolCount {
-					row[sym] = uint16(target)
+					syms = append(syms, sym)
 				}
+			}
+			sort.Ints(syms)
+			for _, sym := range syms {
+				row[sym] = uint16(gotos[sym])
 			}
 		}
 	}
