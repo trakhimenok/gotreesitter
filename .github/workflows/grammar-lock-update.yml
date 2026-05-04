@@ -52,6 +52,10 @@ jobs:
         if: steps.refresh.outputs.changed == 'true'
         run: |
           set -euo pipefail
+          go run ./cmd/grammar_update_guard \
+            -updates grammars/grammar_updates.json \
+            -report grammars/grammar_scanner_update_report.json \
+            -fail-on-blocked=true
           go test ./grammars -run '^TestTop50ParseSmokeNoErrors$|^TestSupportedLanguagesParseSmoke$' -count=1
           go run ./cmd/parity_report > parity.log
 
@@ -62,6 +66,7 @@ jobs:
           name: grammar-lock-update-artifacts
           path: |
             grammars/grammar_updates.json
+            grammars/grammar_scanner_update_report.json
             parity.log
 
       - name: Create pull request
