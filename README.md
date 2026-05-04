@@ -168,6 +168,9 @@ tree, _ := parser.ParseUTF16(src)
 rng, _ := tree.UTF16RangeForNode(tree.RootNode())
 fmt.Println(rng.StartCodeUnit, rng.EndCodeUnit)
 
+node := tree.DescendantForUTF16Range(0, uint32(len(src)))
+_ = node
+
 // Incremental edits can be described in UTF-16 code units.
 next := utf16.Encode([]rune("1+3"))
 tree.EditUTF16(gotreesitter.UTF16Edit{
@@ -198,6 +201,10 @@ highlightRanges := hl.HighlightUTF16(src)
 tagger, _ := gotreesitter.NewTagger(lang, `(NUMBER) @name @definition.number`)
 tags := tagger.TagUTF16(src)
 ```
+
+Node byte APIs such as `DescendantForByteRange` still use the tree's canonical
+UTF-8 byte offsets. Use `DescendantForUTF16Range` or convert with
+`UTF8ByteForUTF16Offset` when starting from editor UTF-16 offsets.
 
 ### Tree cursor
 

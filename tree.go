@@ -974,6 +974,34 @@ func (t *Tree) UTF16RangeForRange(r Range) (UTF16Range, bool) {
 	return t.UTF16RangeForByteRange(r.StartByte, r.EndByte)
 }
 
+func (t *Tree) descendantForUTF16Range(startCodeUnit, endCodeUnit uint32, namedOnly bool) *Node {
+	if t == nil || t.utf16Map == nil || t.root == nil || endCodeUnit < startCodeUnit {
+		return nil
+	}
+	startByte, ok := t.utf16Map.utf16UnitToByte(startCodeUnit)
+	if !ok {
+		return nil
+	}
+	endByte, ok := t.utf16Map.utf16UnitToByte(endCodeUnit)
+	if !ok {
+		return nil
+	}
+	return t.root.descendantForByteRange(startByte, endByte, namedOnly)
+}
+
+// DescendantForUTF16Range returns the smallest descendant that fully contains
+// the given UTF-16 code-unit range, or nil when no such descendant exists.
+func (t *Tree) DescendantForUTF16Range(startCodeUnit, endCodeUnit uint32) *Node {
+	return t.descendantForUTF16Range(startCodeUnit, endCodeUnit, false)
+}
+
+// NamedDescendantForUTF16Range returns the smallest named descendant that fully
+// contains the given UTF-16 code-unit range, or nil when no such descendant
+// exists.
+func (t *Tree) NamedDescendantForUTF16Range(startCodeUnit, endCodeUnit uint32) *Node {
+	return t.descendantForUTF16Range(startCodeUnit, endCodeUnit, true)
+}
+
 // UTF16SourceForNode returns the original UTF-16 code units covered by n.
 func (t *Tree) UTF16SourceForNode(n *Node) ([]uint16, bool) {
 	rng, ok := t.UTF16RangeForNode(n)

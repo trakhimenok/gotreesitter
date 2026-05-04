@@ -640,6 +640,54 @@ func TestInputEditForUTF16MeasuresReplacementSegment(t *testing.T) {
 	}
 }
 
+func TestDescendantForUTF16Range(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+	source := utf16Units("1+2")
+	tree, err := parser.ParseUTF16(source)
+	if err != nil {
+		t.Fatalf("ParseUTF16 failed: %v", err)
+	}
+
+	if got := tree.RootNode().DescendantForByteRange(0, uint32(len(source))*2); got != nil {
+		t.Fatalf("DescendantForByteRange with UTF16 byte offsets = %s, want nil", got.Type(lang))
+	}
+
+	root := tree.DescendantForUTF16Range(0, uint32(len(source)))
+	if root == nil {
+		t.Fatal("DescendantForUTF16Range returned nil for full source")
+	}
+	if got, want := root.Type(lang), "expression"; got != want {
+		t.Fatalf("full-source descendant type = %q, want %q", got, want)
+	}
+
+	number := tree.NamedDescendantForUTF16Range(2, 3)
+	if number == nil {
+		t.Fatal("NamedDescendantForUTF16Range returned nil for right-hand number")
+	}
+	if got, want := number.Type(lang), "NUMBER"; got != want {
+		t.Fatalf("named descendant type = %q, want %q", got, want)
+	}
+	if got, want := number.Text(tree.Source()), "2"; got != want {
+		t.Fatalf("named descendant text = %q, want %q", got, want)
+	}
+
+	if got := tree.DescendantForUTF16Range(3, 2); got != nil {
+		t.Fatalf("DescendantForUTF16Range accepted inverted range: %s", got.Type(lang))
+	}
+	if got := tree.DescendantForUTF16Range(0, uint32(len(source)+1)); got != nil {
+		t.Fatalf("DescendantForUTF16Range accepted out-of-range end: %s", got.Type(lang))
+	}
+
+	utf8Tree, err := parser.Parse([]byte("1+2"))
+	if err != nil {
+		t.Fatalf("Parse UTF8 failed: %v", err)
+	}
+	if got := utf8Tree.DescendantForUTF16Range(0, 3); got != nil {
+		t.Fatalf("DescendantForUTF16Range worked on UTF8 tree: %s", got.Type(lang))
+	}
+}
+
 func TestEditUTF16RejectsInvalidBoundaries(t *testing.T) {
 	parser := NewParser(buildArithmeticLanguage())
 
