@@ -101,11 +101,22 @@ func (p *Parser) parseForRecovery(source []byte) (*Tree, error) {
 }
 
 func parseWithSnippetParser(lang *Language, source []byte) (*Tree, error) {
+	return parseWithSnippetParserTimed(lang, source, 0)
+}
+
+// parseWithSnippetParserTimed is parseWithSnippetParser with a per-parse
+// timeout. Used by recovery paths (e.g. csharpRecoverNamespaceFromChildren)
+// to inherit the parent parser's timeout — without this, the snippet pool
+// resets timeoutMicros to 0 and recovery sub-parses could run unbounded.
+func parseWithSnippetParserTimed(lang *Language, source []byte, timeoutMicros uint64) (*Tree, error) {
 	parser := acquireSnippetParser(lang)
 	if parser == nil {
 		return nil, ErrNoLanguage
 	}
 	defer releaseSnippetParser(parser)
+	if timeoutMicros > 0 {
+		parser.timeoutMicros = timeoutMicros
+	}
 	return parser.Parse(source)
 }
 

@@ -9,11 +9,18 @@ import (
 const (
 	csharpMaxTopLevelChunkRecoverySourceBytes = 4096
 	csharpMaxTopLevelChunkRecoverySpans       = 128
+
+	// csharpMaxNamespaceRecoveries caps how many top-level error nodes we
+	// re-parse via parseWithSnippetParser. Each recovery is itself a full
+	// snippet parse — on pathological inputs (e.g. C# with CJK identifiers
+	// or many nested partial classes) the recovery loop can be triggered
+	// dozens of times per file, multiplying parse time/memory.
+	csharpMaxNamespaceRecoveries = 32
 )
 
 func normalizeCSharpCompatibility(root *Node, source []byte, p *Parser, lang *Language) {
 	normalizeCSharpRecoveredTopLevelChunks(root, source, p)
-	normalizeCSharpRecoveredNamespaces(root, source, lang)
+	normalizeCSharpRecoveredNamespaces(root, source, p, lang)
 	normalizeCSharpRecoveredTypeDeclarations(root, source, lang)
 	normalizeCollapsedNamedLeafChildren(root, lang, "implicit_type", "var")
 	normalizeCSharpUnicodeIdentifierSpans(root, source, lang)
@@ -355,7 +362,7 @@ func csharpFindBlockCommentEnd(source []byte, start, end uint32) uint32 {
 	return 0
 }
 
-func normalizeCSharpRecoveredNamespaces(root *Node, source []byte, lang *Language) {
+func normalizeCSharpRecoveredNamespaces(root *Node, source []byte, p *Parser, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "c_sharp" || len(source) == 0 || root.ownerArena == nil {
 		return
 	}
@@ -363,14 +370,26 @@ func normalizeCSharpRecoveredNamespaces(root *Node, source []byte, lang *Languag
 	if rootType != "ERROR" && rootType != "compilation_unit" {
 		return
 	}
+	// Inherit the parent parser's per-parse timeout so each snippet sub-parse
+	// the recovery triggers is bounded too. Without this, the snippet pool
+	// resets timeoutMicros to 0 (parser_pool_reset.go) and the inner parses
+	// can run unbounded.
+	var snippetTimeoutMicros uint64
+	if p != nil {
+		snippetTimeoutMicros = p.timeoutMicros
+	}
 	recoveredChildren := make([]*Node, 0, len(root.children))
 	changed := false
+	recoveryCount := 0
 	for i := 0; i < len(root.children); {
-		if recovered, next, ok := csharpRecoverNamespaceFromChildren(root.children, i, source, lang, root.ownerArena); ok {
-			recoveredChildren = append(recoveredChildren, recovered)
-			i = next
-			changed = true
-			continue
+		if recoveryCount < csharpMaxNamespaceRecoveries {
+			if recovered, next, ok := csharpRecoverNamespaceFromChildren(root.children, i, source, lang, root.ownerArena, snippetTimeoutMicros); ok {
+				recoveredChildren = append(recoveredChildren, recovered)
+				i = next
+				changed = true
+				recoveryCount++
+				continue
+			}
 		}
 		if child := root.children[i]; child != nil {
 			if recovered, ok := csharpRecoverWrappedTopLevelDeclaration(child, lang, root.ownerArena); ok {
@@ -403,7 +422,7 @@ func normalizeCSharpRecoveredNamespaces(root *Node, source []byte, lang *Languag
 	}
 }
 
-func csharpRecoverNamespaceFromChildren(children []*Node, startIdx int, source []byte, lang *Language, arena *nodeArena) (*Node, int, bool) {
+func csharpRecoverNamespaceFromChildren(children []*Node, startIdx int, source []byte, lang *Language, arena *nodeArena, snippetTimeoutMicros uint64) (*Node, int, bool) {
 	if startIdx < 0 || startIdx >= len(children) || lang == nil || arena == nil {
 		return nil, startIdx, false
 	}
@@ -430,7 +449,7 @@ func csharpRecoverNamespaceFromChildren(children []*Node, startIdx int, source [
 		return nil, startIdx, false
 	}
 	nsEnd := uint32(closeBrace + 1)
-	recovered, ok := csharpRecoverNamespaceNodeFromRange(source, nsStart, nsEnd, lang, arena)
+	recovered, ok := csharpRecoverNamespaceNodeFromRange(source, nsStart, nsEnd, lang, arena, snippetTimeoutMicros)
 	if !ok {
 		return nil, startIdx, false
 	}
@@ -449,11 +468,11 @@ func csharpRecoverNamespaceFromChildren(children []*Node, startIdx int, source [
 	return recovered, nextIdx, true
 }
 
-func csharpRecoverNamespaceNodeFromRange(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {
+func csharpRecoverNamespaceNodeFromRange(source []byte, start, end uint32, lang *Language, arena *nodeArena, snippetTimeoutMicros uint64) (*Node, bool) {
 	if lang == nil || arena == nil || start >= end || int(end) > len(source) {
 		return nil, false
 	}
-	tree, err := parseWithSnippetParser(lang, source[start:end])
+	tree, err := parseWithSnippetParserTimed(lang, source[start:end], snippetTimeoutMicros)
 	if err != nil || tree == nil || tree.RootNode() == nil {
 		if tree != nil {
 			tree.Release()

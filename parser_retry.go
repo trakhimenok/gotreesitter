@@ -1,5 +1,7 @@
 package gotreesitter
 
+import "time"
+
 const (
 	// Retry no-stacks-alive full parses with a wider GLR cap. Large real-world
 	// files (for example this repo's parser.go) can legitimately need >8 stacks
@@ -429,6 +431,21 @@ func (p *Parser) retryFullParse(source []byte, initialMaxStacks int, tree *Tree,
 		retryMaxStacks = maxStacksOverride
 	}
 
+	// retryDeadline caps the cumulative wall time spent across retry
+	// iterations. Without it, a pathological input that triggers all four
+	// retry branches (initial-merge, node-limit, secondary-node-limit, final
+	// merge-per-key) can run far longer than the caller's SetTimeoutMicros
+	// budget — the parser polls timeoutMicros inside the parse loop, but
+	// between retries the budget isn't re-checked. We honor the same budget
+	// as a wall-clock deadline shared across retry attempts.
+	retryStart := time.Now()
+	retryDeadlineExceeded := func() bool {
+		if p == nil || p.timeoutMicros == 0 {
+			return false
+		}
+		return time.Since(retryStart) > time.Duration(p.timeoutMicros)*time.Microsecond
+	}
+
 	// Each runRetry() produces a fresh Tree + arena. When a candidate loses
 	// the compare, release its arena back to the pool immediately so later
 	// runRetry() calls in this same retryFullParse can reuse it; otherwise
@@ -465,6 +482,9 @@ func (p *Parser) retryFullParse(source []byte, initialMaxStacks int, tree *Tree,
 			}
 		}
 	}
+	if retryDeadlineExceeded() {
+		return bestTree
+	}
 
 	nodeRetryTree := tree
 	if maxStacksOverride == 0 && maxNodesOverride == 0 {
@@ -477,6 +497,10 @@ func (p *Parser) retryFullParse(source []byte, initialMaxStacks int, tree *Tree,
 		// retry sequence is done. If it doesn't end up bestTree, we release
 		// it at function exit via the sentinel below.
 		nodeRetryTree = retryTree
+		if retryDeadlineExceeded() {
+			replaceBest(&bestTree, retryTree)
+			return bestTree
+		}
 		if extraNodeLimit := fullParseRetrySecondaryNodeLimitOverride(retryTree, len(source)); extraNodeLimit > 0 {
 			secondaryTree := runRetry(retryMaxStacks, 0, extraNodeLimit)
 			// Fold the primary retry into bestTree before we overwrite
@@ -506,6 +530,12 @@ func (p *Parser) retryFullParse(source []byte, initialMaxStacks int, tree *Tree,
 	}
 	maxMergePerKeyOverride := fullParseRetryMergePerKeyOverride(nodeRetryTree, len(source), initialMaxStacks)
 	if maxMergePerKeyOverride == 0 {
+		if nodeRetryTree != nil && nodeRetryTree != bestTree && nodeRetryTree != tree {
+			release(nodeRetryTree)
+		}
+		return bestTree
+	}
+	if retryDeadlineExceeded() {
 		if nodeRetryTree != nil && nodeRetryTree != bestTree && nodeRetryTree != tree {
 			release(nodeRetryTree)
 		}
