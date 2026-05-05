@@ -179,6 +179,33 @@ func TestImportedKotlinSwiftGrammarConstructors(t *testing.T) {
 	}
 }
 
+func TestImportedKotlinSwiftGrammarsAreExtendable(t *testing.T) {
+	tests := []struct {
+		name    string
+		grammar *Grammar
+	}{
+		{name: "kotlin", grammar: KotlinGrammar()},
+		{name: "swift", grammar: SwiftGrammar()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			extended := ExtendGrammar(tc.name+"_ext", tc.grammar, func(g *Grammar) {
+				g.Define("__got_extension_marker", Str("__got_extension_marker"))
+			})
+			if extended.Name != tc.name+"_ext" {
+				t.Fatalf("extended.Name = %q, want %q", extended.Name, tc.name+"_ext")
+			}
+			if _, ok := extended.Rules["__got_extension_marker"]; !ok {
+				t.Fatalf("extension marker rule was not added")
+			}
+			if _, ok := tc.grammar.Rules["__got_extension_marker"]; ok {
+				t.Fatalf("base grammar was mutated through extension")
+			}
+		})
+	}
+}
+
 func TestImportedJavaScriptTypeScriptTSXFortranGrammarConstructors(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -317,6 +344,47 @@ func TestImportedJavaScriptTypeScriptTSXFortranGrammarsAreExtendable(t *testing.
 			}
 			if _, ok := tc.grammar.Rules["__got_extension_marker"]; ok {
 				t.Fatalf("base grammar was mutated through extension")
+			}
+		})
+	}
+}
+
+func TestImportedJavaScriptTypeScriptInlineRulesAreDefined(t *testing.T) {
+	tests := []struct {
+		name    string
+		grammar *Grammar
+	}{
+		{name: "javascript", grammar: JavaScriptGrammar()},
+		{name: "typescript", grammar: TypeScriptGrammar()},
+		{name: "tsx", grammar: TSXGrammar()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range tc.grammar.Inline {
+				if _, ok := tc.grammar.Rules[name]; !ok {
+					t.Fatalf("inline rule %q is not defined", name)
+				}
+			}
+		})
+	}
+}
+
+func TestImportedTypeScriptInlineRulesPreserveResolvedGrammarShape(t *testing.T) {
+	tests := []struct {
+		name    string
+		grammar *Grammar
+	}{
+		{name: "typescript", grammar: TypeScriptGrammar()},
+		{name: "tsx", grammar: TSXGrammar()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range []string{"_call_signature", "_formal_parameter"} {
+				if slices.Contains(tc.grammar.Inline, name) {
+					t.Fatalf("%s inline rules include %q, but resolved tree-sitter-typescript filters it out", tc.name, name)
+				}
 			}
 		})
 	}
