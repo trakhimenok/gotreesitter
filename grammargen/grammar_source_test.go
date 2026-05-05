@@ -371,6 +371,8 @@ func TestImportedJavaScriptTypeScriptInlineRulesAreDefined(t *testing.T) {
 }
 
 func TestImportedTypeScriptInlineRulesPreserveResolvedGrammarShape(t *testing.T) {
+	// tree-sitter-typescript extends JavaScript but intentionally filters these
+	// inherited inline helpers out in common/define-grammar.js.
 	tests := []struct {
 		name    string
 		grammar *Grammar
