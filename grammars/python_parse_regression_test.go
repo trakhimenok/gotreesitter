@@ -54,6 +54,128 @@ func TestPythonComparisonOperatorFieldStaysOnOperatorToken(t *testing.T) {
 	}
 }
 
+// Regression test for https://github.com/odvcencio/gotreesitter/issues/53
+//
+// An f-string in a decorator (e.g. @create_span(f"{__file__}.func")) causes
+// the scanner's insideInterpolatedString flag to become stale after checkpoint
+// restore, blocking all subsequent DEDENT tokens. This prevents the parser
+// from forming try_statement nodes — the try body can never be closed.
+//
+// The test below reproduces the exact real-world pattern: an f-string
+// decorator, a multi-line bracketed call inside a try body, a blank line,
+// and then an except clause.
+func TestPythonFStringDecoratorTryExceptBlankLine(t *testing.T) {
+	src := []byte(`from datetime import datetime
+
+AMPLITUDE_ASSET = "controller"
+BRAZE_EVENT = "HH_SUBMITTED"
+
+CONST_A = "a"
+CONST_B = "b"
+CONST_C = "c"
+
+
+@create_span(f"{__file__}.report_status")
+def report_status(
+    *,
+    virta_id: str,
+    completed_on: datetime | None,
+    status: str,
+) -> None:
+    """Report the status of the health history form."""
+    amplitude_logger.log(
+        virta_id,
+        CONST_A if completed_on else CONST_B,
+        {"asset": AMPLITUDE_ASSET},
+    )
+
+    if completed_on:
+        try:
+            BrazeClient(request_timeout=5).update_user(
+                external_id=virta_id,
+                attributes={
+                    "is_labs_required": status
+                    == "REQUIRED"
+                },
+                events=[
+                    {
+                        "name": BRAZE_EVENT,
+                        "time": completed_on,
+                    }
+                ],
+            )
+
+        except Exception as e:
+            send_to_sentry(e)
+`)
+
+	lang := PythonLanguage()
+	parser := gotreesitter.NewParser(lang)
+	tree, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	root := tree.RootNode()
+	if root == nil {
+		t.Fatal("parse returned nil root")
+	}
+	if root.HasError() {
+		t.Fatalf("expected error-free parse tree, got %s", root.SExpr(lang))
+	}
+
+	// Verify try_statement with except_clause.
+	var tryStmt *gotreesitter.Node
+	gotreesitter.Walk(root, func(node *gotreesitter.Node, depth int) gotreesitter.WalkAction {
+		if node.IsNamed() && node.Type(lang) == "try_statement" {
+			tryStmt = node
+			return gotreesitter.WalkStop
+		}
+		return gotreesitter.WalkContinue
+	})
+	if tryStmt == nil {
+		t.Fatalf("expected try_statement in tree, got %s", root.SExpr(lang))
+	}
+	var exceptClause *gotreesitter.Node
+	for i := 0; i < tryStmt.NamedChildCount(); i++ {
+		child := tryStmt.NamedChild(i)
+		if child != nil && child.Type(lang) == "except_clause" {
+			exceptClause = child
+		}
+	}
+	if exceptClause == nil {
+		t.Fatalf("expected except_clause in try_statement, got %s", tryStmt.SExpr(lang))
+	}
+}
+
+func TestPythonScannerSerializationRecomputesInterpolatedStringState(t *testing.T) {
+	scanner := PythonExternalScanner{}
+	buf := make([]byte, 256)
+
+	plain := &pythonScannerState{
+		indents:                  []uint16{0},
+		delimiters:               []pyDelimiter{pyDelimDoubleQuote},
+		insideInterpolatedString: true,
+	}
+	n := scanner.Serialize(plain, buf)
+	var restoredPlain pythonScannerState
+	scanner.Deserialize(&restoredPlain, buf[:n])
+	if restoredPlain.insideInterpolatedString {
+		t.Fatal("plain string checkpoint restored insideInterpolatedString=true, want false")
+	}
+
+	formatted := &pythonScannerState{
+		indents:                  []uint16{0},
+		delimiters:               []pyDelimiter{pyDelimDoubleQuote | pyDelimFormat},
+		insideInterpolatedString: false,
+	}
+	n = scanner.Serialize(formatted, buf)
+	var restoredFormatted pythonScannerState
+	scanner.Deserialize(&restoredFormatted, buf[:n])
+	if !restoredFormatted.insideInterpolatedString {
+		t.Fatal("f-string checkpoint restored insideInterpolatedString=false, want true")
+	}
+}
+
 func TestParseFilePythonNestedMethodDedentsReturnToModule(t *testing.T) {
 	src := []byte("import unittest\n\nclass GrammarTests(unittest.TestCase):\n    def test_case(self):\n        keywords = (1,)\n        cases = (2,)\n        for keyword in (1,):\n            for case in (2,):\n                pass\n\nif __name__ == '__main__':\n    unittest.main()\n")
 

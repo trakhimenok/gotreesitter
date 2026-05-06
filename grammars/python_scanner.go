@@ -69,6 +69,16 @@ type pythonScannerState struct {
 	insideInterpolatedString bool
 }
 
+func (s *pythonScannerState) syncInsideInterpolatedString() {
+	s.insideInterpolatedString = false
+	for _, d := range s.delimiters {
+		if d.isFormat() {
+			s.insideInterpolatedString = true
+			return
+		}
+	}
+}
+
 type PythonExternalScanner struct{}
 
 func (PythonExternalScanner) Create() any {
@@ -84,6 +94,7 @@ func (PythonExternalScanner) Serialize(payload any, buf []byte) int {
 	if len(buf) == 0 {
 		return 0
 	}
+	s.syncInsideInterpolatedString()
 
 	size := 0
 	if s.insideInterpolatedString {
@@ -144,6 +155,7 @@ func (PythonExternalScanner) Deserialize(payload any, buf []byte) {
 		s.delimiters = append(s.delimiters, pyDelimiter(buf[size]))
 		size++
 	}
+	s.syncInsideInterpolatedString()
 
 	for size+1 < len(buf) {
 		v := uint16(buf[size]) | uint16(buf[size+1])<<8
@@ -159,6 +171,7 @@ func (PythonExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer
 	if len(s.indents) == 0 {
 		s.indents = append(s.indents, 0)
 	}
+	s.syncInsideInterpolatedString()
 
 	isValid := func(idx int) bool {
 		return idx >= 0 && idx < len(validSymbols) && validSymbols[idx]
