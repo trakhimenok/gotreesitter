@@ -67,6 +67,26 @@ func replaceChildRangeWithSingleNode(parent *Node, start, end int, replacement *
 		child.childIndex = i
 	}
 }
+
+func firstAndLastNonNilChild(children []*Node) (*Node, *Node) {
+	var first *Node
+	for _, child := range children {
+		if child != nil {
+			first = child
+			break
+		}
+	}
+	if first == nil {
+		return nil, nil
+	}
+	for i := len(children) - 1; i >= 0; i-- {
+		if children[i] != nil {
+			return first, children[i]
+		}
+	}
+	return first, first
+}
+
 func bytesContainLineBreak(b []byte) bool {
 	for _, c := range b {
 		if c == '\n' || c == '\r' {

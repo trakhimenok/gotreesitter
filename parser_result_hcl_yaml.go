@@ -49,30 +49,6 @@ func normalizePythonInterpolationPatterns(root *Node, lang *Language) {
 	rewrite(root, false)
 }
 
-func bytesAreTrivia(b []byte) bool {
-	for _, c := range b {
-		switch c {
-		case ' ', '\t', '\n', '\r':
-			continue
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func lastNonTriviaByteEnd(source []byte) uint32 {
-	for i := len(source); i > 0; i-- {
-		switch source[i-1] {
-		case ' ', '\t', '\n', '\r', '\f':
-			continue
-		default:
-			return uint32(i)
-		}
-	}
-	return 0
-}
-
 func normalizeHCLConfigFileRoot(root *Node, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "hcl" || root.Type(lang) != "config_file" || len(root.children) == 0 {
 		return
@@ -119,25 +95,6 @@ func snapHCLBodyBounds(body *Node) {
 	body.startPoint = first.startPoint
 	body.endByte = last.endByte
 	body.endPoint = last.endPoint
-}
-
-func firstAndLastNonNilChild(children []*Node) (*Node, *Node) {
-	var first *Node
-	for _, child := range children {
-		if child != nil {
-			first = child
-			break
-		}
-	}
-	if first == nil {
-		return nil, nil
-	}
-	for i := len(children) - 1; i >= 0; i-- {
-		if children[i] != nil {
-			return first, children[i]
-		}
-	}
-	return first, first
 }
 
 func normalizeYAMLRecoveredRoot(root *Node, source []byte, lang *Language) {
