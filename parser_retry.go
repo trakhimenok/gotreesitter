@@ -313,8 +313,8 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		return mergePerKeyCap
 	}
 	switch lang.Name {
-	case "javascript", "typescript":
-		// Plain JS/TS can develop many near-equivalent GLR survivors on large
+	case "javascript":
+		// Plain JS can develop many near-equivalent GLR survivors on large
 		// runtime bundles. Keeping more than four alternatives per merge key
 		// causes merge-equivalence checks to dominate without improving the
 		// accepted tree; retry widening should not undo this language cap.

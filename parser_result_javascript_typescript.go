@@ -447,31 +447,49 @@ func rewriteJavaScriptTypeScriptBinaryPrecedence(node *Node, lang *Language) *No
 	left := node.children[0]
 	op := node.children[1]
 	right := node.children[2]
-	if left == nil || op == nil || right == nil || left.Type(lang) != "binary_expression" || len(left.children) != 3 {
+	if left == nil || op == nil || right == nil {
 		return nil
 	}
-	leftOp := left.children[1]
-	if leftOp == nil {
-		return nil
-	}
-
 	parentPrec, ok := javaScriptTypeScriptBinaryOperatorPrecedence(op.Type(lang))
 	if !ok {
 		return nil
 	}
-	leftPrec, ok := javaScriptTypeScriptBinaryOperatorPrecedence(leftOp.Type(lang))
-	if !ok || parentPrec <= leftPrec {
-		return nil
+
+	if left.Type(lang) == "binary_expression" && len(left.children) == 3 {
+		leftOp := left.children[1]
+		if leftOp != nil {
+			leftPrec, ok := javaScriptTypeScriptBinaryOperatorPrecedence(leftOp.Type(lang))
+			if ok && parentPrec > leftPrec {
+				rotatedInner := cloneNodeInArena(node.ownerArena, node)
+				rotatedInner.children = cloneNodeSliceInArena(node.ownerArena, []*Node{left.children[2], op, right})
+				populateParentNode(rotatedInner, rotatedInner.children)
+
+				rotatedOuter := cloneNodeInArena(node.ownerArena, left)
+				rotatedOuter.children = cloneNodeSliceInArena(node.ownerArena, []*Node{left.children[0], leftOp, rotatedInner})
+				populateParentNode(rotatedOuter, rotatedOuter.children)
+				return rotatedOuter
+			}
+		}
 	}
 
-	rotatedInner := cloneNodeInArena(node.ownerArena, node)
-	rotatedInner.children = cloneNodeSliceInArena(node.ownerArena, []*Node{left.children[2], op, right})
-	populateParentNode(rotatedInner, rotatedInner.children)
+	if right.Type(lang) == "binary_expression" && len(right.children) == 3 {
+		rightOp := right.children[1]
+		if rightOp != nil {
+			rightPrec, ok := javaScriptTypeScriptBinaryOperatorPrecedence(rightOp.Type(lang))
+			if ok && parentPrec >= rightPrec && !javaScriptTypeScriptBinaryOperatorRightAssociative(op.Type(lang)) {
+				rotatedInner := cloneNodeInArena(node.ownerArena, node)
+				rotatedInner.children = cloneNodeSliceInArena(node.ownerArena, []*Node{left, op, right.children[0]})
+				populateParentNode(rotatedInner, rotatedInner.children)
 
-	rotatedOuter := cloneNodeInArena(node.ownerArena, left)
-	rotatedOuter.children = cloneNodeSliceInArena(node.ownerArena, []*Node{left.children[0], leftOp, rotatedInner})
-	populateParentNode(rotatedOuter, rotatedOuter.children)
-	return rotatedOuter
+				rotatedOuter := cloneNodeInArena(node.ownerArena, right)
+				rotatedOuter.children = cloneNodeSliceInArena(node.ownerArena, []*Node{rotatedInner, rightOp, right.children[2]})
+				populateParentNode(rotatedOuter, rotatedOuter.children)
+				return rotatedOuter
+			}
+		}
+	}
+
+	return nil
 }
 
 func javaScriptTypeScriptBinaryOperatorPrecedence(op string) (int, bool) {
@@ -503,6 +521,10 @@ func javaScriptTypeScriptBinaryOperatorPrecedence(op string) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func javaScriptTypeScriptBinaryOperatorRightAssociative(op string) bool {
+	return op == "**"
 }
 
 func rewriteJavaScriptTopLevelObjectLiteral(node *Node, lang *Language, arena *nodeArena, exprSym Symbol, exprNamed bool, objectSym Symbol, objectNamed bool, pairSym Symbol, pairNamed bool, propSym Symbol) (*Node, bool) {

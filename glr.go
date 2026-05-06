@@ -610,6 +610,9 @@ func stackNodeNeedsDeepEquivalent(n *Node) bool {
 }
 
 func stackEntryNodesEquivalentForLanguageWithScratch(scratch *glrMergeScratch, lang *Language, a, b *Node) bool {
+	if languageNeedsExactStackNodeEquivalence(lang) {
+		return stackEntryNodesExactlyEquivalentWithScratch(scratch, a, b, 0)
+	}
 	if lang != nil && (lang.Name == "c_sharp" || lang.Name == "bash" || len(lang.AliasSequences) > 0) {
 		depthLimit := stackEquivalentFrontierDepthLimit
 		if lang.Name == "bash" {
@@ -657,6 +660,62 @@ func stackEntryNodesEquivalentForLanguageWithScratch(scratch *glrMergeScratch, l
 		return true
 	}
 	return stackEntryNodesEquivalent(a, b)
+}
+
+func languageNeedsExactStackNodeEquivalence(lang *Language) bool {
+	if lang == nil {
+		return false
+	}
+	switch lang.Name {
+	case "typescript", "tsx":
+		return true
+	default:
+		return false
+	}
+}
+
+func stackEntryNodesExactlyEquivalentWithScratch(scratch *glrMergeScratch, a, b *Node, depth int) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.symbol != b.symbol ||
+		a.startByte != b.startByte ||
+		a.endByte != b.endByte ||
+		len(a.children) != len(b.children) ||
+		a.isExtra != b.isExtra ||
+		a.isNamed != b.isNamed ||
+		a.isMissing != b.isMissing ||
+		a.hasError != b.hasError ||
+		a.parseState != b.parseState ||
+		a.preGotoState != b.preGotoState ||
+		a.productionID != b.productionID ||
+		len(a.fieldIDs) != len(b.fieldIDs) {
+		return false
+	}
+	if hit, ok := lookupNodeEquivCache(scratch, a, b, depth); ok {
+		return hit
+	}
+	if a.hasError && b.hasError {
+		storeNodeEquivCache(scratch, a, b, depth, true)
+		return true
+	}
+	for i := range a.fieldIDs {
+		if a.fieldIDs[i] != b.fieldIDs[i] {
+			storeNodeEquivCache(scratch, a, b, depth, false)
+			return false
+		}
+	}
+	for i := range a.children {
+		if !stackEntryNodesExactlyEquivalentWithScratch(scratch, a.children[i], b.children[i], depth+1) {
+			storeNodeEquivCache(scratch, a, b, depth, false)
+			return false
+		}
+	}
+	storeNodeEquivCache(scratch, a, b, depth, true)
+	return true
 }
 
 func stackEntryNodesEquivalentFrontierWithScratch(scratch *glrMergeScratch, a, b *Node, depth int) bool {
