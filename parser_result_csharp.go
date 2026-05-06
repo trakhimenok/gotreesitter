@@ -43,6 +43,7 @@ func normalizeCSharpCompatibility(root *Node, source []byte, p *Parser, lang *La
 	normalizeCSharpQueryExpressions(root, source, p)
 	normalizeCSharpSplitScopedLambdaStatements(root, source, lang)
 	normalizeCSharpRecoveredScopedLambdaBlocks(root, source, p)
+	normalizeCSharpRecoveredMethodBlocks(root, source, p)
 	normalizeCSharpInvocationStatements(root, source, lang)
 	normalizeCSharpDereferenceLogicalAndCasts(root, source, lang)
 	normalizeCSharpConditionalIsPatternInitializers(root, source, lang)
@@ -205,6 +206,9 @@ func csharpTopLevelChunkSpans(source []byte) [][2]uint32 {
 			if braceDepth > 0 {
 				braceDepth--
 				if braceDepth == 0 && parenDepth == 0 && bracketDepth == 0 {
+					if next := csharpSkipSpaceBytes(source, i+1); next < uint32(len(source)) && source[next] == ';' {
+						continue
+					}
 					spans = append(spans, [2]uint32{start, i + 1})
 					start = csharpSkipSpaceBytes(source, i+1)
 				}
@@ -286,6 +290,9 @@ func csharpRecoverTopLevelChunkNodesFromRange(source []byte, start, end uint32, 
 				return []*Node{recovered}, true
 			}
 		}
+	}
+	if recovered, ok := csharpRecoverSourceTopLevelTypeDeclarationFromRange(source, start, end, p, arena); ok {
+		return []*Node{recovered}, true
 	}
 	chunk := source[start:end]
 	tree, err := p.parseForRecovery(chunk)

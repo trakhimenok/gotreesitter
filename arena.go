@@ -62,10 +62,11 @@ type nodeArena struct {
 	nodes []Node
 	used  int
 	refs  atomic.Int32
-	// budgetBytes is a soft per-parse cap for retained arena backing storage.
+	// budgetBytes is a soft per-parse cap for arena backing-storage growth.
 	// A value of 0 disables budget checks.
-	budgetBytes    int64
-	allocatedBytes int64
+	budgetBytes         int64
+	budgetBaselineBytes int64
+	allocatedBytes      int64
 	// skipChildClear allows reset() to skip child-slab pointer clearing when
 	// a parse did not borrow any external nodes (full parse without reuse).
 	skipChildClear bool
@@ -775,6 +776,7 @@ func (a *nodeArena) clearBudget() {
 		return
 	}
 	a.budgetBytes = 0
+	a.budgetBaselineBytes = 0
 	a.recomputeAllocatedBytes()
 }
 
@@ -783,13 +785,18 @@ func (a *nodeArena) setBudget(bytes int64) {
 		return
 	}
 	a.budgetBytes = bytes
+	a.budgetBaselineBytes = a.allocatedBytes
 }
 
 func (a *nodeArena) budgetExhausted() bool {
 	if a == nil || a.budgetBytes <= 0 {
 		return false
 	}
-	return a.allocatedBytes >= a.budgetBytes
+	used := a.allocatedBytes - a.budgetBaselineBytes
+	if used < 0 {
+		used = 0
+	}
+	return used >= a.budgetBytes
 }
 
 func maxRetainedNodeCapacityForClass(class arenaClass) int {

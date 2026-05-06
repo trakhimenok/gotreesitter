@@ -8,8 +8,7 @@ import (
 func TestParserScratchMemoryBudgetExhaustedByEntrySlabGrowth(t *testing.T) {
 	var scratch parserScratch
 	scratch.entries.ensureInitialCap(defaultStackEntrySlabCap)
-	initial := scratch.allocatedBytes()
-	scratch.setBudget(initial + 1)
+	scratch.setBudget(1)
 
 	_ = scratch.entries.allocWithCap(defaultStackEntrySlabCap, defaultStackEntrySlabCap)
 	if scratch.budgetExhausted() {
@@ -25,8 +24,7 @@ func TestParserScratchMemoryBudgetExhaustedByEntrySlabGrowth(t *testing.T) {
 func TestParserScratchMemoryBudgetExhaustedByGSSSlabGrowth(t *testing.T) {
 	var scratch parserScratch
 	_ = scratch.gss.allocNode(stackEntry{state: 1}, nil, 1)
-	initial := scratch.allocatedBytes()
-	scratch.setBudget(initial + 1)
+	scratch.setBudget(1)
 
 	for depth := 2; depth <= defaultGSSNodeSlabCap; depth++ {
 		_ = scratch.gss.allocNode(stackEntry{state: 1}, nil, depth)
@@ -44,12 +42,32 @@ func TestParserScratchMemoryBudgetExhaustedByGSSSlabGrowth(t *testing.T) {
 func TestParserScratchMemoryBudgetExhaustedByMergeScratchGrowth(t *testing.T) {
 	var scratch parserScratch
 	_ = ensureMergeSlotCap(&scratch.merge, 1)
-	initial := scratch.allocatedBytes()
-	scratch.setBudget(initial + 1)
+	scratch.setBudget(1)
 
 	_ = ensureMergeSlotCap(&scratch.merge, 2)
 	if !scratch.budgetExhausted() {
 		t.Fatal("budget not exhausted after merge-slot growth")
+	}
+}
+
+func TestParserScratchBudgetUsesPerParseGrowth(t *testing.T) {
+	scratch := &parserScratch{}
+	scratch.entries.allocatedBytes = 8 << 20
+	scratch.gss.allocatedBytes = 96 << 20
+
+	scratch.setBudget(64 << 20)
+	if scratch.budgetExhausted() {
+		t.Fatal("budget exhausted by retained scratch baseline")
+	}
+
+	scratch.gss.allocatedBytes += 63 << 20
+	if scratch.budgetExhausted() {
+		t.Fatal("budget exhausted before per-parse growth reached budget")
+	}
+
+	scratch.entries.allocatedBytes += 1 << 20
+	if !scratch.budgetExhausted() {
+		t.Fatal("budget not exhausted after per-parse growth reached budget")
 	}
 }
 

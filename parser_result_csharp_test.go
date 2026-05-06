@@ -26,6 +26,24 @@ func TestCSharpFindQueryAssignmentSpecs(t *testing.T) {
 	}
 }
 
+func TestCSharpParseQueryExpressionSpecWithGroupIntoOrder(t *testing.T) {
+	src := []byte("from a in sourceA\n" +
+		"        join b in sourceB on a.FK equals b.PK\n" +
+		"        group a by a.X into g\n" +
+		"        orderby g ascending\n" +
+		"        select new { A.A, B.B }")
+	spec, ok := csharpParseQueryExpressionSpec(src, csharpQueryAssignmentSpec{
+		queryStart: 0,
+		queryEnd:   uint32(len(src)),
+	})
+	if !ok {
+		t.Fatal("expected query expression spec")
+	}
+	if got, want := len(spec.clauses), 5; got != want {
+		t.Fatalf("clause count = %d, want %d", got, want)
+	}
+}
+
 func TestCSharpFirstStatementEndHandlesScopedLambda(t *testing.T) {
 	src := []byte("    var l = scoped => null;\n    var l = (scoped i) => null;\n")
 	got, ok := csharpFirstStatementEndInRange(src, 4, uint32(len(src)))

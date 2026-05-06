@@ -152,9 +152,99 @@ func TestCSharpExpressionCorpusParity(t *testing.T) {
 			assertGeneratedAndReferenceDeepParity(t, genLang, refLang, tc.src)
 		})
 	}
+
+	t.Run("parser_reuse", func(t *testing.T) {
+		genParser := gotreesitter.NewParser(genLang)
+		refParser := gotreesitter.NewParser(refLang)
+		for _, tc := range cases {
+			data := []byte(tc.src)
+			genTree, err := genParser.Parse(data)
+			if err != nil {
+				t.Fatalf("%s generated parse: %v", tc.name, err)
+			}
+			refTree, err := refParser.Parse(data)
+			if err != nil {
+				t.Fatalf("%s reference parse: %v", tc.name, err)
+			}
+			if divs := compareTreesDeep(genTree.RootNode(), genLang, refTree.RootNode(), refLang, "root", 10); len(divs) > 0 {
+				t.Fatalf("%s parser reuse deep mismatch\nGEN: %s\nREF: %s\nDIVS: %v",
+					tc.name,
+					safeSExpr(genTree.RootNode(), genLang, 256),
+					safeSExpr(refTree.RootNode(), refLang, 256),
+					divs)
+			}
+			genTree.Release()
+			refTree.Release()
+		}
+	})
+
+	t.Run("parser_reuse_after_highlight_samples", func(t *testing.T) {
+		prefixPaths := []string{
+			"/tmp/grammar_parity/c_sharp/test/highlight/baseline.cs",
+			"/tmp/grammar_parity/c_sharp/test/highlight/operators.cs",
+			"/tmp/grammar_parity/c_sharp/test/highlight/types.cs",
+			"/tmp/grammar_parity/c_sharp/test/highlight/variableDeclarations.cs",
+		}
+		genParser := gotreesitter.NewParser(genLang)
+		refParser := gotreesitter.NewParser(refLang)
+		assertProbe := func(path string) {
+			tc := cases[0]
+			probe := []byte(tc.src)
+			freshGenTree, err := gotreesitter.NewParser(genLang).Parse(probe)
+			if err != nil {
+				t.Fatalf("fresh generated parse after %s: %v", path, err)
+			}
+			freshRefTree, err := gotreesitter.NewParser(refLang).Parse(probe)
+			if err != nil {
+				t.Fatalf("fresh reference parse after %s: %v", path, err)
+			}
+			if divs := compareTreesDeep(freshGenTree.RootNode(), genLang, freshRefTree.RootNode(), refLang, "root", 10); len(divs) > 0 {
+				t.Fatalf("fresh parser after %s deep mismatch\nGEN: %s\nREF: %s\nDIVS: %v",
+					path,
+					safeSExpr(freshGenTree.RootNode(), genLang, 256),
+					safeSExpr(freshRefTree.RootNode(), refLang, 256),
+					divs)
+			}
+			freshGenTree.Release()
+			freshRefTree.Release()
+		}
+		for _, path := range prefixPaths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Skipf("C# highlight fixture not available: %v", err)
+			}
+			genTree, _ := genParser.Parse(data)
+			if genTree != nil {
+				genTree.Release()
+			}
+			refTree, _ := refParser.Parse(data)
+			if refTree != nil {
+				refTree.Release()
+			}
+			assertProbe(path)
+		}
+		tc := cases[0]
+		data := []byte(tc.src)
+		genTree, err := genParser.Parse(data)
+		if err != nil {
+			t.Fatalf("generated parse after prefix: %v", err)
+		}
+		refTree, err := refParser.Parse(data)
+		if err != nil {
+			t.Fatalf("reference parse after prefix: %v", err)
+		}
+		if divs := compareTreesDeep(genTree.RootNode(), genLang, refTree.RootNode(), refLang, "root", 10); len(divs) > 0 {
+			t.Fatalf("parser reuse after highlight prefix deep mismatch\nGEN: %s\nREF: %s\nDIVS: %v",
+				safeSExpr(genTree.RootNode(), genLang, 256),
+				safeSExpr(refTree.RootNode(), refLang, 256),
+				divs)
+		}
+		genTree.Release()
+		refTree.Release()
+	})
 }
 
-func TestCSharpStatementCorpusRecoveryNoError(t *testing.T) {
+func TestCSharpStatementCorpusParity(t *testing.T) {
 	genLang := loadGeneratedCSharpLanguageForParity(t)
 	refLang := grammars.CSharpLanguage()
 	adaptExternalScanner(refLang, genLang)
@@ -207,24 +297,38 @@ func TestCSharpStatementCorpusRecoveryNoError(t *testing.T) {
 				"  }\n" +
 				"}\n",
 		},
+		{
+			name: "variable_declarations_highlight",
+			src: "class A\n" +
+				"{\n" +
+				"    public void M()\n" +
+				"    {\n" +
+				"        foreach (int i in new[] { 1 })\n" +
+				"        //           ^ variable\n" +
+				"        {\n" +
+				"            int j = i;\n" +
+				"            //  ^ variable\n" +
+				"        }\n" +
+				"\n" +
+				"        var x = from a in sourceA\n" +
+				"        //           ^ variable\n" +
+				"        //                ^ variable\n" +
+				"                join b in sourceB on a.FK equals b.PK\n" +
+				"        //           ^ variable\n" +
+				"        //                ^ variable\n" +
+				"                group a by a.X into g\n" +
+				"        //            ^ variable\n" +
+				"        //                          ^ variable\n" +
+				"                orderby g ascending\n" +
+				"        //              ^ variable\n" +
+				"                select new { A.A, B.B };\n" +
+				"    }\n" +
+				"}\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			data := []byte(tc.src)
-			refTree, err := gotreesitter.NewParser(refLang).Parse(data)
-			if err != nil {
-				t.Fatalf("reference parse: %v", err)
-			}
-			if refTree.RootNode().HasError() {
-				t.Fatalf("reference has error: %s", safeSExpr(refTree.RootNode(), refLang, 128))
-			}
-			genTree, err := gotreesitter.NewParser(genLang).Parse(data)
-			if err != nil {
-				t.Fatalf("generated parse: %v", err)
-			}
-			if genTree.RootNode().HasError() {
-				t.Fatalf("generated has error: %s", safeSExpr(genTree.RootNode(), genLang, 128))
-			}
+			assertGeneratedAndReferenceDeepParity(t, genLang, refLang, tc.src)
 		})
 	}
 }
@@ -487,6 +591,77 @@ func TestCSharpSourceFileStructureParity(t *testing.T) {
 				"namespace Foo {\n" +
 				"  using A;\n" +
 				"}\n",
+		},
+		{
+			name: "highlight_types",
+			src: `class A : B, C
+//    ^ type
+//        ^ type
+//           ^ type
+{
+    public void M()
+    {
+        int a;
+        // <- type.builtin
+        var a;
+        // <- keyword
+
+        int? a;
+        // <- type.builtin
+        // ^ operator
+        A? a;
+        // <- type
+         // <- operator
+
+        int* a;
+        // <- type.builtin
+        // ^ operator
+        A* a;
+        // <- type
+         // <- operator
+
+        ref A* a;
+        // <- keyword
+        //  ^ type
+        //   ^ operator
+
+        var a = x is int;
+        //           ^ type.builtin
+        var a = x is A;
+        //           ^
+
+        var a = x as int;
+        //           ^ type.builtin
+        var a = x as A;
+        //           ^ type
+
+        var a = (int)x;
+        //       ^ type.builtin
+        var a = (A)x;
+        //       ^ type
+
+        A<int, A> a = new A<int, A>();
+        // <- type
+        //^ type.builtin
+        //     ^ type
+        //                ^ type
+        //                  ^ type.builtin
+        //                       ^ type
+    }
+}
+
+record A(int a, B b) : B(), I;
+//     ^ type
+//       ^ type.builtin
+//              ^ type
+//                     ^ type
+//                          ^ type
+
+record A : B, I;
+//     ^ type
+//         ^ type
+//            ^ type
+`,
 		},
 	}
 

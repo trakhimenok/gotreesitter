@@ -3,19 +3,20 @@ package gotreesitter
 import "sync"
 
 type parserScratch struct {
-	merge       glrMergeScratch
-	entries     glrEntryScratch
-	gss         gssScratch
-	audit       runtimeAudit
-	tmpEntries  []stackEntry
-	glrStates   []StateID
-	nodeLinks   []*Node
-	stackPick   []int
-	stackKeep   []bool
-	stackCull   []stackCullKey
-	stateKeep   []StateID
-	reduce      reduceBuildScratch
-	budgetBytes int64
+	merge               glrMergeScratch
+	entries             glrEntryScratch
+	gss                 gssScratch
+	audit               runtimeAudit
+	tmpEntries          []stackEntry
+	glrStates           []StateID
+	nodeLinks           []*Node
+	stackPick           []int
+	stackKeep           []bool
+	stackCull           []stackCullKey
+	stateKeep           []StateID
+	reduce              reduceBuildScratch
+	budgetBytes         int64
+	budgetBaselineBytes int64
 }
 
 var parserScratchPool = sync.Pool{
@@ -33,6 +34,7 @@ func (s *parserScratch) setBudget(bytes int64) {
 		return
 	}
 	s.budgetBytes = bytes
+	s.budgetBaselineBytes = s.allocatedBytes()
 	s.merge.budgetBytes = bytes
 }
 
@@ -41,6 +43,7 @@ func (s *parserScratch) clearBudget() {
 		return
 	}
 	s.budgetBytes = 0
+	s.budgetBaselineBytes = 0
 	s.merge.budgetBytes = 0
 }
 
@@ -55,7 +58,11 @@ func (s *parserScratch) budgetExhausted() bool {
 	if s == nil || s.budgetBytes <= 0 {
 		return false
 	}
-	return s.allocatedBytes() >= s.budgetBytes
+	used := s.allocatedBytes() - s.budgetBaselineBytes
+	if used < 0 {
+		used = 0
+	}
+	return used >= s.budgetBytes
 }
 
 func releaseParserScratch(s *parserScratch, skipGSSClear bool) {

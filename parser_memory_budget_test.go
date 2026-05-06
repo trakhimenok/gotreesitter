@@ -1,6 +1,7 @@
 package gotreesitter_test
 
 import (
+	"bytes"
 	"testing"
 
 	gotreesitter "github.com/odvcencio/gotreesitter"
@@ -13,7 +14,13 @@ func TestParserMemoryBudgetStopsParse(t *testing.T) {
 	defer gotreesitter.ResetParseEnvConfigCacheForTests()
 
 	parser := gotreesitter.NewParser(grammars.GoLanguage())
-	tree, err := parser.Parse([]byte("package p\nfunc f() { var x = 1 }\n"))
+	var source bytes.Buffer
+	source.WriteString("package p\nfunc f() {\n")
+	for i := 0; i < 20000; i++ {
+		source.WriteString("var x = 1\n")
+	}
+	source.WriteString("}\n")
+	tree, err := parser.Parse(source.Bytes())
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}

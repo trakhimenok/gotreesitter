@@ -4,8 +4,7 @@ import "testing"
 
 func TestArenaMemoryBudgetExhaustedByNodeSlabGrowth(t *testing.T) {
 	arena := newNodeArena(arenaClassIncremental)
-	initial := arena.allocatedBytes
-	arena.setBudget(initial + 1)
+	arena.setBudget(1)
 
 	for i := 0; i < len(arena.nodes); i++ {
 		_ = arena.allocNode()
@@ -22,9 +21,8 @@ func TestArenaMemoryBudgetExhaustedByNodeSlabGrowth(t *testing.T) {
 
 func TestArenaMemoryBudgetExhaustedByChildSlabGrowth(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
-	initial := arena.allocatedBytes
 	base := defaultChildSliceCap(arena.class)
-	arena.setBudget(initial + 1)
+	arena.setBudget(1)
 
 	_ = arena.allocNodeSlice(base)
 	if arena.budgetExhausted() {
@@ -39,9 +37,8 @@ func TestArenaMemoryBudgetExhaustedByChildSlabGrowth(t *testing.T) {
 
 func TestArenaMemoryBudgetExhaustedByFieldSlabGrowth(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
-	initial := arena.allocatedBytes
 	base := defaultFieldSliceCap(arena.class)
-	arena.setBudget(initial + 1)
+	arena.setBudget(1)
 
 	_ = arena.allocFieldIDSlice(base)
 	if arena.budgetExhausted() {
@@ -56,9 +53,8 @@ func TestArenaMemoryBudgetExhaustedByFieldSlabGrowth(t *testing.T) {
 
 func TestArenaMemoryBudgetExhaustedByFieldSourceSlabGrowth(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
-	initial := arena.allocatedBytes
 	base := defaultFieldSliceCap(arena.class)
-	arena.setBudget(initial + 1)
+	arena.setBudget(1)
 
 	_ = arena.allocFieldSourceSlice(base)
 	if arena.budgetExhausted() {
@@ -68,6 +64,26 @@ func TestArenaMemoryBudgetExhaustedByFieldSourceSlabGrowth(t *testing.T) {
 	_ = arena.allocFieldSourceSlice(base)
 	if !arena.budgetExhausted() {
 		t.Fatal("budget not exhausted after field-source slab overflow")
+	}
+}
+
+func TestArenaMemoryBudgetUsesPerParseGrowth(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	arena.allocatedBytes = 96 << 20
+
+	arena.setBudget(64 << 20)
+	if arena.budgetExhausted() {
+		t.Fatal("budget exhausted by retained arena baseline")
+	}
+
+	arena.allocatedBytes += 63 << 20
+	if arena.budgetExhausted() {
+		t.Fatal("budget exhausted before per-parse growth reached budget")
+	}
+
+	arena.allocatedBytes += 1 << 20
+	if !arena.budgetExhausted() {
+		t.Fatal("budget not exhausted after per-parse growth reached budget")
 	}
 }
 
