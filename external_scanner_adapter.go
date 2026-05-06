@@ -12,6 +12,11 @@ type externalScannerOrderAdapter struct {
 	sourceResultToTarget map[Symbol]Symbol
 }
 
+type externalScannerOrderAdapterPayload struct {
+	inner       any
+	sourceValid []bool
+}
+
 func externalSymbolName(lang *Language, sym Symbol) string {
 	if lang == nil {
 		return ""
@@ -35,19 +40,22 @@ func hasDuplicateExternalNames(lang *Language, externals []Symbol) bool {
 }
 
 func (a *externalScannerOrderAdapter) Create() any {
-	return a.inner.Create()
+	return &externalScannerOrderAdapterPayload{
+		inner:       a.inner.Create(),
+		sourceValid: make([]bool, a.sourceCount),
+	}
 }
 
 func (a *externalScannerOrderAdapter) Destroy(payload any) {
-	a.inner.Destroy(payload)
+	a.inner.Destroy(a.innerPayload(payload))
 }
 
 func (a *externalScannerOrderAdapter) Serialize(payload any, buf []byte) int {
-	return a.inner.Serialize(payload, buf)
+	return a.inner.Serialize(a.innerPayload(payload), buf)
 }
 
 func (a *externalScannerOrderAdapter) Deserialize(payload any, buf []byte) {
-	a.inner.Deserialize(payload, buf)
+	a.inner.Deserialize(a.innerPayload(payload), buf)
 }
 
 func (a *externalScannerOrderAdapter) Scan(payload any, lexer *ExternalLexer, validSymbols []bool) bool {
@@ -55,7 +63,21 @@ func (a *externalScannerOrderAdapter) Scan(payload any, lexer *ExternalLexer, va
 		return false
 	}
 
-	sourceValid := make([]bool, a.sourceCount)
+	adapterPayload, _ := payload.(*externalScannerOrderAdapterPayload)
+	var sourceValid []bool
+	innerPayload := payload
+	if adapterPayload != nil {
+		innerPayload = adapterPayload.inner
+		if cap(adapterPayload.sourceValid) < a.sourceCount {
+			adapterPayload.sourceValid = make([]bool, a.sourceCount)
+		}
+		sourceValid = adapterPayload.sourceValid[:a.sourceCount]
+		for i := range sourceValid {
+			sourceValid[i] = false
+		}
+	} else {
+		sourceValid = make([]bool, a.sourceCount)
+	}
 	for targetIdx, isValid := range validSymbols {
 		if !isValid || targetIdx < 0 || targetIdx >= len(a.targetToSource) {
 			continue
@@ -66,7 +88,7 @@ func (a *externalScannerOrderAdapter) Scan(payload any, lexer *ExternalLexer, va
 		}
 	}
 
-	ok := a.inner.Scan(payload, lexer, sourceValid)
+	ok := a.inner.Scan(innerPayload, lexer, sourceValid)
 	if !ok {
 		return false
 	}
@@ -78,6 +100,13 @@ func (a *externalScannerOrderAdapter) Scan(payload any, lexer *ExternalLexer, va
 		}
 	}
 	return true
+}
+
+func (a *externalScannerOrderAdapter) innerPayload(payload any) any {
+	if adapterPayload, ok := payload.(*externalScannerOrderAdapterPayload); ok {
+		return adapterPayload.inner
+	}
+	return payload
 }
 
 // AdaptExternalScannerByExternalOrder builds an ExternalScanner adapter that

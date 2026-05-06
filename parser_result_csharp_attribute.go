@@ -136,6 +136,11 @@ func csharpBuildAttributeListNodeFromSource(source []byte, start, end uint32, la
 	if contentStart > contentEnd {
 		return nil, false
 	}
+	var targetSpec *Node
+	if target, attrStart, ok := csharpBuildAttributeTargetSpecifierFromSource(source, contentStart, contentEnd, lang, arena); ok {
+		targetSpec = target
+		contentStart = attrStart
+	}
 	itemSpans := csharpSplitTopLevelByComma(source, contentStart, contentEnd)
 	if len(itemSpans) == 0 {
 		return nil, false
@@ -154,8 +159,11 @@ func csharpBuildAttributeListNodeFromSource(source []byte, start, end uint32, la
 		commaPos = append(commaPos, pos)
 		cursor = span[1]
 	}
-	children := make([]*Node, 0, len(itemSpans)*2+2)
+	children := make([]*Node, 0, len(itemSpans)*2+3)
 	children = append(children, openTok)
+	if targetSpec != nil {
+		children = append(children, targetSpec)
+	}
 	for i, span := range itemSpans {
 		itemStart, itemEnd := csharpTrimSpaceBounds(source, span[0], span[1])
 		attr, ok := csharpBuildAttributeNodeFromSource(source, itemStart, itemEnd, lang, arena)
@@ -178,6 +186,28 @@ func csharpBuildAttributeListNodeFromSource(source []byte, start, end uint32, la
 		children = buf
 	}
 	return newParentNodeInArena(arena, attrListSym, attrListNamed, children, nil, 0), true
+}
+
+func csharpBuildAttributeTargetSpecifierFromSource(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, uint32, bool) {
+	colonPos, ok := csharpFindTopLevelOperator(source, start, end, ":")
+	if !ok {
+		return nil, start, false
+	}
+	targetStart, targetEnd := csharpTrimSpaceBounds(source, start, colonPos)
+	if targetStart >= targetEnd {
+		return nil, start, false
+	}
+	identStart, identEnd, ok := csharpScanIdentifierAt(source, targetStart)
+	if !ok || identStart != targetStart || identEnd != targetEnd {
+		return nil, start, false
+	}
+	sym, ok := symbolByName(lang, "attribute_target_specifier")
+	if !ok {
+		return nil, start, false
+	}
+	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	target := newLeafNodeInArena(arena, sym, named, targetStart, colonPos+1, advancePointByBytes(Point{}, source[:targetStart]), advancePointByBytes(Point{}, source[:colonPos+1]))
+	return target, csharpSkipSpaceBytes(source, colonPos+1), true
 }
 
 func csharpBuildAttributeNodeFromSource(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {
@@ -294,11 +324,53 @@ func csharpBuildAttributeArgumentNodeFromSource(source []byte, start, end uint32
 		return nil, false
 	}
 	argNamed := int(argSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[argSym].Named
+	if opPos, opName, ok := csharpFindAttributeNamedArgumentOperator(source, start, end); ok {
+		nameStart, nameEnd := csharpTrimSpaceBounds(source, start, opPos)
+		valueStart, valueEnd := csharpTrimSpaceBounds(source, opPos+uint32(len(opName)), end)
+		identStart, identEnd, ok := csharpScanIdentifierAt(source, nameStart)
+		if !ok || identStart != nameStart || identEnd != nameEnd || valueStart >= valueEnd {
+			return nil, false
+		}
+		nameNode, ok := csharpBuildIdentifierNodeFromSource(source, nameStart, nameEnd, lang, arena)
+		if !ok {
+			return nil, false
+		}
+		opTok, ok := csharpBuildLeafNodeByName(arena, source, lang, opName, opPos, opPos+uint32(len(opName)))
+		if !ok {
+			return nil, false
+		}
+		valueNode, ok := csharpBuildAttributeArgumentValueNode(source, valueStart, valueEnd, lang, arena)
+		if !ok {
+			return nil, false
+		}
+		nameFieldID, _ := lang.FieldByName("name")
+		fields := csharpFieldIDsInArena(arena, []FieldID{nameFieldID, 0, 0})
+		children := []*Node{nameNode, opTok, valueNode}
+		if arena != nil {
+			buf := arena.allocNodeSlice(len(children))
+			copy(buf, children)
+			children = buf
+		}
+		return newParentNodeInArena(arena, argSym, argNamed, children, fields, 0), true
+	}
 	valueNode, ok := csharpBuildAttributeArgumentValueNode(source, start, end, lang, arena)
 	if !ok {
 		return nil, false
 	}
 	return newParentNodeInArena(arena, argSym, argNamed, []*Node{valueNode}, nil, 0), true
+}
+
+func csharpFindAttributeNamedArgumentOperator(source []byte, start, end uint32) (uint32, string, bool) {
+	colonPos, colonOK := csharpFindTopLevelOperator(source, start, end, ":")
+	eqPos, eqOK := csharpFindTopLevelAssignment(source, start, end)
+	switch {
+	case colonOK && (!eqOK || colonPos < eqPos):
+		return colonPos, ":", true
+	case eqOK:
+		return eqPos, "=", true
+	default:
+		return 0, "", false
+	}
 }
 
 func csharpBuildAttributeArgumentValueNode(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {
@@ -311,6 +383,9 @@ func csharpBuildAttributeArgumentValueNode(source []byte, start, end uint32, lan
 	}
 	if csharpIsDecimalLiteral(source[start:end]) {
 		return csharpBuildLeafNodeByName(arena, source, lang, "integer_literal", start, end)
+	}
+	if string(source[start:end]) == "true" || string(source[start:end]) == "false" {
+		return csharpBuildLeafNodeByName(arena, source, lang, "boolean_literal", start, end)
 	}
 	if node, ok := csharpBuildMemberAccessNodeFromSource(source, start, end, lang, arena); ok {
 		return node, true

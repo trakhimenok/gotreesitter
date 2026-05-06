@@ -1238,8 +1238,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		arena.ensureNodeCapacity(target)
 		scratch.entries.ensureInitialCap(parseIncrementalEntryScratchCapacity(len(source)))
 	}
-	arena.setBudget(parseMemoryBudget(len(source)))
-	scratch.setBudget(parseMemoryBudget(len(source)))
+	memoryBudget := parseMemoryBudgetForParser(p, len(source))
+	arena.setBudget(memoryBudget)
+	scratch.setBudget(memoryBudget)
 	var reuseState parseReuseState
 	nodeCount := 0
 	iterationsUsed := 0
@@ -1539,6 +1540,12 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 				return finalize(stacks, ParseStopNoStacksAlive)
 			}
 		} else {
+			if arena.budgetExhausted() {
+				return finalize(stacks, ParseStopMemoryBudget)
+			}
+			if scratch.budgetExhausted() {
+				return finalize(stacks, ParseStopMemoryBudget)
+			}
 			allDead := true
 			for i := range stacks {
 				if !stacks[i].dead {
@@ -1627,10 +1634,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		if stateful, ok := ts.(parserStateTokenSource); ok {
 			stateful.SetParserState(stacks[0].top().state)
 			if len(stacks) > 1 {
-				if p.language != nil && p.language.Name == "yaml" && p.language.ExternalScanner != nil {
+				if p.language != nil && (p.language.Name == "yaml" || p.language.Name == "c_sharp") && p.language.ExternalScanner != nil {
 					// External scanners are stateful. Until scanner state is
 					// tracked per GLR stack, drive tokenization from the primary
 					// stack state only to avoid over-admitting tokens from state unions.
+					// C#'s optional semicolon scanner is especially sensitive here:
+					// unioning GLR external states can make zero-width semicolons
+					// valid across too many recovery branches.
 					if len(scratch.glrStates) > 0 {
 						scratch.glrStates = scratch.glrStates[:0]
 					}
@@ -1894,6 +1904,12 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			// For single-action entries (the common case), no fork occurs.
 			// For multi-action entries, clone the stack for each alternative.
 			if len(actions) > 1 {
+				if reuse == nil && p.language != nil && p.language.Name == "c_sharp" {
+					if chosen, ok := csharpRepetitionShiftConflictChoice(p.language, tok, actions); ok {
+						p.applyAction(s, chosen, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
+						continue
+					}
+				}
 				if reuse == nil && p.language != nil && p.language.Name == "go" && maxStacksSeen > 1 && currentState == 3 && tok.Symbol == 15 {
 					if chosen, ok := repetitionShiftConflictChoice(actions); ok {
 						p.applyAction(s, chosen, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
@@ -2133,6 +2149,81 @@ func repetitionShiftConflictChoice(actions []ParseAction) (ParseAction, bool) {
 		return ParseAction{}, false
 	}
 	return shift, true
+}
+
+func csharpRepetitionShiftConflictChoice(lang *Language, tok Token, actions []ParseAction) (ParseAction, bool) {
+	if lang == nil {
+		return ParseAction{}, false
+	}
+	kind := ""
+	for _, act := range actions {
+		if act.Type != ParseActionReduce {
+			continue
+		}
+		name := ""
+		if int(act.Symbol) < len(lang.SymbolNames) {
+			name = lang.SymbolNames[act.Symbol]
+		}
+		nextKind := csharpRepeatConflictKind(name)
+		if nextKind == "" || (kind != "" && kind != nextKind) {
+			return ParseAction{}, false
+		}
+		kind = nextKind
+	}
+	switch kind {
+	case "block":
+		if !csharpCanShiftBlockRepetitionToken(lang, tok) {
+			return ParseAction{}, false
+		}
+	case "declaration_list":
+		if !csharpCanShiftDeclarationListRepetitionToken(lang, tok) {
+			return ParseAction{}, false
+		}
+	default:
+		return ParseAction{}, false
+	}
+	return repetitionShiftConflictChoice(actions)
+}
+
+func csharpRepeatConflictKind(name string) string {
+	switch {
+	case strings.HasSuffix(name, "block_repeat1"):
+		return "block"
+	case strings.HasSuffix(name, "declaration_list_repeat1"):
+		return "declaration_list"
+	default:
+		return ""
+	}
+}
+
+func csharpCanShiftBlockRepetitionToken(lang *Language, tok Token) bool {
+	if int(tok.Symbol) >= len(lang.SymbolNames) {
+		return false
+	}
+	switch lang.SymbolNames[tok.Symbol] {
+	case "this", "base":
+		return true
+	case "identifier":
+		return tok.Text != "scoped"
+	default:
+		return false
+	}
+}
+
+func csharpCanShiftDeclarationListRepetitionToken(lang *Language, tok Token) bool {
+	if int(tok.Symbol) >= len(lang.SymbolNames) {
+		return false
+	}
+	switch lang.SymbolNames[tok.Symbol] {
+	case "abstract", "class", "const", "delegate", "enum", "event", "extern", "file",
+		"fixed", "global", "implicit", "interface", "internal", "namespace", "new",
+		"operator", "override", "partial", "private", "protected", "public", "readonly",
+		"record", "ref", "sealed", "static", "struct", "unsafe", "using", "virtual",
+		"volatile":
+		return true
+	default:
+		return false
+	}
 }
 
 func compactAcceptedStacks(stacks []glrStack) []glrStack {

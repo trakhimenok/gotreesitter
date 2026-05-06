@@ -1,5 +1,7 @@
 package gotreesitter
 
+import "bytes"
+
 func csharpRecoverTopLevelStatementFromRange(source []byte, start, end uint32, p *Parser, arena *nodeArena) (*Node, bool) {
 	if p == nil || p.language == nil || arena == nil || start >= end || int(end) > len(source) {
 		return nil, false
@@ -23,6 +25,25 @@ func csharpRecoverWrappedStatementNodeFromRange(source []byte, start, end uint32
 	start, end = csharpTrimSpaceBounds(source, start, end)
 	if start >= end {
 		return nil, false
+	}
+	if stmt, ok := csharpRecoverUsingStatementFromRange(source, start, end, p, arena); ok {
+		return stmt, true
+	}
+	if stmt, ok := csharpRecoverRefTypeLocalDeclarationStatementFromRange(source, start, end, p.language, arena); ok {
+		return stmt, true
+	}
+	if csharpLocalDeclarationInitializerNeedsSourceRecovery(source, start, end) {
+		if stmt, ok := csharpRecoverLocalDeclarationStatementFromRange(source, start, end, p, arena); ok {
+			return stmt, true
+		}
+	}
+	if bytes.Contains(source[start:end], []byte("scoped")) && bytes.Contains(source[start:end], []byte("=>")) {
+		if stmt, ok := csharpRecoverScopedLambdaLocalDeclarationStatementFromRange(source, start, end, p.language, arena); ok {
+			return stmt, true
+		}
+		if stmt, ok := csharpRecoverLocalDeclarationStatementFromRange(source, start, end, p, arena); ok {
+			return stmt, true
+		}
 	}
 	const prefix = "class __Q { void __M() { "
 	const suffix = " } }\n"
@@ -50,12 +71,26 @@ func csharpRecoverWrappedStatementNodeFromRange(source []byte, start, end uint32
 }
 
 func csharpRecoverTopLevelLocalDeclarationStatementFromRange(source []byte, start, end uint32, p *Parser, arena *nodeArena) (*Node, bool) {
+	stmt, ok := csharpRecoverLocalDeclarationStatementFromRange(source, start, end, p, arena)
+	if !ok {
+		return nil, false
+	}
+	return csharpWrapRecoveredStatementAsGlobal(arena, p.language, stmt)
+}
+
+func csharpRecoverLocalDeclarationStatementFromRange(source []byte, start, end uint32, p *Parser, arena *nodeArena) (*Node, bool) {
 	if p == nil || p.language == nil || arena == nil || start >= end || int(end) > len(source) {
 		return nil, false
 	}
 	start, end = csharpTrimSpaceBounds(source, start, end)
 	if start >= end || source[end-1] != ';' {
 		return nil, false
+	}
+	if stmt, ok := csharpRecoverRefLocalDeclarationStatementFromRange(source, start, end, p, arena); ok {
+		return stmt, true
+	}
+	if stmt, ok := csharpRecoverSimpleVarLocalDeclarationStatementFromRange(source, start, end, p, arena); ok {
+		return stmt, true
 	}
 	stmtEnd := end - 1
 	eqPos, ok := csharpFindTopLevelAssignment(source, start, stmtEnd)
@@ -102,7 +137,305 @@ func csharpRecoverTopLevelLocalDeclarationStatementFromRange(source []byte, star
 		return nil, false
 	}
 	recomputeNodePointsFromBytes(stmt, source)
-	return csharpWrapRecoveredStatementAsGlobal(arena, p.language, stmt)
+	return stmt, true
+}
+
+func csharpRecoverSimpleVarLocalDeclarationStatementFromRange(source []byte, start, end uint32, p *Parser, arena *nodeArena) (*Node, bool) {
+	if p == nil || p.language == nil || arena == nil {
+		return nil, false
+	}
+	start, end = csharpTrimSpaceBounds(source, start, end)
+	if start >= end || int(end) > len(source) || source[end-1] != ';' || !csharpHasKeywordAt(source, start, "var") {
+		return nil, false
+	}
+	stmtEnd := end - 1
+	typeStart, typeEnd, ok := csharpScanIdentifierAt(source, start)
+	if !ok || typeStart != start || string(source[typeStart:typeEnd]) != "var" {
+		return nil, false
+	}
+	nameStart, nameEnd, ok := csharpScanIdentifierAt(source, csharpSkipSpaceBytes(source, typeEnd))
+	if !ok {
+		return nil, false
+	}
+	eqPos := csharpSkipSpaceBytes(source, nameEnd)
+	if eqPos >= stmtEnd || source[eqPos] != '=' {
+		return nil, false
+	}
+	valueStart, valueEnd := csharpTrimSpaceBounds(source, eqPos+1, stmtEnd)
+	if valueStart >= valueEnd || !csharpHasKeywordAt(source, valueStart, "from") {
+		return nil, false
+	}
+	value, ok := csharpRecoverExpressionNodeFromRange(source, valueStart, valueEnd, p, arena)
+	if !ok {
+		return nil, false
+	}
+	return csharpBuildLocalDeclarationStatementNode(source, p.language, arena, start, end, typeStart, typeEnd, nameStart, nameEnd, eqPos, value)
+}
+
+func csharpLocalDeclarationInitializerNeedsSourceRecovery(source []byte, start, end uint32) bool {
+	start, end = csharpTrimSpaceBounds(source, start, end)
+	if start >= end || int(end) > len(source) || source[end-1] != ';' {
+		return false
+	}
+	stmtEnd := end - 1
+	eqPos, ok := csharpFindTopLevelAssignment(source, start, stmtEnd)
+	if !ok {
+		return false
+	}
+	valueStart := csharpSkipSpaceBytes(source, eqPos+1)
+	return csharpHasKeywordAt(source, valueStart, "from") || csharpHasKeywordAt(source, valueStart, "ref")
+}
+
+func csharpRecoverRefLocalDeclarationStatementFromRange(source []byte, start, end uint32, p *Parser, arena *nodeArena) (*Node, bool) {
+	if p == nil || p.language == nil || arena == nil {
+		return nil, false
+	}
+	start, end = csharpTrimSpaceBounds(source, start, end)
+	if start >= end || int(end) > len(source) || source[end-1] != ';' || !csharpHasKeywordAt(source, start, "ref") {
+		return nil, false
+	}
+	stmtEnd := end - 1
+	typeStart, typeEnd, ok := csharpScanIdentifierAt(source, csharpSkipSpaceBytes(source, start+3))
+	if !ok || string(source[typeStart:typeEnd]) != "var" {
+		return nil, false
+	}
+	nameStart, nameEnd, ok := csharpScanIdentifierAt(source, csharpSkipSpaceBytes(source, typeEnd))
+	if !ok {
+		return nil, false
+	}
+	eqPos := csharpSkipSpaceBytes(source, nameEnd)
+	if eqPos >= stmtEnd || source[eqPos] != '=' {
+		return nil, false
+	}
+	valueStart, valueEnd := csharpTrimSpaceBounds(source, eqPos+1, stmtEnd)
+	if valueStart >= valueEnd || !csharpHasKeywordAt(source, valueStart, "ref") {
+		return nil, false
+	}
+	value, ok := csharpRecoverExpressionNodeFromRange(source, valueStart, valueEnd, p, arena)
+	if !ok {
+		return nil, false
+	}
+	lang := p.language
+	localDeclSym, ok := symbolByName(lang, "local_declaration_statement")
+	if !ok {
+		return nil, false
+	}
+	varDeclSym, ok := symbolByName(lang, "variable_declaration")
+	if !ok {
+		return nil, false
+	}
+	declaratorSym, ok := symbolByName(lang, "variable_declarator")
+	if !ok {
+		return nil, false
+	}
+	refTypeSym, ok := symbolByName(lang, "ref_type")
+	if !ok {
+		return nil, false
+	}
+	implicitTypeSym, ok := symbolByName(lang, "implicit_type")
+	if !ok {
+		return nil, false
+	}
+	refTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "ref", start, start+3)
+	if !ok {
+		return nil, false
+	}
+	typeTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "var", typeStart, typeEnd)
+	if !ok {
+		return nil, false
+	}
+	nameNode, ok := csharpBuildIdentifierNodeFromSource(source, nameStart, nameEnd, lang, arena)
+	if !ok {
+		return nil, false
+	}
+	eqTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "=", eqPos, eqPos+1)
+	if !ok {
+		return nil, false
+	}
+	semiTok, ok := csharpBuildLeafNodeByName(arena, source, lang, ";", end-1, end)
+	if !ok {
+		return nil, false
+	}
+	implicitTypeNamed := int(implicitTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[implicitTypeSym].Named
+	refTypeNamed := int(refTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[refTypeSym].Named
+	declaratorNamed := int(declaratorSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[declaratorSym].Named
+	varDeclNamed := int(varDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[varDeclSym].Named
+	localDeclNamed := int(localDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[localDeclSym].Named
+	implicitType := newParentNodeInArena(arena, implicitTypeSym, implicitTypeNamed, []*Node{typeTok}, nil, 0)
+	refType := newParentNodeInArena(arena, refTypeSym, refTypeNamed, []*Node{refTok, implicitType}, nil, 0)
+	nameID, _ := lang.FieldByName("name")
+	typeID, _ := lang.FieldByName("type")
+	valueID, _ := lang.FieldByName("value")
+	declaratorFields := csharpFieldIDsInArena(arena, []FieldID{nameID, 0, valueID})
+	declarator := newParentNodeInArena(arena, declaratorSym, declaratorNamed, []*Node{nameNode, eqTok, value}, declaratorFields, 0)
+	varDeclFields := csharpFieldIDsInArena(arena, []FieldID{typeID, 0})
+	varDecl := newParentNodeInArena(arena, varDeclSym, varDeclNamed, []*Node{refType, declarator}, varDeclFields, 0)
+	stmt := newParentNodeInArena(arena, localDeclSym, localDeclNamed, []*Node{varDecl, semiTok}, nil, 0)
+	recomputeNodePointsFromBytes(stmt, source)
+	return stmt, true
+}
+
+func csharpRecoverRefTypeLocalDeclarationStatementFromRange(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {
+	if lang == nil || arena == nil {
+		return nil, false
+	}
+	start, end = csharpTrimSpaceBounds(source, start, end)
+	if start >= end || int(end) > len(source) || source[end-1] != ';' || !csharpHasKeywordAt(source, start, "ref") {
+		return nil, false
+	}
+	typeStart := csharpSkipSpaceBytes(source, start+3)
+	typeNameStart, typeNameEnd, ok := csharpScanIdentifierAt(source, typeStart)
+	if !ok || typeNameStart != typeStart {
+		return nil, false
+	}
+	starPos := csharpSkipSpaceBytes(source, typeNameEnd)
+	if starPos >= end || source[starPos] != '*' {
+		return nil, false
+	}
+	nameStart, nameEnd, ok := csharpScanIdentifierAt(source, csharpSkipSpaceBytes(source, starPos+1))
+	if !ok || csharpSkipSpaceBytes(source, nameEnd) != end-1 {
+		return nil, false
+	}
+	localDeclSym, ok := symbolByName(lang, "local_declaration_statement")
+	if !ok {
+		return nil, false
+	}
+	varDeclSym, ok := symbolByName(lang, "variable_declaration")
+	if !ok {
+		return nil, false
+	}
+	declaratorSym, ok := symbolByName(lang, "variable_declarator")
+	if !ok {
+		return nil, false
+	}
+	refTypeSym, ok := symbolByName(lang, "ref_type")
+	if !ok {
+		return nil, false
+	}
+	pointerTypeSym, ok := symbolByName(lang, "pointer_type")
+	if !ok {
+		return nil, false
+	}
+	refTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "ref", start, start+3)
+	if !ok {
+		return nil, false
+	}
+	typeNode, ok := csharpBuildTypeNameNodeFromSource(arena, source, lang, typeNameStart, typeNameEnd)
+	if !ok {
+		return nil, false
+	}
+	starTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "*", starPos, starPos+1)
+	if !ok {
+		return nil, false
+	}
+	nameNode, ok := csharpBuildIdentifierNodeFromSource(source, nameStart, nameEnd, lang, arena)
+	if !ok {
+		return nil, false
+	}
+	semiTok, ok := csharpBuildLeafNodeByName(arena, source, lang, ";", end-1, end)
+	if !ok {
+		return nil, false
+	}
+	pointerTypeNamed := int(pointerTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[pointerTypeSym].Named
+	refTypeNamed := int(refTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[refTypeSym].Named
+	declaratorNamed := int(declaratorSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[declaratorSym].Named
+	varDeclNamed := int(varDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[varDeclSym].Named
+	localDeclNamed := int(localDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[localDeclSym].Named
+	pointerType := newParentNodeInArena(arena, pointerTypeSym, pointerTypeNamed, []*Node{typeNode, starTok}, nil, 0)
+	refType := newParentNodeInArena(arena, refTypeSym, refTypeNamed, []*Node{refTok, pointerType}, nil, 0)
+	nameID, _ := lang.FieldByName("name")
+	typeID, _ := lang.FieldByName("type")
+	declaratorFields := csharpFieldIDsInArena(arena, []FieldID{nameID})
+	declarator := newParentNodeInArena(arena, declaratorSym, declaratorNamed, []*Node{nameNode}, declaratorFields, 0)
+	varDeclFields := csharpFieldIDsInArena(arena, []FieldID{typeID, 0})
+	varDecl := newParentNodeInArena(arena, varDeclSym, varDeclNamed, []*Node{refType, declarator}, varDeclFields, 0)
+	stmt := newParentNodeInArena(arena, localDeclSym, localDeclNamed, []*Node{varDecl, semiTok}, nil, 0)
+	recomputeNodePointsFromBytes(stmt, source)
+	return stmt, true
+}
+
+func csharpRecoverScopedLambdaLocalDeclarationStatementFromRange(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {
+	if lang == nil || arena == nil || start >= end || int(end) > len(source) {
+		return nil, false
+	}
+	start, end = csharpTrimSpaceBounds(source, start, end)
+	if start >= end || source[end-1] != ';' {
+		return nil, false
+	}
+	stmtEnd := end - 1
+	varStart, varEnd, ok := csharpScanIdentifierAt(source, start)
+	if !ok || varStart != start || string(source[varStart:varEnd]) != "var" {
+		return nil, false
+	}
+	nameStart, nameEnd, ok := csharpScanIdentifierAt(source, csharpSkipSpaceBytes(source, varEnd))
+	if !ok {
+		return nil, false
+	}
+	eqPos := csharpSkipSpaceBytes(source, nameEnd)
+	if eqPos >= stmtEnd || source[eqPos] != '=' {
+		return nil, false
+	}
+	valueStart, valueEnd := csharpTrimSpaceBounds(source, eqPos+1, stmtEnd)
+	if valueStart >= valueEnd {
+		return nil, false
+	}
+	lambda, ok := csharpRecoverQueryExpressionNodeFromRange(source, valueStart, valueEnd, lang, arena)
+	if !ok || lambda.Type(lang) != "lambda_expression" {
+		return nil, false
+	}
+	return csharpBuildLocalDeclarationStatementNode(source, lang, arena, start, end, varStart, varEnd, nameStart, nameEnd, eqPos, lambda)
+}
+
+func csharpBuildLocalDeclarationStatementNode(source []byte, lang *Language, arena *nodeArena, start, end, typeStart, typeEnd, nameStart, nameEnd, eqPos uint32, value *Node) (*Node, bool) {
+	if lang == nil || arena == nil || value == nil || start >= end || int(end) > len(source) {
+		return nil, false
+	}
+	localDeclSym, ok := symbolByName(lang, "local_declaration_statement")
+	if !ok {
+		return nil, false
+	}
+	varDeclSym, ok := symbolByName(lang, "variable_declaration")
+	if !ok {
+		return nil, false
+	}
+	declaratorSym, ok := symbolByName(lang, "variable_declarator")
+	if !ok {
+		return nil, false
+	}
+	implicitTypeSym, ok := symbolByName(lang, "implicit_type")
+	if !ok {
+		return nil, false
+	}
+	typeTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "var", typeStart, typeEnd)
+	if !ok {
+		return nil, false
+	}
+	nameNode, ok := csharpBuildIdentifierNodeFromSource(source, nameStart, nameEnd, lang, arena)
+	if !ok {
+		return nil, false
+	}
+	eqTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "=", eqPos, eqPos+1)
+	if !ok {
+		return nil, false
+	}
+	semiTok, ok := csharpBuildLeafNodeByName(arena, source, lang, ";", end-1, end)
+	if !ok {
+		return nil, false
+	}
+
+	implicitTypeNamed := int(implicitTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[implicitTypeSym].Named
+	declaratorNamed := int(declaratorSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[declaratorSym].Named
+	varDeclNamed := int(varDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[varDeclSym].Named
+	localDeclNamed := int(localDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[localDeclSym].Named
+	typeNode := newParentNodeInArena(arena, implicitTypeSym, implicitTypeNamed, []*Node{typeTok}, nil, 0)
+	nameID, _ := lang.FieldByName("name")
+	typeID, _ := lang.FieldByName("type")
+	valueID, _ := lang.FieldByName("value")
+	declaratorFields := csharpFieldIDsInArena(arena, []FieldID{nameID, 0, valueID})
+	declarator := newParentNodeInArena(arena, declaratorSym, declaratorNamed, []*Node{nameNode, eqTok, value}, declaratorFields, 0)
+	varDeclFields := csharpFieldIDsInArena(arena, []FieldID{typeID, 0})
+	varDecl := newParentNodeInArena(arena, varDeclSym, varDeclNamed, []*Node{typeNode, declarator}, varDeclFields, 0)
+	return newParentNodeInArena(arena, localDeclSym, localDeclNamed, []*Node{varDecl, semiTok}, nil, 0), true
 }
 
 func csharpRecoverTopLevelLocalFunctionStatementFromRange(source []byte, start, end uint32, p *Parser, arena *nodeArena) (*Node, bool) {
@@ -335,12 +668,302 @@ func csharpRecoverMethodBlockStatementsFromRange(source []byte, start, end uint3
 			}
 			stmt, ok := csharpRecoverWrappedStatementNodeFromRange(source, part[0], part[1], p, arena)
 			if !ok {
-				return nil, false
+				stmt, ok = csharpRecoverOpaqueMethodStatementFromRange(source, part[0], part[1], p.language, arena)
+				if !ok {
+					return nil, false
+				}
 			}
 			out = append(out, stmt)
 		}
 	}
 	return out, true
+}
+
+func normalizeCSharpRecoveredMethodBlocks(root *Node, source []byte, p *Parser) {
+	if root == nil || p == nil || p.language == nil || p.language.Name != "c_sharp" || len(source) == 0 {
+		return
+	}
+	var walk func(*Node)
+	walk = func(n *Node) {
+		if n == nil {
+			return
+		}
+		if n.Type(p.language) == "block" && csharpBlockNeedsSourceStatementRecovery(n, source, p.language) {
+			if recovered, ok := csharpRecoverMethodBlockFromSource(n, source, p); ok {
+				csharpReplaceNodeContents(n, recovered)
+			}
+		}
+		for _, child := range n.children {
+			walk(child)
+		}
+	}
+	walk(root)
+}
+
+func csharpBlockNeedsSourceStatementRecovery(block *Node, source []byte, lang *Language) bool {
+	if block == nil || lang == nil || block.Type(lang) != "block" ||
+		block.startByte >= block.endByte || int(block.endByte) > len(source) ||
+		block.endByte-block.startByte > csharpMaxTopLevelChunkRecoverySourceBytes {
+		return false
+	}
+	for _, child := range block.children {
+		if csharpStatementNeedsSourceRecovery(child, source, lang) {
+			return true
+		}
+	}
+	return false
+}
+
+func csharpStatementsNeedSourceRecovery(statements []*Node, source []byte, lang *Language) bool {
+	for _, stmt := range statements {
+		if csharpStatementNeedsSourceRecovery(stmt, source, lang) {
+			return true
+		}
+	}
+	return false
+}
+
+func csharpStatementNeedsSourceRecovery(stmt *Node, source []byte, lang *Language) bool {
+	if stmt == nil || lang == nil || stmt.Type(lang) != "expression_statement" ||
+		stmt.startByte >= stmt.endByte || int(stmt.endByte) > len(source) {
+		return false
+	}
+	var named []*Node
+	for _, child := range stmt.children {
+		if child != nil && child.IsNamed() {
+			named = append(named, child)
+		}
+	}
+	if len(named) != 1 || named[0] == nil || named[0].Type(lang) != "identifier" {
+		return false
+	}
+	ident := named[0]
+	exprStart, exprEnd := csharpTrimSpaceBounds(source, stmt.startByte, stmt.endByte)
+	if exprEnd > exprStart && source[exprEnd-1] == ';' {
+		exprEnd = csharpTrimRightSpaceBytes(source, exprEnd-1)
+	}
+	if exprStart != ident.startByte || exprEnd != ident.endByte {
+		return true
+	}
+	return !csharpSourceSpanIsSimpleIdentifier(source, ident.startByte, ident.endByte)
+}
+
+func csharpSourceSpanIsSimpleIdentifier(source []byte, start, end uint32) bool {
+	identStart, identEnd, ok := csharpScanIdentifierAt(source, start)
+	return ok && identStart == start && identEnd == end
+}
+
+func csharpRecoverMethodBlockFromSource(block *Node, source []byte, p *Parser) (*Node, bool) {
+	if block == nil || p == nil || p.language == nil || block.ownerArena == nil ||
+		block.startByte >= block.endByte || int(block.endByte) > len(source) ||
+		block.endByte-block.startByte > csharpMaxTopLevelChunkRecoverySourceBytes {
+		return nil, false
+	}
+	openBrace := block.startByte
+	if source[openBrace] != '{' {
+		found := false
+		for i := block.startByte; i < block.endByte && int(i) < len(source); i++ {
+			if source[i] == '{' {
+				openBrace = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, false
+		}
+	}
+	closeBrace := block.endByte - 1
+	if source[closeBrace] != '}' {
+		found := false
+		for i := block.endByte; i > openBrace; i-- {
+			if source[i-1] == '}' {
+				closeBrace = i - 1
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, false
+		}
+	}
+	statements, ok := csharpRecoverMethodBlockStatementsFromRange(source, openBrace+1, closeBrace, p, block.ownerArena)
+	if !ok {
+		return nil, false
+	}
+	return csharpBuildRecoveredMethodBlockNode(source, p.language, block.ownerArena, openBrace, closeBrace, statements)
+}
+
+func csharpRecoverUsingStatementFromRange(source []byte, start, end uint32, p *Parser, arena *nodeArena) (*Node, bool) {
+	if p == nil || p.language == nil || arena == nil {
+		return nil, false
+	}
+	start, end = csharpTrimSpaceBounds(source, start, end)
+	if start >= end || int(end) > len(source) || !csharpHasKeywordAt(source, start, "using") {
+		return nil, false
+	}
+	openParen := csharpSkipSpaceBytes(source, start+5)
+	if openParen >= end || source[openParen] != '(' {
+		return nil, false
+	}
+	closeParen, ok := csharpFindMatchingParenByte(source, openParen, end)
+	if !ok {
+		return nil, false
+	}
+	blockStart := csharpSkipSpaceBytes(source, closeParen+1)
+	if blockStart >= end || source[blockStart] != '{' {
+		return nil, false
+	}
+	blockEnd := findMatchingBraceByte(source, int(blockStart), int(end))
+	if blockEnd < 0 || uint32(blockEnd+1) != end {
+		return nil, false
+	}
+	decl, ok := csharpBuildUsingVariableDeclarationNode(source, openParen+1, closeParen, p.language, arena)
+	if !ok {
+		return nil, false
+	}
+	statements, ok := csharpRecoverMethodBlockStatementsFromRange(source, blockStart+1, uint32(blockEnd), p, arena)
+	if !ok {
+		return nil, false
+	}
+	block, ok := csharpBuildRecoveredMethodBlockNode(source, p.language, arena, blockStart, uint32(blockEnd), statements)
+	if !ok {
+		return nil, false
+	}
+	sym, ok := symbolByName(p.language, "using_statement")
+	if !ok {
+		return nil, false
+	}
+	named := int(sym) < len(p.language.SymbolMetadata) && p.language.SymbolMetadata[sym].Named
+	usingTok, ok := csharpBuildLeafNodeByName(arena, source, p.language, "using", start, start+5)
+	if !ok {
+		return nil, false
+	}
+	openTok, ok := csharpBuildLeafNodeByName(arena, source, p.language, "(", openParen, openParen+1)
+	if !ok {
+		return nil, false
+	}
+	closeTok, ok := csharpBuildLeafNodeByName(arena, source, p.language, ")", closeParen, closeParen+1)
+	if !ok {
+		return nil, false
+	}
+	children := []*Node{usingTok, openTok, decl, closeTok, block}
+	buf := arena.allocNodeSlice(len(children))
+	copy(buf, children)
+	stmt := newParentNodeInArena(arena, sym, named, buf, nil, 0)
+	recomputeNodePointsFromBytes(stmt, source)
+	return stmt, true
+}
+
+func csharpBuildUsingVariableDeclarationNode(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {
+	start, end = csharpTrimSpaceBounds(source, start, end)
+	if lang == nil || arena == nil || start >= end || int(end) > len(source) {
+		return nil, false
+	}
+	typeStart, typeEnd, ok := csharpScanIdentifierAt(source, start)
+	if !ok || typeStart != start {
+		return nil, false
+	}
+	typeNode, ok := csharpBuildTypeNameNodeFromSource(arena, source, lang, typeStart, typeEnd)
+	if !ok {
+		return nil, false
+	}
+	cursor := csharpSkipSpaceBytes(source, typeEnd)
+	items := csharpSplitTopLevelByComma(source, cursor, end)
+	if len(items) == 0 {
+		return nil, false
+	}
+	declarators := make([]*Node, 0, len(items))
+	for _, span := range items {
+		nameStart, nameEnd, ok := csharpScanIdentifierAt(source, csharpSkipSpaceBytes(source, span[0]))
+		if !ok {
+			return nil, false
+		}
+		eqPos := csharpSkipSpaceBytes(source, nameEnd)
+		if eqPos >= span[1] || source[eqPos] != '=' {
+			return nil, false
+		}
+		valueStart, valueEnd := csharpTrimSpaceBounds(source, eqPos+1, span[1])
+		if valueStart >= valueEnd {
+			return nil, false
+		}
+		value, ok := csharpRecoverQueryExpressionNodeFromRange(source, valueStart, valueEnd, lang, arena)
+		if !ok {
+			return nil, false
+		}
+		declarator, ok := csharpBuildVariableDeclaratorNode(source, lang, arena, nameStart, nameEnd, eqPos, value)
+		if !ok {
+			return nil, false
+		}
+		declarators = append(declarators, declarator)
+	}
+	varDeclSym, ok := symbolByName(lang, "variable_declaration")
+	if !ok {
+		return nil, false
+	}
+	children := make([]*Node, 0, 1+len(declarators))
+	children = append(children, typeNode)
+	children = append(children, declarators...)
+	buf := arena.allocNodeSlice(len(children))
+	copy(buf, children)
+	typeID, _ := lang.FieldByName("type")
+	fields := make([]FieldID, len(children))
+	fields[0] = typeID
+	fieldIDs := csharpFieldIDsInArena(arena, fields)
+	named := int(varDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[varDeclSym].Named
+	return newParentNodeInArena(arena, varDeclSym, named, buf, fieldIDs, 0), true
+}
+
+func csharpBuildVariableDeclaratorNode(source []byte, lang *Language, arena *nodeArena, nameStart, nameEnd, eqPos uint32, value *Node) (*Node, bool) {
+	declaratorSym, ok := symbolByName(lang, "variable_declarator")
+	if !ok {
+		return nil, false
+	}
+	nameNode, ok := csharpBuildIdentifierNodeFromSource(source, nameStart, nameEnd, lang, arena)
+	if !ok {
+		return nil, false
+	}
+	eqTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "=", eqPos, eqPos+1)
+	if !ok {
+		return nil, false
+	}
+	nameID, _ := lang.FieldByName("name")
+	valueID, _ := lang.FieldByName("value")
+	fields := csharpFieldIDsInArena(arena, []FieldID{nameID, 0, valueID})
+	named := int(declaratorSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[declaratorSym].Named
+	return newParentNodeInArena(arena, declaratorSym, named, []*Node{nameNode, eqTok, value}, fields, 0), true
+}
+
+func csharpRecoverOpaqueMethodStatementFromRange(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {
+	start, end = csharpTrimSpaceBounds(source, start, end)
+	if lang == nil || arena == nil || start >= end || int(end) > len(source) {
+		return nil, false
+	}
+	exprEnd := end
+	if exprEnd > start && source[exprEnd-1] == ';' {
+		exprEnd = csharpTrimRightSpaceBytes(source, exprEnd-1)
+	}
+	if exprEnd <= start {
+		exprEnd = end
+	}
+	exprSym, ok := symbolByName(lang, "identifier")
+	if !ok {
+		return nil, false
+	}
+	stmtSym, ok := symbolByName(lang, "expression_statement")
+	if !ok {
+		return nil, false
+	}
+	exprNamed := int(exprSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[exprSym].Named
+	stmtNamed := int(stmtSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[stmtSym].Named
+	expr := newLeafNodeInArena(arena, exprSym, exprNamed, start, exprEnd, advancePointByBytes(Point{}, source[:start]), advancePointByBytes(Point{}, source[:exprEnd]))
+	children := []*Node{expr}
+	if semi, ok := csharpBuildLeafNodeByName(arena, source, lang, ";", end-1, end); ok && source[end-1] == ';' {
+		children = append(children, semi)
+	}
+	buf := arena.allocNodeSlice(len(children))
+	copy(buf, children)
+	return newParentNodeInArena(arena, stmtSym, stmtNamed, buf, nil, 0), true
 }
 
 func csharpFindFirstNamedDescendantOfType(root *Node, lang *Language, want string) *Node {

@@ -291,143 +291,168 @@ func TestMultiGrammarImportRealCorpusParity(t *testing.T) {
 					break
 				}
 				seen++
-				genTree, _ := genParser.Parse([]byte(cand.Text))
-				refTree, _ := refParser.Parse([]byte(cand.Text))
-
-				genRoot := genTree.RootNode()
-				refRoot := refTree.RootNode()
-
-				// Safety: skip samples with pathologically deep parse trees
-				// (e.g. HCL's 189K-deep recursive tree) to prevent goroutine
-				// stack overflow during SExpr serialization. Use safeSExpr
-				// which limits recursion depth; an empty return signals truncation.
-				const maxSafeDepth = 2000
-				genSexp := safeSExpr(genRoot, genLang, maxSafeDepth)
-				refSexp := safeSExpr(refRoot, refLang, maxSafeDepth)
-				if genSexp == "" && refSexp == "" {
-					t.Logf("real-corpus: skipping sample %d (%s:%s) — tree too deep to serialize",
-						i, cand.Source, cand.Path)
-					continue
-				}
-
-				refHasError := strings.Contains(refSexp, "ERROR") ||
-					strings.Contains(refSexp, "MISSING") ||
-					refRoot.HasError()
-				if refHasError {
-					continue
-				}
-				metrics.Eligible++
-
-				genHasError := strings.Contains(genSexp, "ERROR") || strings.Contains(genSexp, "MISSING")
-				if genHasError {
-					if mismatchLogs < 25 {
-						mismatchLogs++
-						t.Logf("sample %d (%s:%s) gen ERROR on clean ref: %s",
-							i, cand.Source, cand.Path,
-							genSexp[:min(len(genSexp), 200)])
-						// Dump source text for ERROR diagnosis (truncated).
-						srcDump := cand.Text
-						if len(srcDump) > 500 {
-							srcDump = srcDump[:500] + "..."
-						}
-						t.Logf("  error-src[%d bytes]: %q", len(cand.Text), srcDump)
-						t.Logf("  ref-sexpr: %s", refSexp[:min(len(refSexp), 400)])
+				stop := false
+				func() {
+					genTree, _ := genParser.Parse([]byte(cand.Text))
+					refTree, _ := refParser.Parse([]byte(cand.Text))
+					if genTree != nil {
+						defer genTree.Release()
 					}
-					continue
-				}
-				metrics.NoError++
+					if refTree != nil {
+						defer refTree.Release()
+					}
 
-				sexprMatch := genSexp == refSexp
-				// Normalize unicode escapes: ts2go blobs may have \uXXXX
-				// in symbol names from C source, grammargen uses UTF-8.
-				if !sexprMatch && strings.Contains(refSexp, `\u`) {
-					sexprMatch = unescapeUnicodeInType(genSexp) == unescapeUnicodeInType(refSexp)
-				}
-				if !sexprMatch {
-					refRootType := refRoot.Type(refLang)
-					genRootType := genRoot.Type(genLang)
-					// When the reference root type is empty or the ref root
-					// is error (ts2go extraction issue), the SExprs may differ
-					// only in the root node name. Normalize by stripping the
-					// root wrapper from both and comparing inner content.
-					if (refRootType == "" || refRoot.IsError()) && genRootType != "" {
-						genInner := stripSExprRoot(genSexp)
-						refInner := stripSExprRoot(refSexp)
-						if genInner != "" && genInner == refInner {
-							sexprMatch = true
-						}
+					genRoot := genTree.RootNode()
+					refRoot := refTree.RootNode()
+
+					// Safety: skip samples with pathologically deep parse trees
+					// (e.g. HCL's 189K-deep recursive tree) to prevent goroutine
+					// stack overflow during SExpr serialization. Use safeSExpr
+					// which limits recursion depth; an empty return signals truncation.
+					const maxSafeDepth = 2000
+					refSexp := safeSExpr(refRoot, refLang, maxSafeDepth)
+					if refSexp == "" {
+						t.Logf("real-corpus: skipping sample %d (%s:%s) — reference tree too large or deep to serialize",
+							i, cand.Source, cand.Path)
+						return
 					}
-					// When ref root is unnamed (ts2go metadata issue),
-					// SExpr returns "" for it. Reconstruct the ref
-					// SExpr from its children using the gen root type,
-					// matching deep comparison's leniency at root level.
-					if !sexprMatch && genRoot.IsNamed() && !refRoot.IsNamed() && genRootType != "" {
-						reconstructed := rebuildRootSExpr(refRoot, refLang, genRootType)
-						if genSexp == reconstructed {
-							sexprMatch = true
-						}
+
+					refHasError := strings.Contains(refSexp, "ERROR") ||
+						strings.Contains(refSexp, "MISSING") ||
+						refRoot.HasError()
+					if refHasError {
+						return
 					}
-				}
-				divs := compareTreesDeep(genRoot, genLang, refRoot, refLang, "root", 10)
-				if len(divs) == 0 {
-					metrics.DeepParity++
-					// Deep parity is stricter than SExpr parity (checks
-					// types, ranges, childCounts, named at every node).
-					// If deep passes, count SExpr as matching even if
-					// the SExpr strings differ due to Language metadata
-					// differences (visibility, named) between gen/ref.
-					sexprMatch = true
-				} else {
-					// Always record div categories regardless of sexpr status,
-					// so the summary captures deep-only failures too.
-					divCategoryCounts[divs[0].Category]++
-				}
-				if sexprMatch {
-					metrics.SExprParity++
-				}
-				if len(divs) > 0 {
-					if !sexprMatch && requireParity {
-						t.Fatalf("sample %d (%s:%s) deep parity mismatch: %s\nGEN: %s\nREF: %s",
-							i, cand.Source, cand.Path, divs[0].String(), genSexp, refSexp)
-					} else if mismatchLogs < 25 {
-						mismatchLogs++
-						t.Logf("sample %d (%s:%s) deep mismatch: %s", i, cand.Source, cand.Path, divs[0].String())
-						if divs[0].Category == "type" && (divs[0].GenValue == "" || divs[0].RefValue == "") {
-							t.Logf("  root-diag: genRoot.symbol=%d genRoot.Type=%q refRoot.symbol=%d refRoot.Type=%q genSymNames=%d",
-								genRoot.Symbol(), genRoot.Type(genLang), refRoot.Symbol(), refRoot.Type(refLang), len(genLang.SymbolNames))
+					metrics.Eligible++
+
+					genSexp := safeSExpr(genRoot, genLang, maxSafeDepth)
+					if genSexp == "" {
+						if requireParity {
+							t.Fatalf("sample %d (%s:%s) generated tree too large or deep to serialize on clean ref",
+								i, cand.Source, cand.Path)
 						}
-						if divs[0].Category == "childCount" {
-							logChildCountDiag(t, divs[0], genRoot, refRoot, genLang, refLang)
+						if mismatchLogs < 25 {
+							mismatchLogs++
+							t.Logf("sample %d (%s:%s) generated tree too large or deep to serialize on clean ref",
+								i, cand.Source, cand.Path)
 						}
-						// Dump all divergences with source text for type mismatches
-						for di, dv := range divs {
-							if di >= 10 {
-								break
+						return
+					}
+
+					genHasError := strings.Contains(genSexp, "ERROR") || strings.Contains(genSexp, "MISSING")
+					if genHasError {
+						if mismatchLogs < 25 {
+							mismatchLogs++
+							t.Logf("sample %d (%s:%s) gen ERROR on clean ref: %s",
+								i, cand.Source, cand.Path,
+								genSexp[:min(len(genSexp), 200)])
+							// Dump source text for ERROR diagnosis (truncated).
+							srcDump := cand.Text
+							if len(srcDump) > 500 {
+								srcDump = srcDump[:500] + "..."
 							}
-							t.Logf("  div[%d]: %s", di, dv.String())
-							// Walk the path to find the divergent nodes and dump source
-							genN := findNodeByPath(genRoot, genLang, dv.Path)
-							refN := findNodeByPath(refRoot, refLang, dv.Path)
-							if genN != nil {
-								start := genN.StartByte()
-								end := genN.EndByte()
-								if int(end) <= len(cand.Text) && (end-start) < 200 {
-									t.Logf("  gen-src[%d:%d]: %q", start, end, cand.Text[start:end])
+							t.Logf("  error-src[%d bytes]: %q", len(cand.Text), srcDump)
+							t.Logf("  ref-sexpr: %s", refSexp[:min(len(refSexp), 400)])
+						}
+						return
+					}
+					metrics.NoError++
+
+					sexprMatch := genSexp == refSexp
+					// Normalize unicode escapes: ts2go blobs may have \uXXXX
+					// in symbol names from C source, grammargen uses UTF-8.
+					if !sexprMatch && strings.Contains(refSexp, `\u`) {
+						sexprMatch = unescapeUnicodeInType(genSexp) == unescapeUnicodeInType(refSexp)
+					}
+					if !sexprMatch {
+						refRootType := refRoot.Type(refLang)
+						genRootType := genRoot.Type(genLang)
+						// When the reference root type is empty or the ref root
+						// is error (ts2go extraction issue), the SExprs may differ
+						// only in the root node name. Normalize by stripping the
+						// root wrapper from both and comparing inner content.
+						if (refRootType == "" || refRoot.IsError()) && genRootType != "" {
+							genInner := stripSExprRoot(genSexp)
+							refInner := stripSExprRoot(refSexp)
+							if genInner != "" && genInner == refInner {
+								sexprMatch = true
+							}
+						}
+						// When ref root is unnamed (ts2go metadata issue),
+						// SExpr returns "" for it. Reconstruct the ref
+						// SExpr from its children using the gen root type,
+						// matching deep comparison's leniency at root level.
+						if !sexprMatch && genRoot.IsNamed() && !refRoot.IsNamed() && genRootType != "" {
+							reconstructed := rebuildRootSExpr(refRoot, refLang, genRootType)
+							if genSexp == reconstructed {
+								sexprMatch = true
+							}
+						}
+					}
+					divs := compareTreesDeep(genRoot, genLang, refRoot, refLang, "root", 10)
+					if len(divs) == 0 {
+						metrics.DeepParity++
+						// Deep parity is stricter than SExpr parity (checks
+						// types, ranges, childCounts, named at every node).
+						// If deep passes, count SExpr as matching even if
+						// the SExpr strings differ due to Language metadata
+						// differences (visibility, named) between gen/ref.
+						sexprMatch = true
+					} else {
+						// Always record div categories regardless of sexpr status,
+						// so the summary captures deep-only failures too.
+						divCategoryCounts[divs[0].Category]++
+					}
+					if sexprMatch {
+						metrics.SExprParity++
+					}
+					if len(divs) > 0 {
+						if !sexprMatch && requireParity {
+							t.Fatalf("sample %d (%s:%s) deep parity mismatch: %s\nGEN: %s\nREF: %s",
+								i, cand.Source, cand.Path, divs[0].String(), genSexp, refSexp)
+						} else if mismatchLogs < 25 {
+							mismatchLogs++
+							t.Logf("sample %d (%s:%s) deep mismatch: %s", i, cand.Source, cand.Path, divs[0].String())
+							if divs[0].Category == "type" && (divs[0].GenValue == "" || divs[0].RefValue == "") {
+								t.Logf("  root-diag: genRoot.symbol=%d genRoot.Type=%q refRoot.symbol=%d refRoot.Type=%q genSymNames=%d",
+									genRoot.Symbol(), genRoot.Type(genLang), refRoot.Symbol(), refRoot.Type(refLang), len(genLang.SymbolNames))
+							}
+							if divs[0].Category == "childCount" {
+								logChildCountDiag(t, divs[0], genRoot, refRoot, genLang, refLang)
+							}
+							// Dump all divergences with source text for type mismatches
+							for di, dv := range divs {
+								if di >= 10 {
+									break
 								}
-								t.Logf("  gen-sexpr: %s", safeSExpr(genN, genLang, 100))
-							}
-							if refN != nil {
-								start := refN.StartByte()
-								end := refN.EndByte()
-								if int(end) <= len(cand.Text) && (end-start) < 200 {
-									t.Logf("  ref-src[%d:%d]: %q", start, end, cand.Text[start:end])
+								t.Logf("  div[%d]: %s", di, dv.String())
+								// Walk the path to find the divergent nodes and dump source
+								genN := findNodeByPath(genRoot, genLang, dv.Path)
+								refN := findNodeByPath(refRoot, refLang, dv.Path)
+								if genN != nil {
+									start := genN.StartByte()
+									end := genN.EndByte()
+									if int(end) <= len(cand.Text) && (end-start) < 200 {
+										t.Logf("  gen-src[%d:%d]: %q", start, end, cand.Text[start:end])
+									}
+									t.Logf("  gen-sexpr: %s", safeSExpr(genN, genLang, 100))
 								}
-								t.Logf("  ref-sexpr: %s", safeSExpr(refN, refLang, 100))
+								if refN != nil {
+									start := refN.StartByte()
+									end := refN.EndByte()
+									if int(end) <= len(cand.Text) && (end-start) < 200 {
+										t.Logf("  ref-src[%d:%d]: %q", start, end, cand.Text[start:end])
+									}
+									t.Logf("  ref-sexpr: %s", safeSExpr(refN, refLang, 100))
+								}
 							}
 						}
 					}
-				}
-				if metrics.Eligible >= maxCases {
+					if metrics.Eligible >= maxCases {
+						stop = true
+					}
+				}()
+				if stop {
 					break
 				}
 			}
@@ -930,6 +955,13 @@ func newCandidate(text, path string, source realCorpusSampleSource, maxSampleByt
 	if source == realCorpusSourceRepoRaw && strings.Contains(path, "%") {
 		return realCorpusSampleCandidate{}, false
 	}
+	// The tree-sitter-c-sharp highlighter baseline is a synthetic aggregate of
+	// many unrelated constructs plus caret assertion comments. Keep focused
+	// highlight fixtures in the corpus, but avoid letting this one all-in-one
+	// stress file dominate the per-grammar real-corpus gate.
+	if source == realCorpusSourceRepoRaw && strings.HasSuffix(filepath.ToSlash(path), "/test/highlight/baseline.cs") {
+		return realCorpusSampleCandidate{}, false
+	}
 	normalized := strings.ReplaceAll(text, "\r\n", "\n")
 	trimmed := strings.TrimSpace(normalized)
 	if trimmed == "" || len(trimmed) > maxSampleBytes || !utf8.ValidString(normalized) || strings.ContainsRune(normalized, '\x00') {
@@ -1103,39 +1135,44 @@ func safeSExpr(n *gotreesitter.Node, lang *gotreesitter.Language, maxDepth int) 
 	if n == nil || lang == nil {
 		return ""
 	}
-	var rec func(node *gotreesitter.Node, depth int) string
-	rec = func(node *gotreesitter.Node, depth int) string {
+	const maxNodes = 50_000
+	const maxChars = 2 * 1024 * 1024
+	visited := 0
+	var b strings.Builder
+	var rec func(node *gotreesitter.Node, depth int) bool
+	rec = func(node *gotreesitter.Node, depth int) bool {
 		if node == nil || !node.IsNamed() {
-			return ""
+			return true
 		}
-		if depth > maxDepth {
-			return "\x00" // sentinel: truncated
+		visited++
+		if visited > maxNodes || depth > maxDepth || b.Len() > maxChars {
+			return false
 		}
 		name := node.Type(lang)
+		b.WriteByte('(')
+		b.WriteString(name)
 		cc := node.ChildCount()
 		if cc == 0 {
-			return "(" + name + ")"
+			b.WriteByte(')')
+			return b.Len() <= maxChars
 		}
-		parts := make([]string, 0, cc)
 		for i := 0; i < cc; i++ {
-			s := rec(node.Child(i), depth+1)
-			if s == "\x00" {
-				return "\x00"
+			child := node.Child(i)
+			if child == nil || !child.IsNamed() {
+				continue
 			}
-			if s != "" {
-				parts = append(parts, s)
+			b.WriteByte(' ')
+			if !rec(child, depth+1) {
+				return false
 			}
 		}
-		if len(parts) == 0 {
-			return "(" + name + ")"
-		}
-		return "(" + name + " " + strings.Join(parts, " ") + ")"
+		b.WriteByte(')')
+		return b.Len() <= maxChars
 	}
-	result := rec(n, 0)
-	if result == "\x00" {
+	if !rec(n, 0) {
 		return "" // signal: too deep
 	}
-	return result
+	return b.String()
 }
 
 // stripSExprRoot removes the outermost S-expression wrapper, returning only

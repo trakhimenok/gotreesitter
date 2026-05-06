@@ -129,6 +129,75 @@ func csharpFindLastTopLevelOperator(source []byte, start, end uint32, op string)
 	return last, found
 }
 
+func csharpFindTopLevelKeyword(source []byte, start, end uint32, kw string) (uint32, bool) {
+	if start >= end || kw == "" {
+		return 0, false
+	}
+	parens := 0
+	braces := 0
+	brackets := 0
+	inString := false
+	escape := false
+	kwLen := uint32(len(kw))
+	for i := start; i+kwLen <= end; i++ {
+		b := source[i]
+		if inString {
+			if escape {
+				escape = false
+				continue
+			}
+			if b == '\\' {
+				escape = true
+				continue
+			}
+			if b == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch b {
+		case '"':
+			inString = true
+			continue
+		case '(':
+			parens++
+			continue
+		case ')':
+			if parens > 0 {
+				parens--
+			}
+			continue
+		case '{':
+			braces++
+			continue
+		case '}':
+			if braces > 0 {
+				braces--
+			}
+			continue
+		case '[':
+			brackets++
+			continue
+		case ']':
+			if brackets > 0 {
+				brackets--
+			}
+			continue
+		}
+		if parens != 0 || braces != 0 || brackets != 0 || string(source[i:i+kwLen]) != kw {
+			continue
+		}
+		if i > start && csharpIdentifierContinueByte(source[i-1]) {
+			continue
+		}
+		if i+kwLen < end && csharpIdentifierContinueByte(source[i+kwLen]) {
+			continue
+		}
+		return i, true
+	}
+	return 0, false
+}
+
 func csharpFindConditionalColon(source []byte, start, end uint32) (uint32, bool) {
 	parens := 0
 	braces := 0

@@ -97,6 +97,63 @@ func csharpRewriteConditionalIsPatternExpression(n *Node, lang *Language, isPatt
 	return true
 }
 
+func normalizeCSharpConditionalIsPatternInitializers(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "c_sharp" || len(source) == 0 {
+		return
+	}
+	var walk func(*Node)
+	walk = func(n *Node) {
+		if n == nil {
+			return
+		}
+		if n.Type(lang) == "local_declaration_statement" {
+			csharpRewriteConditionalIsPatternInitializer(n, source, lang)
+		}
+		for _, child := range n.children {
+			walk(child)
+		}
+	}
+	walk(root)
+}
+
+func csharpRewriteConditionalIsPatternInitializer(stmt *Node, source []byte, lang *Language) bool {
+	if stmt == nil || lang == nil || stmt.ownerArena == nil || stmt.startByte >= stmt.endByte || int(stmt.endByte) > len(source) {
+		return false
+	}
+	if source[stmt.endByte-1] != ';' {
+		return false
+	}
+	stmtEnd := stmt.endByte - 1
+	eqPos, ok := csharpFindTopLevelAssignment(source, stmt.startByte, stmtEnd)
+	if !ok {
+		return false
+	}
+	valueStart := csharpSkipSpaceBytes(source, eqPos+1)
+	valueEnd := csharpTrimRightSpaceBytes(source, stmtEnd)
+	if valueStart >= valueEnd {
+		return false
+	}
+	qPos, ok := csharpFindTopLevelOperator(source, valueStart, valueEnd, "?")
+	if !ok {
+		return false
+	}
+	if _, ok := csharpFindConditionalColon(source, qPos+1, valueEnd); !ok {
+		return false
+	}
+	if _, ok := csharpFindTopLevelKeyword(source, valueStart, qPos, "is"); !ok {
+		return false
+	}
+	expr, ok := csharpRecoverQueryExpressionNodeFromRange(source, valueStart, valueEnd, lang, stmt.ownerArena)
+	if !ok || expr == nil || expr.Type(lang) != "conditional_expression" {
+		return false
+	}
+	if !csharpReplaceRecoveredVariableInitializer(stmt, lang, expr) {
+		return false
+	}
+	recomputeNodePointsFromBytes(stmt, source)
+	return true
+}
+
 func normalizeCSharpDereferenceLogicalAndCasts(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "c_sharp" || len(source) == 0 {
 		return
@@ -121,6 +178,8 @@ func normalizeCSharpDereferenceLogicalAndCasts(root *Node, source []byte, lang *
 		}
 		if n.Type(lang) == "binary_expression" {
 			csharpRewriteLogicalAndCastExpression(n, source, lang, castSym, castNamed, prefixUnarySym, prefixUnaryNamed, typeFieldID, valueFieldID)
+		} else if n.Type(lang) == "cast_expression" {
+			csharpRewriteLogicalAndCastValue(n, source, lang, prefixUnarySym, prefixUnaryNamed, valueFieldID)
 		}
 		for _, child := range n.children {
 			walk(child)
@@ -151,30 +210,10 @@ func csharpRewriteLogicalAndCastExpression(n *Node, source []byte, lang *Languag
 	if openTok == nil || closeTok == nil || openTok.Type(lang) != "(" || closeTok.Type(lang) != ")" {
 		return false
 	}
-	amp0, ok := csharpBuildLeafNodeByName(n.ownerArena, source, lang, "&", op.startByte, op.startByte+1)
+	outer, ok := csharpBuildLogicalAndPrefixUnaryValue(n.ownerArena, source, lang, prefixUnarySym, prefixUnaryNamed, op.startByte, op.endByte, right)
 	if !ok {
 		return false
 	}
-	amp1, ok := csharpBuildLeafNodeByName(n.ownerArena, source, lang, "&", op.startByte+1, op.endByte)
-	if !ok {
-		return false
-	}
-	innerChildren := []*Node{amp1, right}
-	if n.ownerArena != nil {
-		buf := n.ownerArena.allocNodeSlice(len(innerChildren))
-		copy(buf, innerChildren)
-		innerChildren = buf
-	}
-	inner := newParentNodeInArena(n.ownerArena, prefixUnarySym, prefixUnaryNamed, innerChildren, nil, 0)
-	inner.hasError = false
-	outerChildren := []*Node{amp0, inner}
-	if n.ownerArena != nil {
-		buf := n.ownerArena.allocNodeSlice(len(outerChildren))
-		copy(buf, outerChildren)
-		outerChildren = buf
-	}
-	outer := newParentNodeInArena(n.ownerArena, prefixUnarySym, prefixUnaryNamed, outerChildren, nil, 0)
-	outer.hasError = false
 
 	children := []*Node{openTok, typeNode, closeTok, outer}
 	if n.ownerArena != nil {
@@ -198,4 +237,78 @@ func csharpRewriteLogicalAndCastExpression(n *Node, source []byte, lang *Languag
 	n.hasError = false
 	populateParentNode(n, n.children)
 	return true
+}
+
+func csharpRewriteLogicalAndCastValue(n *Node, source []byte, lang *Language, prefixUnarySym Symbol, prefixUnaryNamed bool, valueFieldID FieldID) bool {
+	if n == nil || lang == nil || n.Type(lang) != "cast_expression" || len(n.children) < 2 {
+		return false
+	}
+	valueIdx := -1
+	for i, child := range n.children {
+		if child == nil || !child.IsNamed() {
+			continue
+		}
+		if valueFieldID != 0 && n.FieldNameForChild(i, lang) == "value" {
+			valueIdx = i
+			break
+		}
+		valueIdx = i
+	}
+	if valueIdx < 0 || n.children[valueIdx] == nil || n.children[valueIdx].Type(lang) == "prefix_unary_expression" {
+		return false
+	}
+	value := n.children[valueIdx]
+	if value.startByte <= n.startByte || int(value.startByte) > len(source) {
+		return false
+	}
+	ampStart, ok := csharpFindLastTopLevelOperator(source, n.startByte, value.startByte, "&&")
+	if !ok || ampStart+2 > value.startByte {
+		return false
+	}
+	outer, ok := csharpBuildLogicalAndPrefixUnaryValue(n.ownerArena, source, lang, prefixUnarySym, prefixUnaryNamed, ampStart, ampStart+2, value)
+	if !ok {
+		return false
+	}
+	children := append([]*Node(nil), n.children...)
+	children[valueIdx] = outer
+	if n.ownerArena != nil {
+		buf := n.ownerArena.allocNodeSlice(len(children))
+		copy(buf, children)
+		children = buf
+	}
+	n.children = children
+	n.hasError = false
+	populateParentNode(n, n.children)
+	return true
+}
+
+func csharpBuildLogicalAndPrefixUnaryValue(arena *nodeArena, source []byte, lang *Language, prefixUnarySym Symbol, prefixUnaryNamed bool, opStart, opEnd uint32, value *Node) (*Node, bool) {
+	if lang == nil || value == nil || opEnd-opStart != 2 || int(opEnd) > len(source) || string(source[opStart:opEnd]) != "&&" {
+		return nil, false
+	}
+	amp0, ok := csharpBuildLeafNodeByName(arena, source, lang, "&", opStart, opStart+1)
+	if !ok {
+		return nil, false
+	}
+	amp1, ok := csharpBuildLeafNodeByName(arena, source, lang, "&", opStart+1, opEnd)
+	if !ok {
+		return nil, false
+	}
+	innerChildren := []*Node{amp1, value}
+	if arena != nil {
+		buf := arena.allocNodeSlice(len(innerChildren))
+		copy(buf, innerChildren)
+		innerChildren = buf
+	}
+	inner := newParentNodeInArena(arena, prefixUnarySym, prefixUnaryNamed, innerChildren, nil, 0)
+	inner.hasError = false
+	outerChildren := []*Node{amp0, inner}
+	if arena != nil {
+		buf := arena.allocNodeSlice(len(outerChildren))
+		copy(buf, outerChildren)
+		outerChildren = buf
+	}
+	outer := newParentNodeInArena(arena, prefixUnarySym, prefixUnaryNamed, outerChildren, nil, 0)
+	outer.hasError = false
+	return outer, true
 }

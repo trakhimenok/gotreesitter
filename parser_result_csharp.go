@@ -19,14 +19,34 @@ const (
 )
 
 func normalizeCSharpCompatibility(root *Node, source []byte, p *Parser, lang *Language) {
+	if p != nil && p.skipRecoveryReparse {
+		normalizeCollapsedNamedLeafChildren(root, lang, "implicit_type", "var")
+		normalizeCSharpUnicodeIdentifierSpans(root, source, lang)
+		normalizeCSharpQuotedStringContentIdentifiers(root, source, lang)
+		normalizeCSharpMissingAttributedProperties(root, source, lang)
+		normalizeCSharpSplitScopedLambdaStatements(root, source, lang)
+		normalizeCSharpInvocationStatements(root, source, lang)
+		normalizeCSharpDereferenceLogicalAndCasts(root, source, lang)
+		normalizeCSharpConditionalIsPatternInitializers(root, source, lang)
+		normalizeCSharpConditionalIsPatternExpressions(root, lang)
+		normalizeCSharpTypeConstraintKeywords(root, lang)
+		normalizeCSharpSwitchTupleCasePatterns(root, lang)
+		return
+	}
 	normalizeCSharpRecoveredTopLevelChunks(root, source, p)
 	normalizeCSharpRecoveredNamespaces(root, source, p, lang)
-	normalizeCSharpRecoveredTypeDeclarations(root, source, lang)
+	normalizeCSharpRecoveredTypeDeclarations(root, source, p, lang)
 	normalizeCollapsedNamedLeafChildren(root, lang, "implicit_type", "var")
 	normalizeCSharpUnicodeIdentifierSpans(root, source, lang)
+	normalizeCSharpQuotedStringContentIdentifiers(root, source, lang)
+	normalizeCSharpMissingAttributedProperties(root, source, lang)
 	normalizeCSharpQueryExpressions(root, source, p)
+	normalizeCSharpSplitScopedLambdaStatements(root, source, lang)
+	normalizeCSharpRecoveredScopedLambdaBlocks(root, source, p)
+	normalizeCSharpRecoveredMethodBlocks(root, source, p)
 	normalizeCSharpInvocationStatements(root, source, lang)
 	normalizeCSharpDereferenceLogicalAndCasts(root, source, lang)
+	normalizeCSharpConditionalIsPatternInitializers(root, source, lang)
 	normalizeCSharpConditionalIsPatternExpressions(root, lang)
 	normalizeCSharpTypeConstraintKeywords(root, lang)
 	normalizeCSharpSwitchTupleCasePatterns(root, lang)
@@ -41,7 +61,10 @@ func normalizeCSharpRecoveredTopLevelChunks(root *Node, source []byte, p *Parser
 		return
 	}
 	if rootType == "compilation_unit" && !root.HasError() {
-		return
+		_, sourceEnd := csharpTrimSpaceBounds(source, 0, uint32(len(source)))
+		if root.endByte >= sourceEnd {
+			return
+		}
 	}
 	recovered, ok := csharpRecoverTopLevelChunks(source, p, root.ownerArena)
 	if !ok || len(recovered) == 0 {
@@ -183,6 +206,9 @@ func csharpTopLevelChunkSpans(source []byte) [][2]uint32 {
 			if braceDepth > 0 {
 				braceDepth--
 				if braceDepth == 0 && parenDepth == 0 && bracketDepth == 0 {
+					if next := csharpSkipSpaceBytes(source, i+1); next < uint32(len(source)) && source[next] == ';' {
+						continue
+					}
 					spans = append(spans, [2]uint32{start, i + 1})
 					start = csharpSkipSpaceBytes(source, i+1)
 				}
@@ -257,6 +283,16 @@ func csharpRecoverTopLevelChunkNodesFromRange(source []byte, start, end uint32, 
 	}
 	if comment, ok := csharpRecoverTopLevelCommentNodeFromRange(source, start, end, p.language, arena); ok {
 		return []*Node{comment}, true
+	}
+	if source[start] == '[' {
+		if attributeLists, declStart, ok := csharpBuildLeadingAttributeListsFromSource(source, start, end, p.language, arena); ok && declStart < end {
+			if recovered, ok := csharpRecoverAttributedTopLevelTypeDeclarationFromRange(source, declStart, end, attributeLists, p.language, arena); ok {
+				return []*Node{recovered}, true
+			}
+		}
+	}
+	if recovered, ok := csharpRecoverSourceTopLevelTypeDeclarationFromRange(source, start, end, p, arena); ok {
+		return []*Node{recovered}, true
 	}
 	chunk := source[start:end]
 	tree, err := p.parseForRecovery(chunk)
@@ -610,7 +646,7 @@ func csharpCanExtendLeafNodeTo(n *Node, end uint32) bool {
 	return true
 }
 
-func normalizeCSharpRecoveredTypeDeclarations(root *Node, source []byte, lang *Language) {
+func normalizeCSharpRecoveredTypeDeclarations(root *Node, source []byte, p *Parser, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "c_sharp" || root.Type(lang) != "ERROR" || len(source) == 0 || root.ownerArena == nil {
 		return
 	}
@@ -631,7 +667,7 @@ func normalizeCSharpRecoveredTypeDeclarations(root *Node, source []byte, lang *L
 			i = next
 			continue
 		}
-		if recovered, next, ok := csharpRecoverNonEmptyTopLevelTypeDeclarationFromChildren(root.children, i, source, lang, root.ownerArena); ok {
+		if recovered, next, ok := csharpRecoverNonEmptyTopLevelTypeDeclarationFromChildren(root.children, i, source, p, lang, root.ownerArena); ok {
 			recoveredChildren = append(recoveredChildren, recovered)
 			i = next
 			continue
@@ -647,7 +683,7 @@ func normalizeCSharpRecoveredTypeDeclarations(root *Node, source []byte, lang *L
 			i++
 			continue
 		}
-		nonEmpty, ok := csharpRecoverNonEmptyTypeDeclarationFromError(child, source, lang, root.ownerArena)
+		nonEmpty, ok := csharpRecoverNonEmptyTypeDeclarationFromError(child, source, p, lang, root.ownerArena)
 		if ok {
 			recoveredChildren = append(recoveredChildren, nonEmpty)
 			i++

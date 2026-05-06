@@ -63,6 +63,21 @@ func parseMemoryBudget(sourceLen int) int64 {
 	return int64(mb) * 1024 * 1024
 }
 
+func parseMemoryBudgetForParser(p *Parser, sourceLen int) int64 {
+	budget := parseMemoryBudget(sourceLen)
+	if p == nil || !p.skipRecoveryReparse || p.language == nil {
+		return budget
+	}
+	if p.language.Name != "c_sharp" {
+		return budget
+	}
+	const csharpRecoveryBudget = int64(64 * 1024 * 1024)
+	if budget == 0 || budget > csharpRecoveryBudget {
+		return csharpRecoveryBudget
+	}
+	return budget
+}
+
 func parseFullArenaNodeCapacity(sourceLen, hint int) int {
 	target := parseFullArenaInitialNodeCapacity(sourceLen)
 	if hint <= 0 || hint < target {

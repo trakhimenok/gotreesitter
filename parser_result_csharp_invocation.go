@@ -42,6 +42,9 @@ func normalizeCSharpInvocationStatements(root *Node, source []byte, lang *Langua
 		if n == nil {
 			return
 		}
+		if n.Type(lang) == "argument_list" {
+			csharpPopulateMissingInvocationArguments(n, source, lang)
+		}
 		if n.Type(lang) == "local_declaration_statement" && len(n.children) == 2 {
 			decl := n.children[0]
 			semi := n.children[1]
@@ -50,12 +53,15 @@ func normalizeCSharpInvocationStatements(root *Node, source []byte, lang *Langua
 				target := decl.children[0]
 				varDecl := decl.children[1]
 				if target != nil && varDecl != nil &&
-					target.Type(lang) == "qualified_name" &&
+					(target.Type(lang) == "identifier" || target.Type(lang) == "qualified_name") &&
 					varDecl.Type(lang) == "variable_declarator" &&
 					len(varDecl.children) == 1 &&
 					varDecl.children[0] != nil &&
 					varDecl.children[0].Type(lang) == "tuple_pattern" {
-					function := csharpRewriteQualifiedNameAsMemberAccess(target, lang, memberAccessSym, memberAccessNamed, expressionFieldID, nameFieldID)
+					function := target
+					if target.Type(lang) == "qualified_name" {
+						function = csharpRewriteQualifiedNameAsMemberAccess(target, lang, memberAccessSym, memberAccessNamed, expressionFieldID, nameFieldID)
+					}
 					if arguments, ok := csharpBuildArgumentListFromTuplePattern(varDecl.children[0], lang, argumentListSym, argumentListNamed, argumentSym, argumentNamed); ok {
 						invocationFields := []FieldID{functionFieldID, argumentsFieldID}
 						if n.ownerArena != nil {
@@ -87,6 +93,33 @@ func normalizeCSharpInvocationStatements(root *Node, source []byte, lang *Langua
 		}
 	}
 	walk(root)
+}
+
+func csharpPopulateMissingInvocationArguments(n *Node, source []byte, lang *Language) bool {
+	if n == nil || lang == nil || n.ownerArena == nil || n.Type(lang) != "argument_list" || len(source) == 0 {
+		return false
+	}
+	if n.startByte >= n.endByte || int(n.endByte) > len(source) {
+		return false
+	}
+	if n.startByte+1 >= n.endByte || source[n.startByte] != '(' || source[n.endByte-1] != ')' {
+		return false
+	}
+	innerStart, innerEnd := csharpTrimSpaceBounds(source, n.startByte+1, n.endByte-1)
+	if innerStart >= innerEnd {
+		return false
+	}
+	for _, child := range n.children {
+		if child != nil && child.IsNamed() {
+			return false
+		}
+	}
+	rebuilt, ok := csharpBuildArgumentListNode(n.ownerArena, source, lang, n.startByte, n.endByte)
+	if !ok || rebuilt == nil {
+		return false
+	}
+	csharpReplaceNodeContents(n, rebuilt)
+	return true
 }
 
 func csharpRecoverTopLevelInvocationStatementFromRange(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {

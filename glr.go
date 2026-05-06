@@ -59,16 +59,30 @@ const (
 	// Retry parses can temporarily widen the merge fanout beyond the default
 	// survivor cap without changing the steady-state parser behavior.
 	maxStacksPerMergeKeyCeiling = 256
+	// Hard emergency cap before allocating per-key merge slots. Normal parser
+	// culling keeps live stacks far below this, so this only applies to
+	// pathological GLR bursts that would otherwise allocate huge slot tables
+	// before the next memory-budget check can run.
+	maxMergeAliveStacks = 4096
+	// Keep ordinary merge scratch hot while dropping pathological buffers after
+	// the parse. glrMergeSlot is intentionally large because it owns fixed
+	// per-key survivor arrays.
+	maxRetainedMergeResultCap = 4096
+	maxRetainedMergeSlotCap   = 1024
 )
 
 type glrMergeScratch struct {
-	result     []glrStack
-	slots      []glrMergeSlot
-	perKeyCap  int
-	language   *Language
-	audit      *runtimeAudit
-	equivEpoch uint32
-	equivCache []glrNodeEquivCacheEntry
+	result          []glrStack
+	slots           []glrMergeSlot
+	perKeyCap       int
+	language        *Language
+	audit           *runtimeAudit
+	equivEpoch      uint32
+	equivCache      []glrNodeEquivCacheEntry
+	budgetBytes     int64
+	resultBytes     int64
+	slotBytes       int64
+	equivCacheBytes int64
 }
 
 type glrMergeKey struct {
@@ -365,6 +379,7 @@ func (s *glrMergeScratch) beginEquivEpoch() {
 	s.equivEpoch++
 	if len(s.equivCache) == 0 {
 		s.equivCache = make([]glrNodeEquivCacheEntry, glrNodeEquivCacheSize)
+		s.equivCacheBytes = glrNodeEquivCacheBytesForCap(cap(s.equivCache))
 	}
 }
 
@@ -1047,6 +1062,9 @@ func mergeStacksWithScratch(stacks []glrStack, scratch *glrMergeScratch) []glrSt
 		local.beginEquivEpoch()
 		scratch = &local
 	}
+	if limit := mergeAliveLimitForScratch(scratch, len(alive)); limit > 0 && len(alive) > limit {
+		alive = retainTopStacksForLanguage(alive, limit, scratch.language)
+	}
 	if len(alive) <= 4 {
 		result := mergeStacksSmallForLanguage(alive, scratch, scratch.language)
 		if perfCountersEnabled {
@@ -1219,6 +1237,7 @@ func recomputeMergeSlotHashMask(slot *glrMergeSlot) uint64 {
 func ensureMergeResultCap(scratch *glrMergeScratch, n int) []glrStack {
 	if cap(scratch.result) < n {
 		scratch.result = make([]glrStack, 0, n)
+		scratch.resultBytes = glrStackBytesForCap(cap(scratch.result))
 	}
 	return scratch.result[:0]
 }
@@ -1226,9 +1245,93 @@ func ensureMergeResultCap(scratch *glrMergeScratch, n int) []glrStack {
 func ensureMergeSlotCap(scratch *glrMergeScratch, n int) []glrMergeSlot {
 	if cap(scratch.slots) < n {
 		scratch.slots = make([]glrMergeSlot, n)
+		scratch.slotBytes = glrMergeSlotBytesForCap(cap(scratch.slots))
 		return scratch.slots
 	}
 	return scratch.slots[:n]
+}
+
+func mergeAliveLimitForScratch(scratch *glrMergeScratch, n int) int {
+	limit := n
+	if limit > maxMergeAliveStacks {
+		limit = maxMergeAliveStacks
+	}
+	if scratch != nil && scratch.budgetBytes > 0 {
+		perStack := int64(unsafe.Sizeof(glrStack{}) + unsafe.Sizeof(glrMergeSlot{}))
+		if perStack > 0 {
+			allowed := int(scratch.budgetBytes / perStack)
+			if allowed < 1 {
+				allowed = 1
+			}
+			if allowed < limit {
+				limit = allowed
+			}
+		}
+	}
+	return limit
+}
+
+func (s *glrMergeScratch) allocatedBytes() int64 {
+	if s == nil {
+		return 0
+	}
+	return s.resultBytes + s.slotBytes + s.equivCacheBytes
+}
+
+func (s *glrMergeScratch) reset() {
+	if s == nil {
+		return
+	}
+	if cap(s.result) > maxRetainedMergeResultCap {
+		s.result = nil
+		s.resultBytes = 0
+	} else {
+		if cap(s.result) > 0 {
+			clear(s.result[:cap(s.result)])
+		}
+		s.result = s.result[:0]
+		s.resultBytes = glrStackBytesForCap(cap(s.result))
+	}
+	if cap(s.slots) > maxRetainedMergeSlotCap {
+		s.slots = nil
+		s.slotBytes = 0
+	} else {
+		if cap(s.slots) > 0 {
+			clear(s.slots[:cap(s.slots)])
+		}
+		s.slots = s.slots[:0]
+		s.slotBytes = glrMergeSlotBytesForCap(cap(s.slots))
+	}
+	if len(s.equivCache) > 0 {
+		clear(s.equivCache)
+	}
+	s.equivCacheBytes = glrNodeEquivCacheBytesForCap(cap(s.equivCache))
+	s.perKeyCap = 0
+	s.language = nil
+	s.audit = nil
+	s.equivEpoch = 0
+	s.budgetBytes = 0
+}
+
+func glrStackBytesForCap(n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	return int64(n) * int64(unsafe.Sizeof(glrStack{}))
+}
+
+func glrMergeSlotBytesForCap(n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	return int64(n) * int64(unsafe.Sizeof(glrMergeSlot{}))
+}
+
+func glrNodeEquivCacheBytesForCap(n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	return int64(n) * int64(unsafe.Sizeof(glrNodeEquivCacheEntry{}))
 }
 
 func (s *glrEntryScratch) alloc(n int) []stackEntry {

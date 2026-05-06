@@ -139,6 +139,10 @@ func (p *Parser) parseWithTokenSource(source []byte, ts TokenSource, reparseFact
 	if ts == nil {
 		return nil, ErrNoTokenSource
 	}
+	p.recoveryParser = nil
+	defer func() {
+		p.recoveryParser = nil
+	}()
 	releaseTS := manageTokenSourceLifetime(ts)
 	defer releaseTS()
 	prevFactory := p.reparseFactory
@@ -400,6 +404,10 @@ func (p *Parser) Parse(source []byte) (*Tree, error) {
 	if err := p.checkDFALexer(); err != nil {
 		return nil, err
 	}
+	p.recoveryParser = nil
+	defer func() {
+		p.recoveryParser = nil
+	}()
 	prevFactory := p.reparseFactory
 	p.reparseFactory = p.dfaReparseFactory()
 	defer func() {
