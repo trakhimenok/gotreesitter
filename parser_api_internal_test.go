@@ -43,6 +43,62 @@ func TestRepetitionShiftConflictChoiceRejectsNonRepetitionShift(t *testing.T) {
 	}
 }
 
+func TestCSharpRepetitionShiftConflictChoice(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "identifier", "this", "block_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 3, ChildCount: 2},
+		{Type: ParseActionShift, State: 1245, Repetition: true},
+	}
+
+	chosen, ok := csharpRepetitionShiftConflictChoice(lang, Token{Symbol: 2, Text: "this"}, actions)
+	if !ok {
+		t.Fatal("csharpRepetitionShiftConflictChoice = false, want true")
+	}
+	if chosen.Type != ParseActionShift || chosen.State != 1245 || !chosen.Repetition {
+		t.Fatalf("csharpRepetitionShiftConflictChoice picked %+v, want repetition shift", chosen)
+	}
+}
+
+func TestCSharpRepetitionShiftConflictChoiceRejectsScopedContextualIdentifier(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "identifier", "this", "block_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 3, ChildCount: 2},
+		{Type: ParseActionShift, State: 1245, Repetition: true},
+	}
+
+	if _, ok := csharpRepetitionShiftConflictChoice(lang, Token{Symbol: 1, Text: "scoped"}, actions); ok {
+		t.Fatal("csharpRepetitionShiftConflictChoice = true, want false")
+	}
+}
+
+func TestCSharpRepetitionShiftConflictChoiceAllowsDeclarationLists(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "private", "declaration_list_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionShift, State: 3237, Repetition: true},
+	}
+
+	chosen, ok := csharpRepetitionShiftConflictChoice(lang, Token{Symbol: 1, Text: "private"}, actions)
+	if !ok {
+		t.Fatal("csharpRepetitionShiftConflictChoice = false, want true")
+	}
+	if chosen.Type != ParseActionShift || chosen.State != 3237 || !chosen.Repetition {
+		t.Fatalf("csharpRepetitionShiftConflictChoice picked %+v, want declaration-list shift", chosen)
+	}
+}
+
+func TestCSharpRepetitionShiftConflictChoiceRejectsOtherRepeats(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "this", "argument_list_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionShift, State: 1245, Repetition: true},
+	}
+
+	if _, ok := csharpRepetitionShiftConflictChoice(lang, Token{Symbol: 1, Text: "this"}, actions); ok {
+		t.Fatal("csharpRepetitionShiftConflictChoice = true, want false")
+	}
+}
+
 func TestShouldRetryNodeLimitParse(t *testing.T) {
 	tree := &Tree{
 		parseRuntime: ParseRuntime{

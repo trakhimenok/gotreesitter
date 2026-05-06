@@ -1904,6 +1904,12 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			// For single-action entries (the common case), no fork occurs.
 			// For multi-action entries, clone the stack for each alternative.
 			if len(actions) > 1 {
+				if reuse == nil && p.language != nil && p.language.Name == "c_sharp" {
+					if chosen, ok := csharpRepetitionShiftConflictChoice(p.language, tok, actions); ok {
+						p.applyAction(s, chosen, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
+						continue
+					}
+				}
 				if reuse == nil && p.language != nil && p.language.Name == "go" && maxStacksSeen > 1 && currentState == 3 && tok.Symbol == 15 {
 					if chosen, ok := repetitionShiftConflictChoice(actions); ok {
 						p.applyAction(s, chosen, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
@@ -2143,6 +2149,81 @@ func repetitionShiftConflictChoice(actions []ParseAction) (ParseAction, bool) {
 		return ParseAction{}, false
 	}
 	return shift, true
+}
+
+func csharpRepetitionShiftConflictChoice(lang *Language, tok Token, actions []ParseAction) (ParseAction, bool) {
+	if lang == nil {
+		return ParseAction{}, false
+	}
+	kind := ""
+	for _, act := range actions {
+		if act.Type != ParseActionReduce {
+			continue
+		}
+		name := ""
+		if int(act.Symbol) < len(lang.SymbolNames) {
+			name = lang.SymbolNames[act.Symbol]
+		}
+		nextKind := csharpRepeatConflictKind(name)
+		if nextKind == "" || (kind != "" && kind != nextKind) {
+			return ParseAction{}, false
+		}
+		kind = nextKind
+	}
+	switch kind {
+	case "block":
+		if !csharpCanShiftBlockRepetitionToken(lang, tok) {
+			return ParseAction{}, false
+		}
+	case "declaration_list":
+		if !csharpCanShiftDeclarationListRepetitionToken(lang, tok) {
+			return ParseAction{}, false
+		}
+	default:
+		return ParseAction{}, false
+	}
+	return repetitionShiftConflictChoice(actions)
+}
+
+func csharpRepeatConflictKind(name string) string {
+	switch {
+	case strings.HasSuffix(name, "block_repeat1"):
+		return "block"
+	case strings.HasSuffix(name, "declaration_list_repeat1"):
+		return "declaration_list"
+	default:
+		return ""
+	}
+}
+
+func csharpCanShiftBlockRepetitionToken(lang *Language, tok Token) bool {
+	if int(tok.Symbol) >= len(lang.SymbolNames) {
+		return false
+	}
+	switch lang.SymbolNames[tok.Symbol] {
+	case "this", "base":
+		return true
+	case "identifier":
+		return tok.Text != "scoped"
+	default:
+		return false
+	}
+}
+
+func csharpCanShiftDeclarationListRepetitionToken(lang *Language, tok Token) bool {
+	if int(tok.Symbol) >= len(lang.SymbolNames) {
+		return false
+	}
+	switch lang.SymbolNames[tok.Symbol] {
+	case "abstract", "class", "const", "delegate", "enum", "event", "extern", "file",
+		"fixed", "global", "implicit", "interface", "internal", "namespace", "new",
+		"operator", "override", "partial", "private", "protected", "public", "readonly",
+		"record", "ref", "sealed", "static", "struct", "unsafe", "using", "virtual",
+		"volatile":
+		return true
+	default:
+		return false
+	}
 }
 
 func compactAcceptedStacks(stacks []glrStack) []glrStack {
