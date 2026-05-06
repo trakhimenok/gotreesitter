@@ -542,6 +542,16 @@ Test suite covers: smoke tests (206 grammars), golden S-expression snapshots, hi
 
 ## Roadmap
 
+v0.16.x — Grammar extensibility and parser-resilience release. Adds native
+UTF-16 parser/editor APIs, `grammargen` DSL constructors and extension smoke
+coverage for Kotlin, Swift, JavaScript, TypeScript/TSX, and Fortran, and
+grammar-update guardrails that block scanner-facing lock refreshes until
+regenerated artifacts and focused parity are handled. C# pathological recovery
+is bounded, TypeScript and Fortran `grammargen` parity advanced, Python
+f-string scanner checkpoints preserve interpolated-string state, and
+parser-result compatibility shims are isolated behind an explicit strut registry
+with language-owned helper files.
+
 v0.15.x — Large-repo consumer safety and parser-maintenance release. `ParsePolicy.ShouldSkipDir` lets gateway callers prune generated/vendor directories before descent, the GLR node-equivalence cache is smaller and checks epoch first for L2-friendly lookups, `Tree.Edit` avoids scanning unchanged right-side siblings when there is no tail shift, and parser-result compatibility normalization now keeps language-specific call sequences beside the relevant `parser_result_*.go` helpers. The v0.15.1 patch also hardens arena release/GC behavior, releases retry loser arenas promptly, and fixes query predicate backtracking for nested Starlark dictionary matches. v0.15.2 folds the drifting `main` and release lines back together, adds a Swift ABI mangling grammar, and ships `grammar_updater` pin verification and manifest-only sync flags. v0.15.3 caps JavaScript/TypeScript full-parse merge survivors, tunes markdown retry and node budgets, tolerates external-scanner symbol-list drift, and adds a scoped Canopy harness runner for bounded repo analysis. This line carries the post-0.14 tier-1 grammar refreshes and reserved-word import fixes.
 
 v0.14.x — Go grammar now shipped as a grammargen-compiled blob (our own pure-Go LR(1) state-splitting compiler), eliminating a dead-end state inherited from tree-sitter-go that wrapped several valid Go files in ERROR. Combined with arena retention/initial-sizing fixes, retry-lifecycle cleanup, and a GLR cap update keyed to the new grammar's conflict profile, warm-reuse heap allocation across a six-file self-parse benchmark dropped ~54% (498 → 229 MB/iter); cold-case dropped ~61%.
@@ -550,8 +560,8 @@ v0.12.x — 206 grammars (all OK), 116 external scanners, pure-Go runtime plus `
 
 Next:
 - Full-parse `grammargen` performance work that keeps the recent incremental wins without regressing the main DFA benchmark
-- Remaining parser-result recovery/parity backlog on high-value C#, Rust, Scala, TypeScript, and Python corpus cases
-- The next highest-value parser/`grammargen` parity language after YAML and C# stabilization
+- Retire parser-result struts by moving C#, Rust, Scala, TypeScript, and Python recovery into runtime or grammar generation paths
+- Grammar refresh automation that moves from lock-only PRs to regenerated artifacts and focused parity for allow-listed `grammargen`-backed languages
 - Table-size and codegen compaction work for Unicode-heavy grammars
 
 Release history and retroactive notes are tracked in [CHANGELOG.md](CHANGELOG.md).

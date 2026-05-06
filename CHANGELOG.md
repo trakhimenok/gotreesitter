@@ -9,6 +9,48 @@ for tags and release notes while still in `0.x`.
 
 - Nothing yet.
 
+## [0.16.0] - 2026-05-06
+
+Grammar extensibility, UTF-16 input, and parser-resilience release.
+
+### Added
+- Native UTF-16 parser/editor APIs, including UTF-16 byte parsing, token source
+  factories, incremental parser variants, edit mapping, injection reuse, and
+  descendant range lookup helpers for editor integrations.
+- `grammargen` DSL sources and extension smoke coverage for Kotlin and Swift.
+- `grammargen` constructors for JavaScript, TypeScript, TSX, and Fortran, plus
+  imported grammar coverage and TypeScript inline-rule filtering documentation.
+- Grammar update guard tooling for scanner-facing grammar refreshes so
+  automation can distinguish safe lock updates from changes that require
+  scanner-port work and focused parity validation.
+
+### Changed
+- Parser-result compatibility shims now route through an explicit strut
+  registry, with language-owned helper files and shared normalization helpers
+  split out of mixed parser-result modules.
+- The cgo harness now runs on Go 1.25.
+
+### Fixed
+- External scanner fallback binding now assigns unmatched tokens to the next
+  available external symbol instead of relying on positional token indexes when
+  name-based binding partially succeeds.
+- Python f-string scanner checkpoints now recompute interpolated-string state
+  from the delimiter stack after deserialize, preserving `DEDENT` behavior for
+  issue #53. Includes Fraser Isbester's fork commit and a follow-up regression
+  hardening pass.
+- C# pathological recovery is bounded, full-parse retries stop after timeout,
+  parser arena budgets are repaired, and C# repetition shift conflicts are
+  handled without unbounded GLR growth.
+- TypeScript parity gaps and GLR merge scratch handling were corrected.
+- Fortran `grammargen` parity gaps were closed.
+
+### Testing
+- Added focused Swift and Kotlin `ExtendGrammar` smoke tests.
+- Added and hardened imported grammar coverage for the new JavaScript,
+  TypeScript, TSX, and Fortran `grammargen` constructors.
+- Kept C#, Fortran, TypeScript, Swift, and Kotlin parity work scoped through
+  Docker grammar-focused lanes and scanner update gating.
+
 ## [0.15.3] - 2026-04-26
 
 Parser stability and harness release.
@@ -419,7 +461,8 @@ Warm-reuse throughput ~10 % higher. 206-grammar parity green under `GTS_PARITY_M
 - Initial standalone pure-Go runtime module.
 - External scanner VM foundation and base parser/lexer/tree infrastructure.
 
-[Unreleased]: https://github.com/odvcencio/gotreesitter/compare/v0.15.3...HEAD
+[Unreleased]: https://github.com/odvcencio/gotreesitter/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/odvcencio/gotreesitter/compare/v0.15.3...v0.16.0
 [0.15.3]: https://github.com/odvcencio/gotreesitter/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/odvcencio/gotreesitter/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/odvcencio/gotreesitter/compare/v0.15.0...v0.15.1
