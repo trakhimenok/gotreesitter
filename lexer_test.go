@@ -490,3 +490,28 @@ func TestOnlyWhitespace(t *testing.T) {
 		t.Errorf("whitespace-only: StartByte(%d) != EndByte(%d)", tok.StartByte, tok.EndByte)
 	}
 }
+
+func TestRejectsAccidentalZeroWidthVisibleAccept(t *testing.T) {
+	states := []LexState{
+		{
+			AcceptToken: 1,
+			Default:     -1,
+			EOF:         -1,
+			Transitions: []LexTransition{
+				{Lo: ':', Hi: ':', NextState: 1},
+			},
+		},
+		{
+			AcceptToken: 2,
+			Default:     -1,
+			EOF:         -1,
+		},
+	}
+	lex := NewLexer(states, []byte(":"))
+	lex.zeroWidthTokens = []bool{false, false, false}
+
+	tok := lex.Next(0)
+	if tok.Symbol != 2 || tok.StartByte != 0 || tok.EndByte != 1 {
+		t.Fatalf("got token sym=%d %d-%d, want ':' token 0-1", tok.Symbol, tok.StartByte, tok.EndByte)
+	}
+}

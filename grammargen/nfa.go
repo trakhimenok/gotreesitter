@@ -127,6 +127,76 @@ func (b *nfaBuilder) buildPattern(pattern string) (nfaFragment, error) {
 	return b.buildFromRegexNode(node)
 }
 
+func terminalRuleCanMatchEmpty(r *Rule) bool {
+	if r == nil {
+		return true
+	}
+	switch r.Kind {
+	case RuleBlank:
+		return true
+	case RuleString:
+		return r.Value == ""
+	case RulePattern:
+		node, err := parseRegex(r.Value)
+		return err == nil && regexCanMatchEmpty(node)
+	case RuleSeq:
+		for _, child := range r.Children {
+			if !terminalRuleCanMatchEmpty(child) {
+				return false
+			}
+		}
+		return true
+	case RuleChoice:
+		for _, child := range r.Children {
+			if terminalRuleCanMatchEmpty(child) {
+				return true
+			}
+		}
+		return false
+	case RuleRepeat, RuleOptional:
+		return true
+	case RuleRepeat1:
+		return len(r.Children) == 0 || terminalRuleCanMatchEmpty(r.Children[0])
+	default:
+		if len(r.Children) == 0 {
+			return false
+		}
+		return terminalRuleCanMatchEmpty(r.Children[0])
+	}
+}
+
+func regexCanMatchEmpty(node *regexNode) bool {
+	if node == nil {
+		return true
+	}
+	switch node.kind {
+	case regexLiteral, regexCharClass, regexDot:
+		return false
+	case regexSeq:
+		for _, child := range node.children {
+			if !regexCanMatchEmpty(child) {
+				return false
+			}
+		}
+		return true
+	case regexAlt:
+		for _, child := range node.children {
+			if regexCanMatchEmpty(child) {
+				return true
+			}
+		}
+		return false
+	case regexStar, regexQuestion:
+		return true
+	case regexPlus:
+		return len(node.children) == 0 || regexCanMatchEmpty(node.children[0])
+	case regexCount:
+		return node.count == 0 || len(node.children) == 0 || regexCanMatchEmpty(node.children[0])
+	default:
+		return false
+	}
+}
+
 func (b *nfaBuilder) buildFromRegexNode(node *regexNode) (nfaFragment, error) {
 	if node == nil {
 		return b.buildEpsilon(), nil

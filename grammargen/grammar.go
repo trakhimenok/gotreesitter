@@ -61,21 +61,22 @@ type ReservedWordSet struct {
 
 // Grammar is the top-level grammar definition.
 type Grammar struct {
-	Name                string
-	Rules               map[string]*Rule
-	RuleOrder           []string // order rules were defined (first = start rule)
-	Extras              []*Rule
-	Conflicts           [][]string
-	Externals           []*Rule
-	Inline              []string
-	Word                string
-	ReservedWordSets    []ReservedWordSet
-	Supertypes          []string
-	Tests               []TestCase    // embedded test cases
-	EnableLRSplitting   bool          // opt-in: attempt LR(1) state splitting for merge pathology
-	BinaryRepeatMode    bool          // use tree-sitter's binary repeat helper shape (aux→seq(aux,aux)|inner)
-	Precedences         [][]PrecEntry // ordered precedence levels (each level: earlier = higher prec)
-	ChoiceLiftThreshold int           // if >0, lift inline CHOICE nodes with more alternatives than this into auxiliary nonterminals to prevent production explosion
+	Name                               string
+	Rules                              map[string]*Rule
+	RuleOrder                          []string // order rules were defined (first = start rule)
+	Extras                             []*Rule
+	Conflicts                          [][]string
+	Externals                          []*Rule
+	Inline                             []string
+	Word                               string
+	ReservedWordSets                   []ReservedWordSet
+	Supertypes                         []string
+	Tests                              []TestCase    // embedded test cases
+	EnableLRSplitting                  bool          // opt-in: attempt LR(1) state splitting for merge pathology
+	BinaryRepeatMode                   bool          // use tree-sitter's binary repeat helper shape (aux→seq(aux,aux)|inner)
+	PreserveKeywordIdentifierConflicts bool          // keep keyword-as-identifier S/R ambiguity for grammars like Fortran
+	Precedences                        [][]PrecEntry // ordered precedence levels (each level: earlier = higher prec)
+	ChoiceLiftThreshold                int           // if >0, lift inline CHOICE nodes with more alternatives than this into auxiliary nonterminals to prevent production explosion
 }
 
 // NewGrammar creates a new grammar with the given name.
@@ -307,21 +308,22 @@ func Braces(rule *Rule) *Rule {
 //	})
 func ExtendGrammar(name string, base *Grammar, customize func(g *Grammar)) *Grammar {
 	g := &Grammar{
-		Name:                name,
-		Rules:               make(map[string]*Rule, len(base.Rules)),
-		RuleOrder:           make([]string, len(base.RuleOrder)),
-		Extras:              make([]*Rule, len(base.Extras)),
-		Conflicts:           make([][]string, len(base.Conflicts)),
-		Externals:           make([]*Rule, len(base.Externals)),
-		Inline:              make([]string, len(base.Inline)),
-		Word:                base.Word,
-		ReservedWordSets:    cloneReservedWordSets(base.ReservedWordSets),
-		Supertypes:          make([]string, len(base.Supertypes)),
-		Tests:               make([]TestCase, len(base.Tests)),
-		EnableLRSplitting:   base.EnableLRSplitting,
-		BinaryRepeatMode:    base.BinaryRepeatMode,
-		Precedences:         clonePrecedenceLevels(base.Precedences),
-		ChoiceLiftThreshold: base.ChoiceLiftThreshold,
+		Name:                               name,
+		Rules:                              make(map[string]*Rule, len(base.Rules)),
+		RuleOrder:                          make([]string, len(base.RuleOrder)),
+		Extras:                             make([]*Rule, len(base.Extras)),
+		Conflicts:                          make([][]string, len(base.Conflicts)),
+		Externals:                          make([]*Rule, len(base.Externals)),
+		Inline:                             make([]string, len(base.Inline)),
+		Word:                               base.Word,
+		ReservedWordSets:                   cloneReservedWordSets(base.ReservedWordSets),
+		Supertypes:                         make([]string, len(base.Supertypes)),
+		Tests:                              make([]TestCase, len(base.Tests)),
+		EnableLRSplitting:                  base.EnableLRSplitting,
+		BinaryRepeatMode:                   base.BinaryRepeatMode,
+		PreserveKeywordIdentifierConflicts: base.PreserveKeywordIdentifierConflicts,
+		Precedences:                        clonePrecedenceLevels(base.Precedences),
+		ChoiceLiftThreshold:                base.ChoiceLiftThreshold,
 	}
 
 	// Deep copy rules.

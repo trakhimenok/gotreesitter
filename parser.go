@@ -440,7 +440,7 @@ func (p *Parser) tryRelexBroadDFA(tok Token, parserState StateID, ts TokenSource
 	if len(p.language.LexModes) == 0 {
 		return Token{}, false
 	}
-	broadLS := p.language.LexModes[0].LexState
+	broadLS := p.language.LexModes[0].LexStateIndex()
 
 	// Save lexer state
 	savedPos, savedRow, savedCol := dts.lexer.pos, dts.lexer.row, dts.lexer.col

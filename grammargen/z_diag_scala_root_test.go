@@ -311,7 +311,7 @@ func TestDiagScalaRootRuntime(t *testing.T) {
 				)
 			}
 			if lexProbeByte >= 0 && lexProbeByte <= len(src) && state+1 < len(genLang.LexModes) {
-				lexState := genLang.LexModes[state+1].LexState
+				lexState := genLang.LexModes[state+1].LexStateIndex()
 				lexer := gotreesitter.NewLexer(genLang.LexStates, src[lexProbeByte:])
 				tok := lexer.Next(lexState)
 				tokName := ""
@@ -322,7 +322,7 @@ func TestDiagScalaRootRuntime(t *testing.T) {
 					state, state+1, lexState, lexProbeByte, tok.Symbol, tokName, tok.EndByte-tok.StartByte)
 				if state < len(diagStateToMode) && diagStateToMode[state] < len(diagLexModeOffsets) {
 					modeIdx := diagStateToMode[state]
-					computedLexState := uint16(diagLexModeOffsets[modeIdx])
+					computedLexState := uint32(diagLexModeOffsets[modeIdx])
 					diagLexer := gotreesitter.NewLexer(diagLexStates, src[lexProbeByte:])
 					diagTok := diagLexer.Next(computedLexState)
 					diagName := ""

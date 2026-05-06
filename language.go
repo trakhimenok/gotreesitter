@@ -78,10 +78,61 @@ type LexTransition struct {
 
 // LexMode maps a parser state to its lexer configuration.
 type LexMode struct {
-	LexState              uint16
-	ExternalLexState      uint16
-	ReservedWordSetID     uint16
-	AfterWhitespaceLexState uint16 // DFA start state to use after whitespace (0 = same as LexState)
+	LexState                  uint16
+	ExternalLexState          uint16
+	ReservedWordSetID         uint16
+	AfterWhitespaceLexState   uint16 // DFA start state to use after whitespace (0 = same as LexState)
+	LexStateID                uint32 // widened DFA start state for grammargen tables with >64K lexer states
+	AfterWhitespaceLexStateID uint32
+}
+
+// LexStateIndex returns the DFA start state for this lex mode. Older grammar
+// blobs only populate the uint16 LexState field; grammargen-generated tables
+// can populate LexStateID when the DFA table exceeds 64K states.
+func (m LexMode) LexStateIndex() uint32 {
+	if m.LexStateID != 0 {
+		return m.LexStateID
+	}
+	if m.LexState == ^uint16(0) {
+		return ^uint32(0)
+	}
+	return uint32(m.LexState)
+}
+
+// AfterWhitespaceLexStateIndex returns the alternate DFA start state used
+// after whitespace, or zero when the primary lex state should be used.
+func (m LexMode) AfterWhitespaceLexStateIndex() uint32 {
+	if m.AfterWhitespaceLexStateID != 0 {
+		return m.AfterWhitespaceLexStateID
+	}
+	if m.AfterWhitespaceLexState == ^uint16(0) {
+		return ^uint32(0)
+	}
+	return uint32(m.AfterWhitespaceLexState)
+}
+
+func (m *LexMode) SetLexStateIndex(idx uint32) {
+	if m == nil {
+		return
+	}
+	m.LexStateID = idx
+	if idx == ^uint32(0) {
+		m.LexState = ^uint16(0)
+		return
+	}
+	m.LexState = uint16(idx)
+}
+
+func (m *LexMode) SetAfterWhitespaceLexStateIndex(idx uint32) {
+	if m == nil {
+		return
+	}
+	m.AfterWhitespaceLexStateID = idx
+	if idx == ^uint32(0) {
+		m.AfterWhitespaceLexState = ^uint16(0)
+		return
+	}
+	m.AfterWhitespaceLexState = uint16(idx)
 }
 
 // LanguageMetadata holds the grammar's semantic version (ABI 15+).
@@ -203,6 +254,10 @@ type Language struct {
 	// should be rejected — immediate tokens must match at the original position.
 	// nil means no immediate tokens (common for ts2go grammars).
 	ImmediateTokens []bool
+	// ZeroWidthTokens is a bitmask of symbol IDs whose DFA terminal pattern can
+	// intentionally match empty input. nil means this information is unavailable,
+	// which preserves historical lexer behavior for ts2go blobs.
+	ZeroWidthTokens []bool
 
 	// ExternalLexStates maps external lex state IDs (from LexMode.ExternalLexState)
 	// to a boolean slice indicating which external tokens are valid. Row 0 is
@@ -228,10 +283,10 @@ type Language struct {
 	// ASCII fast-path for the lexer DFA. lexAsciiTable[stateID][byte] encodes
 	// the result of the transition scan for ASCII input (bytes 0x00–0x7F).
 	// Bit 31 set = skip transition; bits 30–0 = next state (0x7FFF_FFFF = no match).
-	lexAsciiTable         [][128]int32
-	lexAsciiOnce          sync.Once
-	keywordLexAsciiTable  [][128]int32
-	keywordLexAsciiOnce   sync.Once
+	lexAsciiTable        [][128]int32
+	lexAsciiOnce         sync.Once
+	keywordLexAsciiTable [][128]int32
+	keywordLexAsciiOnce  sync.Once
 }
 
 const lexAsciiNoMatch = int32(0x7FFF_FFFF)

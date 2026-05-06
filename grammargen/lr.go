@@ -659,6 +659,7 @@ func propagateEntryShiftMetadata(tables *LRTables, itemSets []lrItemSet, ctx *lr
 		return
 	}
 	tokenCount := ctx.tokenCount
+	leadingCache := make(map[int]map[int]bool)
 	for stateIdx, itemSet := range itemSets {
 		for _, ce := range itemSet.cores {
 			prod := &ng.Productions[int(ce.prodIdx)]
@@ -673,7 +674,7 @@ func propagateEntryShiftMetadata(tables *LRTables, itemSets []lrItemSet, ctx *lr
 			ctx.firstSets[nextSym].forEach(func(la int) {
 				acts := tables.ActionTable[stateIdx][la]
 				for _, act := range acts {
-					if act.kind != lrShift || !shiftMatchesSymbol(act, nextSym) {
+					if act.kind != lrShift || !shiftMatchesEntrySymbol(act, nextSym, leadingNonterminalsFrom(nextSym, tokenCount, ng, ctx, leadingCache)) {
 						continue
 					}
 					tables.addAction(stateIdx, la, lrAction{
@@ -692,16 +693,61 @@ func propagateEntryShiftMetadata(tables *LRTables, itemSets []lrItemSet, ctx *lr
 	}
 }
 
-func shiftMatchesSymbol(act lrAction, sym int) bool {
-	if act.lhsSym == sym {
+func shiftMatchesEntrySymbol(act lrAction, sym int, leading map[int]bool) bool {
+	if shiftLHSMatchesEntry(act.lhsSym, sym, leading) {
 		return true
 	}
 	for _, lhs := range act.lhsSyms {
-		if lhs == sym {
+		if shiftLHSMatchesEntry(lhs, sym, leading) {
 			return true
 		}
 	}
 	return false
+}
+
+func shiftLHSMatchesEntry(lhs, sym int, leading map[int]bool) bool {
+	if lhs == sym {
+		return true
+	}
+	return leading != nil && leading[lhs]
+}
+
+func leadingNonterminalsFrom(sym, tokenCount int, ng *NormalizedGrammar, ctx *lrContext, cache map[int]map[int]bool) map[int]bool {
+	if sym < tokenCount || sym < 0 || sym >= len(ng.Symbols) {
+		return nil
+	}
+	if !allowsTransitiveEntryShiftMetadata(ng.Symbols[sym].Name) {
+		return nil
+	}
+	if cached, ok := cache[sym]; ok {
+		return cached
+	}
+	seen := make(map[int]bool)
+	var walk func(int)
+	walk = func(cur int) {
+		if cur < tokenCount || cur < 0 || cur >= len(ng.Symbols) || seen[cur] {
+			return
+		}
+		seen[cur] = true
+		for _, prodIdx := range ctx.prodsByLHS[cur] {
+			prod := &ng.Productions[prodIdx]
+			for _, rhs := range prod.RHS {
+				if rhs >= tokenCount {
+					walk(rhs)
+				}
+				if rhs < 0 || rhs >= len(ctx.nullables) || !ctx.nullables[rhs] {
+					break
+				}
+			}
+		}
+	}
+	walk(sym)
+	cache[sym] = seen
+	return seen
+}
+
+func allowsTransitiveEntryShiftMetadata(name string) bool {
+	return strings.Contains(name, "repeat")
 }
 
 func (t *LRTables) addAction(state, sym int, action lrAction) {
@@ -2968,6 +3014,12 @@ func resolveActionConflict(lookaheadSym int, actions []lrAction, ng *NormalizedG
 		if shouldPreferAssignmentExpressionShift(lookaheadSym, shifts, reduces, ng) {
 			return []lrAction{shift}, nil
 		}
+		if preferred, ok := preferredKeywordContinuationShift(lookaheadSym, shifts, reduces, ng); ok {
+			return []lrAction{preferred}, nil
+		}
+		if shouldPreserveKeywordIdentifierShiftReduce(lookaheadSym, reduces, ng) {
+			return actions, nil
+		}
 
 		// Tree-sitter keeps S/R as GLR when the reduce LHS and a shift LHS
 		// are both in the same declared conflict group.
@@ -3206,11 +3258,105 @@ func shouldPreferAssignmentExpressionShift(lookaheadSym int, shifts, reduces []l
 			return false
 		}
 		prod := &ng.Productions[reduce.prodIdx]
+		if prod.LHS >= 0 && prod.LHS < len(ng.Symbols) && ng.Symbols[prod.LHS].Name == "pattern" {
+			return false
+		}
 		if prod.Prec != 0 {
 			return false
 		}
 	}
 	return true
+}
+
+func shouldPreserveKeywordIdentifierShiftReduce(lookaheadSym int, reduces []lrAction, ng *NormalizedGrammar) bool {
+	if ng == nil || !ng.PreserveKeywordIdentifierConflicts {
+		return false
+	}
+	if !keywordIdentifierConflictLookahead(lookaheadSym, ng) {
+		return false
+	}
+	for _, reduce := range reduces {
+		if isVisibleKeywordIdentifierReduce(reduce, ng) {
+			return true
+		}
+	}
+	return false
+}
+
+func preferredKeywordContinuationShift(lookaheadSym int, shifts, reduces []lrAction, ng *NormalizedGrammar) (lrAction, bool) {
+	if ng == nil || !ng.PreserveKeywordIdentifierConflicts {
+		return lrAction{}, false
+	}
+	if !keywordIdentifierConflictLookahead(lookaheadSym, ng) {
+		return lrAction{}, false
+	}
+	hasKeywordIdentifierReduce := false
+	for _, reduce := range reduces {
+		if isVisibleKeywordIdentifierReduce(reduce, ng) {
+			hasKeywordIdentifierReduce = true
+			break
+		}
+	}
+	if !hasKeywordIdentifierReduce {
+		return lrAction{}, false
+	}
+	for _, shift := range shifts {
+		if keywordContinuationShiftIsSpecific(shift, ng) {
+			return shift, true
+		}
+	}
+	return lrAction{}, false
+}
+
+func keywordIdentifierConflictLookahead(lookaheadSym int, ng *NormalizedGrammar) bool {
+	if ng == nil || lookaheadSym < 0 || lookaheadSym >= len(ng.Symbols) {
+		return false
+	}
+	switch ng.Symbols[lookaheadSym].Name {
+	case "(", "[":
+		return true
+	default:
+		return false
+	}
+}
+
+func keywordContinuationShiftIsSpecific(shift lrAction, ng *NormalizedGrammar) bool {
+	if keywordContinuationLHSIsSpecific(shift.lhsSym, ng) {
+		return true
+	}
+	for _, lhs := range shift.lhsSyms {
+		if keywordContinuationLHSIsSpecific(lhs, ng) {
+			return true
+		}
+	}
+	return false
+}
+
+func keywordContinuationLHSIsSpecific(lhs int, ng *NormalizedGrammar) bool {
+	if lhs < 0 || lhs >= len(ng.Symbols) {
+		return false
+	}
+	name := ng.Symbols[lhs].Name
+	return name == "null_literal" || strings.HasSuffix(name, "_statement")
+}
+
+func isVisibleKeywordIdentifierReduce(action lrAction, ng *NormalizedGrammar) bool {
+	if action.kind != lrReduce || action.prodIdx < 0 || action.prodIdx >= len(ng.Productions) {
+		return false
+	}
+	prod := &ng.Productions[action.prodIdx]
+	if prod.LHS < 0 || prod.LHS >= len(ng.Symbols) || ng.Symbols[prod.LHS].Name != "identifier" {
+		return false
+	}
+	if len(prod.RHS) != 1 {
+		return false
+	}
+	rhs := prod.RHS[0]
+	if rhs < 0 || rhs >= len(ng.Symbols) {
+		return false
+	}
+	sym := ng.Symbols[rhs]
+	return sym.Kind == SymbolTerminal && sym.Visible && !sym.Named
 }
 
 func repetitionShiftActions(lookaheadSym int, shifts, reduces []lrAction, ng *NormalizedGrammar) ([]lrAction, bool) {

@@ -179,6 +179,219 @@ func TestImportedKotlinSwiftGrammarConstructors(t *testing.T) {
 	}
 }
 
+func TestImportedKotlinSwiftGrammarsAreExtendable(t *testing.T) {
+	tests := []struct {
+		name    string
+		grammar *Grammar
+	}{
+		{name: "kotlin", grammar: KotlinGrammar()},
+		{name: "swift", grammar: SwiftGrammar()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			extended := ExtendGrammar(tc.name+"_ext", tc.grammar, func(g *Grammar) {
+				g.Define("__got_extension_marker", Str("__got_extension_marker"))
+			})
+			if extended.Name != tc.name+"_ext" {
+				t.Fatalf("extended.Name = %q, want %q", extended.Name, tc.name+"_ext")
+			}
+			if _, ok := extended.Rules["__got_extension_marker"]; !ok {
+				t.Fatalf("extension marker rule was not added")
+			}
+			if _, ok := tc.grammar.Rules["__got_extension_marker"]; ok {
+				t.Fatalf("base grammar was mutated through extension")
+			}
+		})
+	}
+}
+
+func TestImportedJavaScriptTypeScriptTSXFortranGrammarConstructors(t *testing.T) {
+	tests := []struct {
+		name         string
+		grammar      *Grammar
+		rules        int
+		binaryRepeat bool
+		externals    []string
+	}{
+		{
+			name:         "javascript",
+			grammar:      JavaScriptGrammar(),
+			rules:        142,
+			binaryRepeat: true,
+			externals: []string{
+				"_automatic_semicolon",
+				"_template_chars",
+				"_ternary_qmark",
+				"html_comment",
+				"||",
+				"escape_sequence",
+				"regex_pattern",
+				"jsx_text",
+			},
+		},
+		{
+			name:         "typescript",
+			grammar:      TypeScriptGrammar(),
+			rules:        229,
+			binaryRepeat: true,
+			externals: []string{
+				"_automatic_semicolon",
+				"_template_chars",
+				"_ternary_qmark",
+				"html_comment",
+				"||",
+				"escape_sequence",
+				"regex_pattern",
+				"jsx_text",
+				"_function_signature_automatic_semicolon",
+				"__error_recovery",
+			},
+		},
+		{
+			name:         "tsx",
+			grammar:      TSXGrammar(),
+			rules:        229,
+			binaryRepeat: true,
+			externals: []string{
+				"_automatic_semicolon",
+				"_template_chars",
+				"_ternary_qmark",
+				"html_comment",
+				"||",
+				"escape_sequence",
+				"regex_pattern",
+				"jsx_text",
+				"_function_signature_automatic_semicolon",
+				"__error_recovery",
+			},
+		},
+		{
+			name:         "fortran",
+			grammar:      FortranGrammar(),
+			rules:        329,
+			binaryRepeat: true,
+			externals: []string{
+				"&",
+				"_integer_literal",
+				"_float_literal",
+				"_boz_literal",
+				"_string_literal",
+				"_string_literal_kind",
+				"_external_end_of_statement",
+				"_preproc_unary_operator",
+				"hollerith_constant",
+				"_do_label",
+				"do_label_virtual",
+				"_do_label_continue",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.grammar.Name != tc.name {
+				t.Fatalf("%s grammar name = %q", tc.name, tc.grammar.Name)
+			}
+			if len(tc.grammar.Rules) != tc.rules {
+				t.Fatalf("%s rule count = %d, want %d", tc.name, len(tc.grammar.Rules), tc.rules)
+			}
+			if tc.grammar.BinaryRepeatMode != tc.binaryRepeat {
+				t.Fatalf("%s BinaryRepeatMode = %v, want %v", tc.name, tc.grammar.BinaryRepeatMode, tc.binaryRepeat)
+			}
+			if got := externalRuleNames(tc.grammar); !slices.Equal(got, tc.externals) {
+				t.Fatalf("%s externals = %v, want %v", tc.name, got, tc.externals)
+			}
+		})
+	}
+
+	if JSXGrammar().Name != "javascript" {
+		t.Fatalf("JSXGrammar().Name = %q, want javascript", JSXGrammar().Name)
+	}
+	if JSGrammar().Name != "javascript" || JavascriptGrammar().Name != "javascript" {
+		t.Fatalf("JavaScript aliases did not return javascript grammar")
+	}
+	if TSGrammar().Name != "typescript" || TypescriptGrammar().Name != "typescript" {
+		t.Fatalf("TypeScript aliases did not return typescript grammar")
+	}
+	if TsxGrammar().Name != "tsx" {
+		t.Fatalf("TsxGrammar().Name = %q, want tsx", TsxGrammar().Name)
+	}
+}
+
+func TestImportedJavaScriptTypeScriptTSXFortranGrammarsAreExtendable(t *testing.T) {
+	tests := []struct {
+		name    string
+		grammar *Grammar
+	}{
+		{name: "javascript", grammar: JavaScriptGrammar()},
+		{name: "jsx", grammar: JSXGrammar()},
+		{name: "typescript", grammar: TypeScriptGrammar()},
+		{name: "tsx", grammar: TSXGrammar()},
+		{name: "fortran", grammar: FortranGrammar()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			extended := ExtendGrammar(tc.name+"_ext", tc.grammar, func(g *Grammar) {
+				g.Define("__got_extension_marker", Str("__got_extension_marker"))
+			})
+			if extended.Name != tc.name+"_ext" {
+				t.Fatalf("extended.Name = %q, want %q", extended.Name, tc.name+"_ext")
+			}
+			if _, ok := extended.Rules["__got_extension_marker"]; !ok {
+				t.Fatalf("extension marker rule was not added")
+			}
+			if _, ok := tc.grammar.Rules["__got_extension_marker"]; ok {
+				t.Fatalf("base grammar was mutated through extension")
+			}
+		})
+	}
+}
+
+func TestImportedJavaScriptTypeScriptInlineRulesAreDefined(t *testing.T) {
+	tests := []struct {
+		name    string
+		grammar *Grammar
+	}{
+		{name: "javascript", grammar: JavaScriptGrammar()},
+		{name: "typescript", grammar: TypeScriptGrammar()},
+		{name: "tsx", grammar: TSXGrammar()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range tc.grammar.Inline {
+				if _, ok := tc.grammar.Rules[name]; !ok {
+					t.Fatalf("inline rule %q is not defined", name)
+				}
+			}
+		})
+	}
+}
+
+func TestImportedTypeScriptInlineRulesPreserveResolvedGrammarShape(t *testing.T) {
+	// tree-sitter-typescript extends JavaScript but intentionally filters these
+	// inherited inline helpers out in common/define-grammar.js.
+	tests := []struct {
+		name    string
+		grammar *Grammar
+	}{
+		{name: "typescript", grammar: TypeScriptGrammar()},
+		{name: "tsx", grammar: TSXGrammar()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range []string{"_call_signature", "_formal_parameter"} {
+				if slices.Contains(tc.grammar.Inline, name) {
+					t.Fatalf("%s inline rules include %q, but resolved tree-sitter-typescript filters it out", tc.name, name)
+				}
+			}
+		})
+	}
+}
+
 func externalRuleNames(g *Grammar) []string {
 	out := make([]string, len(g.Externals))
 	for i, rule := range g.Externals {

@@ -14,7 +14,7 @@ func RepairNoLookaheadLexModes(lang *Language) {
 	}
 
 	for state := 0; state < len(lang.LexModes) && state < int(lang.StateCount); state++ {
-		if lang.LexModes[state].LexState == noLookaheadLexState {
+		if lang.LexModes[state].LexStateIndex() == noLookaheadLexState {
 			continue
 		}
 
@@ -55,7 +55,7 @@ func RepairNoLookaheadLexModes(lang *Language) {
 		}
 
 		if !needsRealLookahead {
-			lang.LexModes[state].LexState = noLookaheadLexState
+			lang.LexModes[state].SetLexStateIndex(noLookaheadLexState)
 		}
 	}
 }

@@ -219,7 +219,7 @@ func TestJSONLexer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			// Use lex mode from state 1 (initial state).
-			lexMode := lang.LexModes[1].LexState
+			lexMode := lang.LexModes[1].LexStateIndex()
 			lexer := gotreesitter.NewLexer(lang.LexStates, []byte(tt.input))
 			t.Logf("input: %q, lexMode for state 1: %d, total LexStates: %d", tt.input, lexMode, len(lang.LexStates))
 			// Also try lex state 0 for debugging.

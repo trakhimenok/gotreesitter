@@ -9,7 +9,7 @@ import (
 func TestRepairNoLookaheadLexModes(t *testing.T) {
 	t.Cleanup(func() { PurgeEmbeddedLanguageCache() })
 
-	// The no-lookahead repair logic writes ^uint16(0) sentinel LexState
+	// The no-lookahead repair logic writes ^uint32(0) sentinel LexStateIndex
 	// values into the last few LexModes entries (one per repaired state).
 	// Use a tail-relative offset so the fixture survives blob regens that
 	// add new states ahead of the sentinels. Negative `state` means
@@ -44,8 +44,8 @@ func TestRepairNoLookaheadLexModes(t *testing.T) {
 				t.Fatalf("state %d (resolved %d) out of range for %s (len=%d)",
 					tc.state, idx, tc.name, len(lexModes))
 			}
-			if got := lexModes[idx].LexState; got != ^uint16(0) {
-				t.Fatalf("LexModes[%d].LexState = %d, want %d", idx, got, ^uint16(0))
+			if got := lexModes[idx].LexStateIndex(); got != ^uint32(0) {
+				t.Fatalf("LexModes[%d].LexStateIndex = %d, want %d", idx, got, ^uint32(0))
 			}
 		})
 	}

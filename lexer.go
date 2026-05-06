@@ -41,6 +41,7 @@ type Lexer struct {
 	row             uint32
 	col             uint32
 	immediateTokens []bool // symbol IDs that are token.immediate(); rejected after whitespace skip
+	zeroWidthTokens []bool // symbol IDs whose terminal pattern can intentionally match empty input
 }
 
 // NewLexer creates a new Lexer that will tokenize source using the given
@@ -55,7 +56,7 @@ func NewLexer(states []LexState, source []byte) *Lexer {
 // Next lexes the next token starting from the given lex state index.
 // It automatically skips tokens from states where Skip=true (whitespace).
 // Returns a zero-Symbol token with StartByte==EndByte at EOF.
-func (l *Lexer) Next(startState uint16) Token {
+func (l *Lexer) Next(startState uint32) Token {
 	for {
 		// EOF check.
 		if l.pos >= len(l.source) {
@@ -93,7 +94,7 @@ func (l *Lexer) Next(startState uint16) Token {
 // scan runs the DFA from the given start state and position. It returns
 // a token and true if an accepting state was reached, or false if not.
 // On a skip (whitespace) match, it returns a zero-Symbol token and true.
-func (l *Lexer) scan(startState uint16, startPos int, startRow, startCol uint32) (Token, bool) {
+func (l *Lexer) scan(startState uint32, startPos int, startRow, startCol uint32) (Token, bool) {
 	curState := int32(startState)
 	if curState < 0 || int(curState) >= len(l.states) {
 		return Token{}, false
@@ -130,7 +131,8 @@ func (l *Lexer) scan(startState uint16, startPos int, startRow, startCol uint32)
 			// consumed. Immediate tokens must match at the original position.
 			isImmediate := st.AcceptToken > 0 && int(st.AcceptToken) < len(l.immediateTokens) && l.immediateTokens[st.AcceptToken]
 			skippedWhitespace := tokenStartPos > startPos
-			if !(isImmediate && skippedWhitespace) {
+			zeroWidthVisible := st.AcceptToken > 0 && scanPos == tokenStartPos && !l.allowsZeroWidthToken(st.AcceptToken)
+			if !(isImmediate && skippedWhitespace) && !zeroWidthVisible {
 				newPrio := st.AcceptPriority
 				if acceptPos < 0 || newPrio < acceptPriorityBest || (newPrio == acceptPriorityBest && scanPos > acceptPos) {
 					acceptPos = scanPos
@@ -257,4 +259,11 @@ func (l *Lexer) skipOneRune() {
 	} else {
 		l.col += uint32(size)
 	}
+}
+
+func (l *Lexer) allowsZeroWidthToken(sym Symbol) bool {
+	if l == nil || len(l.zeroWidthTokens) == 0 {
+		return true
+	}
+	return int(sym) < len(l.zeroWidthTokens) && l.zeroWidthTokens[sym]
 }

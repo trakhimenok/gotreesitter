@@ -28,12 +28,64 @@ func TestBuildLexDFAPrefersLongerStringOverSingleCharPattern(t *testing.T) {
 	}
 
 	lexer := gotreesitter.NewLexer(lexStates, []byte("*/"))
-	tok := lexer.Next(uint16(modeOffsets[0]))
+	tok := lexer.Next(uint32(modeOffsets[0]))
 	if got, want := tok.Symbol, gotreesitter.Symbol(2); got != want {
 		t.Fatalf("token symbol = %d, want %d", got, want)
 	}
 	if got, want := tok.EndByte, uint32(2); got != want {
 		t.Fatalf("token end = %d, want %d", got, want)
+	}
+}
+
+func TestBuildLexDFAPreservesStringOperatorBeforeLineComment(t *testing.T) {
+	lineComment, err := expandPatternRule(`\/\/.*`)
+	if err != nil {
+		t.Fatalf("expand line comment: %v", err)
+	}
+	lexStates, modeOffsets, err := buildLexDFA(
+		context.Background(),
+		[]TerminalPattern{
+			{SymbolID: 1, Rule: Str("//"), Priority: 0},
+			{SymbolID: 2, Rule: lineComment, Priority: 0},
+		},
+		nil,
+		nil,
+		[]lexModeSpec{{
+			validSymbols: map[int]bool{1: true, 2: true},
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildLexDFA: %v", err)
+	}
+	if len(modeOffsets) != 1 {
+		t.Fatalf("len(modeOffsets) = %d, want 1", len(modeOffsets))
+	}
+
+	lexer := gotreesitter.NewLexer(lexStates, []byte("//rest"))
+	tok := lexer.Next(uint32(modeOffsets[0]))
+	if got, want := tok.Symbol, gotreesitter.Symbol(1); got != want {
+		t.Fatalf("token symbol = %d, want %d", got, want)
+	}
+	if got, want := tok.EndByte, uint32(2); got != want {
+		t.Fatalf("token end = %d, want %d", got, want)
+	}
+}
+
+func TestLineBreakOnlyRuleDetectsOptionalCRLF(t *testing.T) {
+	newline, err := expandPatternRule(`\r?\n`)
+	if err != nil {
+		t.Fatalf("expand newline pattern: %v", err)
+	}
+	if !isLineBreakOnlyRule(newline) {
+		t.Fatalf(`\r?\n should be line-break-only`)
+	}
+
+	whitespace, err := expandPatternRule(`\s`)
+	if err != nil {
+		t.Fatalf("expand whitespace pattern: %v", err)
+	}
+	if isLineBreakOnlyRule(whitespace) {
+		t.Fatalf(`\s should not be line-break-only`)
 	}
 }
 

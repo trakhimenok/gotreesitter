@@ -139,6 +139,10 @@ func EmitGrammarGo(g *Grammar, pkgName, funcName string) ([]byte, error) {
 		fmt.Fprintf(&buf, "\tg.BinaryRepeatMode = true\n\n")
 	}
 
+	if g.PreserveKeywordIdentifierConflicts {
+		fmt.Fprintf(&buf, "\tg.PreserveKeywordIdentifierConflicts = true\n\n")
+	}
+
 	if g.ChoiceLiftThreshold != 0 {
 		fmt.Fprintf(&buf, "\tg.ChoiceLiftThreshold = %d\n\n", g.ChoiceLiftThreshold)
 	}

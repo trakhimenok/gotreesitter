@@ -61,9 +61,7 @@ func assemble(
 		if modeIdx < len(lexModeOffsets) {
 			offset = lexModeOffsets[modeIdx]
 		}
-		lang.LexModes[i] = gotreesitter.LexMode{
-			LexState: uint16(offset),
-		}
+		lang.LexModes[i].SetLexStateIndex(uint32(offset))
 	}
 
 	// Build parse actions array, parse table, and small parse table.
@@ -115,6 +113,18 @@ func assemble(
 				if t.Immediate && t.SymbolID < symbolCount {
 					lang.ImmediateTokens[t.SymbolID] = true
 				}
+			}
+		}
+	}
+	// Zero-width terminals — populate bitmask so the runtime lexer can reject
+	// accidental empty accepts for terminals whose patterns require input.
+	// grammargen has this information, so an all-false bitset means "no DFA
+	// terminals may match empty"; nil remains reserved for older ts2go blobs.
+	if len(ng.Terminals) > 0 {
+		lang.ZeroWidthTokens = make([]bool, symbolCount)
+		for _, t := range ng.Terminals {
+			if t.SymbolID < symbolCount && terminalRuleCanMatchEmpty(t.Rule) {
+				lang.ZeroWidthTokens[t.SymbolID] = true
 			}
 		}
 	}
