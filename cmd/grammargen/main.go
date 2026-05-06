@@ -6,7 +6,7 @@
 //
 // Input sources:
 //
-//	<name>        Built-in grammar (json, calc, glr, go, kotlin, swift, etc.)
+//	<name>        Built-in grammar (json, calc, glr, go, js, ts, tsx, fortran, etc.)
 //	-js <path>    Import a tree-sitter grammar.js file
 //	-json <path>  Import a resolved tree-sitter grammar.json file
 //
@@ -37,6 +37,13 @@ var builtinGrammars = map[string]func() *grammargen.Grammar{
 	"calc":               grammargen.CalcGrammar,
 	"glr":                grammargen.GLRGrammar,
 	"go":                 grammargen.GoGrammar,
+	"javascript":         grammargen.JavaScriptGrammar,
+	"js":                 grammargen.JSGrammar,
+	"jsx":                grammargen.JSXGrammar,
+	"typescript":         grammargen.TypeScriptGrammar,
+	"ts":                 grammargen.TSGrammar,
+	"tsx":                grammargen.TSXGrammar,
+	"fortran":            grammargen.FortranGrammar,
 	"keyword":            grammargen.KeywordGrammar,
 	"ext":                grammargen.ExtScannerGrammar,
 	"alias":              grammargen.AliasSuperGrammar,

@@ -28,10 +28,10 @@ func TestRepairNoLookaheadLexModesIgnoresExternalAndExtraTokens(t *testing.T) {
 
 	RepairNoLookaheadLexModes(lang)
 
-	if got := lang.LexModes[1].LexState; got != noLookaheadLexState {
+	if got := lang.LexModes[1].LexStateIndex(); got != noLookaheadLexState {
 		t.Fatalf("LexModes[1].LexState = %d, want %d", got, noLookaheadLexState)
 	}
-	if got := lang.LexModes[2].LexState; got != 9 {
+	if got := lang.LexModes[2].LexStateIndex(); got != 9 {
 		t.Fatalf("LexModes[2].LexState = %d, want 9", got)
 	}
 }

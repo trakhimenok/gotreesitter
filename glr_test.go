@@ -582,6 +582,62 @@ func TestStackEquivalentForAliasLanguageRejectsDeepAliasMismatch(t *testing.T) {
 	}
 }
 
+func TestStackEquivalentForTypeScriptChecksNonFrontierChildren(t *testing.T) {
+	lang := &Language{
+		Name:        "typescript",
+		SymbolCount: 16,
+		SymbolNames: make([]string, 16),
+		AliasSequences: [][]Symbol{
+			{0, 12},
+		},
+	}
+	buildNode := func(earlyLeaf Symbol) *Node {
+		early := &Node{
+			symbol:    2,
+			startByte: 0,
+			endByte:   5,
+			isNamed:   true,
+			children: []*Node{{
+				symbol:    earlyLeaf,
+				startByte: 0,
+				endByte:   5,
+				isNamed:   true,
+			}},
+		}
+		frontier := &Node{
+			symbol:    6,
+			startByte: 5,
+			endByte:   10,
+			isNamed:   true,
+			children: []*Node{{
+				symbol:    7,
+				startByte: 5,
+				endByte:   10,
+				isNamed:   true,
+			}},
+		}
+		return &Node{
+			symbol:    1,
+			startByte: 0,
+			endByte:   10,
+			isNamed:   true,
+			children:  []*Node{early, frontier},
+		}
+	}
+
+	aNode := buildNode(3)
+	bNode := buildNode(4)
+	if !stackEntryNodesEquivalentFrontierWithScratch(nil, aNode, bNode, stackEquivalentFrontierDepthLimit) {
+		t.Fatal("test setup expected frontier equivalence to miss the earlier-child mismatch")
+	}
+
+	a := glrStack{entries: []stackEntry{{state: 1}, {state: 2, node: aNode}}, byteOffset: 10}
+	b := glrStack{entries: []stackEntry{{state: 1}, {state: 2, node: bNode}}, byteOffset: 10}
+	if stackEquivalentForLanguage(lang, a, b) {
+		t.Fatal("expected TypeScript stack equivalence to compare non-frontier children")
+	}
+}
+
 func TestMergeStacksAllDeadReturnsEmpty(t *testing.T) {
 	s1 := newGLRStack(StateID(1))
 	s2 := newGLRStack(StateID(2))

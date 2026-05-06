@@ -7,6 +7,8 @@ type typeScriptNormalizationContext struct {
 	canRewriteGenericCalls      bool
 	canRewriteInstantiatedCalls bool
 	canRewriteAsExpressions     bool
+	canRewriteGenericArrows     bool
+	canRewriteClassDeclarations bool
 	canClearEnumBodyFields      bool
 
 	callSym                Symbol
@@ -52,8 +54,20 @@ type typeScriptNormalizationContext struct {
 	typeIdentifierSym      Symbol
 	typeIdentifierNamed    bool
 	hasTypeIdentifierSym   bool
+	typeAssertionSym       Symbol
+	arrowFunctionSym       Symbol
+	typeParametersSym      Symbol
+	typeParametersNamed    bool
+	typeParameterSym       Symbol
+	typeParameterNamed     bool
+	expressionStatementSym Symbol
+	classSym               Symbol
+	classDeclarationSym    Symbol
+	classDeclarationNamed  bool
 	enumBodySym            Symbol
 	enumAssignmentSym      Symbol
+	nameFieldID            FieldID
+	typeParametersFieldID  FieldID
 }
 
 func normalizeTypeScriptCompatibility(root *Node, source []byte, lang *Language) {
@@ -97,6 +111,12 @@ func normalizeTypeScriptCompatibility(root *Node, source []byte, lang *Language)
 				}
 				if rewritten == nil && ctx.canRewriteAsExpressions {
 					rewritten = rewriteTypeScriptAsExpressionCompatibility(child, &ctx)
+				}
+				if rewritten == nil && ctx.canRewriteGenericArrows {
+					rewritten = rewriteTypeScriptGenericArrowTypeAssertion(child, &ctx)
+				}
+				if rewritten == nil && ctx.canRewriteClassDeclarations {
+					rewritten = rewriteTypeScriptClassExpressionStatement(child, &ctx)
 				}
 				if rewritten == nil {
 					break
@@ -391,7 +411,202 @@ func newTypeScriptNormalizationContext(source []byte, lang *Language) (typeScrip
 		}
 	}
 
-	return ctx, ctx.canRewriteGenericCalls || ctx.canRewriteInstantiatedCalls || ctx.canRewriteAsExpressions || ctx.canClearEnumBodyFields
+	if typeAssertionSym, ok := findVisibleSymbolByName(lang, "type_assertion", true); ok {
+		if arrowFunctionSym, ok := findVisibleSymbolByName(lang, "arrow_function", true); ok {
+			if typeArgsSym, ok := findVisibleSymbolByName(lang, "type_arguments", true); ok {
+				if typeParametersSym, ok := findVisibleSymbolByName(lang, "type_parameters", true); ok {
+					if typeParameterSym, ok := findVisibleSymbolByName(lang, "type_parameter", true); ok {
+						if typeIdentifierSym, ok := findVisibleSymbolByName(lang, "type_identifier", true); ok {
+							ctx.canRewriteGenericArrows = true
+							ctx.typeAssertionSym = typeAssertionSym
+							ctx.arrowFunctionSym = arrowFunctionSym
+							ctx.typeArgsSym = typeArgsSym
+							ctx.typeParametersSym = typeParametersSym
+							ctx.typeParametersNamed = int(typeParametersSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[typeParametersSym].Named
+							ctx.typeParameterSym = typeParameterSym
+							ctx.typeParameterNamed = int(typeParameterSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[typeParameterSym].Named
+							ctx.typeIdentifierSym = typeIdentifierSym
+							ctx.typeIdentifierNamed = int(typeIdentifierSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[typeIdentifierSym].Named
+							ctx.nameFieldID, _ = lang.FieldByName("name")
+							ctx.typeParametersFieldID, _ = lang.FieldByName("type_parameters")
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if expressionStatementSym, ok := findVisibleSymbolByName(lang, "expression_statement", true); ok {
+		if classSym, ok := findVisibleSymbolByName(lang, "class", true); ok {
+			if classDeclarationSym, ok := findVisibleSymbolByName(lang, "class_declaration", true); ok {
+				ctx.canRewriteClassDeclarations = true
+				ctx.expressionStatementSym = expressionStatementSym
+				ctx.classSym = classSym
+				ctx.classDeclarationSym = classDeclarationSym
+				ctx.classDeclarationNamed = int(classDeclarationSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[classDeclarationSym].Named
+				if ctx.nameFieldID == 0 {
+					ctx.nameFieldID, _ = lang.FieldByName("name")
+				}
+			}
+		}
+	}
+
+	return ctx, ctx.canRewriteGenericCalls || ctx.canRewriteInstantiatedCalls || ctx.canRewriteAsExpressions || ctx.canRewriteGenericArrows || ctx.canRewriteClassDeclarations || ctx.canClearEnumBodyFields
+}
+
+func rewriteTypeScriptGenericArrowTypeAssertion(node *Node, ctx *typeScriptNormalizationContext) *Node {
+	if node == nil || ctx == nil || ctx.lang == nil || node.symbol != ctx.typeAssertionSym || len(node.children) < 2 {
+		return nil
+	}
+	typeArgs := node.children[0]
+	arrow := node.children[len(node.children)-1]
+	if typeArgs == nil || arrow == nil || typeArgs.symbol != ctx.typeArgsSym || arrow.symbol != ctx.arrowFunctionSym {
+		return nil
+	}
+
+	typeParams := convertTypeScriptTypeArgumentsToParameters(typeArgs, ctx)
+	if typeParams == nil {
+		return nil
+	}
+
+	arena := node.ownerArena
+	children := phpAllocChildren(arena, len(arrow.children)+1)
+	children[0] = typeParams
+	copy(children[1:], arrow.children)
+
+	var fieldIDs []FieldID
+	if ctx.typeParametersFieldID != 0 || len(arrow.fieldIDs) > 0 {
+		if arena != nil {
+			fieldIDs = arena.allocFieldIDSlice(len(children))
+		} else {
+			fieldIDs = make([]FieldID, len(children))
+		}
+		fieldIDs[0] = ctx.typeParametersFieldID
+		copy(fieldIDs[1:], arrow.fieldIDs)
+	}
+
+	rewritten := cloneNodeInArena(arena, arrow)
+	rewritten.children = children
+	rewritten.fieldIDs = fieldIDs
+	rewritten.fieldSources = defaultFieldSourcesInArena(arena, fieldIDs)
+	populateParentNode(rewritten, rewritten.children)
+	return rewritten
+}
+
+func convertTypeScriptTypeArgumentsToParameters(typeArgs *Node, ctx *typeScriptNormalizationContext) *Node {
+	if typeArgs == nil || ctx == nil || ctx.lang == nil || typeArgs.symbol != ctx.typeArgsSym || len(typeArgs.children) == 0 {
+		return nil
+	}
+	arena := typeArgs.ownerArena
+	children := phpAllocChildren(arena, len(typeArgs.children))
+	convertedNamed := 0
+	for i, child := range typeArgs.children {
+		if child == nil || !child.isNamed {
+			children[i] = child
+			continue
+		}
+		if child.symbol != ctx.typeIdentifierSym {
+			return nil
+		}
+		paramChildren := phpAllocChildren(arena, 1)
+		paramChildren[0] = child
+		var fieldIDs []FieldID
+		if ctx.nameFieldID != 0 {
+			if arena != nil {
+				fieldIDs = arena.allocFieldIDSlice(1)
+			} else {
+				fieldIDs = make([]FieldID, 1)
+			}
+			fieldIDs[0] = ctx.nameFieldID
+		}
+		param := newParentNodeInArena(arena, ctx.typeParameterSym, ctx.typeParameterNamed, paramChildren, fieldIDs, child.productionID)
+		param.fieldSources = defaultFieldSourcesInArena(arena, fieldIDs)
+		children[i] = param
+		convertedNamed++
+	}
+	if convertedNamed == 0 {
+		return nil
+	}
+	return newParentNodeInArena(arena, ctx.typeParametersSym, ctx.typeParametersNamed, children, nil, typeArgs.productionID)
+}
+
+func rewriteTypeScriptClassExpressionStatement(node *Node, ctx *typeScriptNormalizationContext) *Node {
+	if node == nil || ctx == nil || ctx.lang == nil || node.symbol != ctx.expressionStatementSym {
+		return nil
+	}
+	var classNode *Node
+	for _, child := range node.children {
+		if child == nil || child.isExtra {
+			continue
+		}
+		if child.symbol == ctx.classSym {
+			if classNode != nil {
+				return nil
+			}
+			classNode = child
+			continue
+		}
+		if child.isNamed {
+			return nil
+		}
+	}
+	if classNode == nil || !typeScriptClassExpressionHasName(classNode, ctx) {
+		return nil
+	}
+	children := cloneNodeSliceInArena(classNode.ownerArena, classNode.children)
+	fieldIDs := cloneFieldIDSliceInArena(classNode.ownerArena, classNode.fieldIDs)
+	decl := newParentNodeInArena(classNode.ownerArena, ctx.classDeclarationSym, ctx.classDeclarationNamed, children, fieldIDs, classNode.productionID)
+	decl.fieldSources = cloneFieldSourceSliceInArena(classNode.ownerArena, classNode.fieldSources)
+	if len(decl.fieldSources) == 0 {
+		decl.fieldSources = defaultFieldSourcesInArena(classNode.ownerArena, fieldIDs)
+	}
+	return decl
+}
+
+func typeScriptClassExpressionHasName(node *Node, ctx *typeScriptNormalizationContext) bool {
+	if node == nil || ctx == nil || ctx.lang == nil {
+		return false
+	}
+	for i, child := range node.children {
+		if child == nil {
+			continue
+		}
+		if ctx.nameFieldID != 0 && i < len(node.fieldIDs) && node.fieldIDs[i] == ctx.nameFieldID {
+			return child.symbol == ctx.typeIdentifierSym && child.endByte > child.startByte
+		}
+		if child.symbol == ctx.typeIdentifierSym && child.endByte > child.startByte {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneFieldIDSliceInArena(arena *nodeArena, fieldIDs []FieldID) []FieldID {
+	if len(fieldIDs) == 0 {
+		return nil
+	}
+	if arena != nil {
+		out := arena.allocFieldIDSlice(len(fieldIDs))
+		copy(out, fieldIDs)
+		return out
+	}
+	out := make([]FieldID, len(fieldIDs))
+	copy(out, fieldIDs)
+	return out
+}
+
+func cloneFieldSourceSliceInArena(arena *nodeArena, fieldSources []uint8) []uint8 {
+	if len(fieldSources) == 0 {
+		return nil
+	}
+	if arena != nil {
+		out := arena.allocFieldSourceSlice(len(fieldSources))
+		copy(out, fieldSources)
+		return out
+	}
+	out := make([]uint8, len(fieldSources))
+	copy(out, fieldSources)
+	return out
 }
 
 func rewriteTypeScriptPredefinedGenericCall(node *Node, ctx *typeScriptNormalizationContext) *Node {

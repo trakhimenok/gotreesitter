@@ -151,6 +151,46 @@ func TestTrackZeroWidthExternalRepeatableSymbolClearsLoopGuard(t *testing.T) {
 	}
 }
 
+func TestSuppressFortranPreprocDefineNewlineOnlyOnNonDefineLines(t *testing.T) {
+	src := []byte("#ifdef X\n#define Y\n")
+	lang := &Language{
+		Name:        "fortran",
+		SymbolNames: []string{"end", "_preproc_def_token1"},
+	}
+	d := &dfaTokenSource{
+		language: lang,
+		lexer:    NewLexer(nil, src),
+	}
+
+	if !d.shouldSuppressFortranPreprocDefineNewline(Token{
+		Symbol:    1,
+		StartByte: uint32(len("#ifdef X")),
+		EndByte:   uint32(len("#ifdef X\n")),
+	}) {
+		t.Fatal("expected #ifdef line newline token to be suppressed")
+	}
+
+	defineStart := len("#ifdef X\n#define Y")
+	if d.shouldSuppressFortranPreprocDefineNewline(Token{
+		Symbol:    1,
+		StartByte: uint32(defineStart),
+		EndByte:   uint32(defineStart + 1),
+	}) {
+		t.Fatal("expected #define line newline token to be preserved")
+	}
+}
+
+func TestExplicitLineBreakSymbolName(t *testing.T) {
+	for _, name := range []string{"\n", "\r", "\r\n"} {
+		if !isExplicitLineBreakSymbolName(name) {
+			t.Fatalf("expected %q to be an explicit linebreak symbol", name)
+		}
+	}
+	if isExplicitLineBreakSymbolName("_external_end_of_statement") {
+		t.Fatal("external end-of-statement should not be treated as an explicit linebreak symbol")
+	}
+}
+
 func TestNextGLRUnionDFATokenPrefersVisibleTokenOnExactTie(t *testing.T) {
 	lang := &Language{
 		SymbolNames: []string{"end", "]", "_special_character"},
@@ -787,7 +827,7 @@ func TestNextGLRUnionDFATokenHandlesNoLookaheadLexState(t *testing.T) {
 		},
 		LexModes: []LexMode{
 			{LexState: 0},
-			{LexState: noLookaheadLexState},
+			{LexStateID: noLookaheadLexState},
 			{LexState: 1},
 		},
 		ParseTable: [][]uint16{
@@ -821,5 +861,39 @@ func TestNextGLRUnionDFATokenHandlesNoLookaheadLexState(t *testing.T) {
 	}
 	if got, want := tok.EndByte, uint32(0); got != want {
 		t.Fatalf("token end = %d, want %d", got, want)
+	}
+}
+
+func TestNextDFATokenUsesWideLexStateIndex(t *testing.T) {
+	const wideLexState = 70000
+	lexStates := make([]LexState, wideLexState+2)
+	lexStates[wideLexState] = LexState{
+		Default: -1,
+		EOF:     -1,
+		Transitions: []LexTransition{
+			{Lo: 'x', Hi: 'x', NextState: wideLexState + 1},
+		},
+	}
+	lexStates[wideLexState+1] = LexState{
+		AcceptToken: 1,
+		Default:     -1,
+		EOF:         -1,
+	}
+	lang := &Language{
+		SymbolNames: []string{"end", "x"},
+		LexStates:   lexStates,
+		LexModes:    []LexMode{{}},
+	}
+	lang.LexModes[0].SetLexStateIndex(wideLexState)
+
+	d := &dfaTokenSource{
+		lexer:    NewLexer(lang.LexStates, []byte("x")),
+		language: lang,
+	}
+	d.lexer.zeroWidthTokens = []bool{false, false}
+
+	tok := d.nextDFAToken()
+	if tok.Symbol != 1 || tok.StartByte != 0 || tok.EndByte != 1 {
+		t.Fatalf("token = sym=%d %d-%d, want x 0-1", tok.Symbol, tok.StartByte, tok.EndByte)
 	}
 }

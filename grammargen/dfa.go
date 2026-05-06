@@ -104,6 +104,7 @@ func buildLexDFA(ctx context.Context, patterns []TerminalPattern, extraSymbols [
 		if mode.skipWhitespace && len(dfa) > 0 {
 			dfa = fixExtrasOverrideConflicts(dfa, modePatterns, extraSet, skipExtras)
 		}
+		protectStringOperatorsFromLineComments(dfa, modePatterns)
 
 		// Convert to LexState format.
 		lexStates := convertDFAToLexStates(dfa, mode.skipWhitespace)
@@ -167,6 +168,9 @@ func fixExtrasOverrideConflicts(dfa []dfaState, modePatterns []TerminalPattern, 
 			protectedSyms[p.SymbolID] = true
 		}
 		if p.Rule != nil && p.Rule.Kind == RuleString {
+			protectedSyms[p.SymbolID] = true
+		}
+		if !skipExtras[p.SymbolID] && isLineBreakOnlyRule(p.Rule) {
 			protectedSyms[p.SymbolID] = true
 		}
 	}
@@ -271,6 +275,265 @@ func fixExtrasOverrideConflicts(dfa []dfaState, modePatterns []TerminalPattern, 
 		startState = &dfa[0] // re-anchor after potential realloc
 	}
 	return dfa
+}
+
+func protectStringOperatorsFromLineComments(dfa []dfaState, modePatterns []TerminalPattern) {
+	if len(dfa) == 0 || len(modePatterns) == 0 {
+		return
+	}
+	protected := stringOperatorsWithLineCommentPrefix(modePatterns)
+	if len(protected) == 0 {
+		return
+	}
+	for sym, lit := range protected {
+		state := dfaStateAfterLiteral(dfa, lit)
+		if state < 0 {
+			continue
+		}
+		dfa[state].accept = sym
+		dfa[state].acceptPriority = 0
+		dfa[state].skip = false
+		dfa[state].transitions = nil
+	}
+}
+
+func stringOperatorsWithLineCommentPrefix(modePatterns []TerminalPattern) map[int]string {
+	stringLits := make(map[int]string)
+	for _, p := range modePatterns {
+		if value, ok := stringRuleValue(p.Rule); ok && value != "" {
+			stringLits[p.SymbolID] = value
+		}
+	}
+	if len(stringLits) == 0 {
+		return nil
+	}
+	protected := make(map[int]string)
+	for sym, lit := range stringLits {
+		for _, p := range modePatterns {
+			if p.SymbolID == sym {
+				continue
+			}
+			if isLineCommentPatternWithPrefix(p.Rule, lit) {
+				protected[sym] = lit
+				break
+			}
+		}
+	}
+	if len(protected) == 0 {
+		return nil
+	}
+	return protected
+}
+
+func dfaStateAfterLiteral(dfa []dfaState, lit string) int {
+	state := 0
+	for _, ch := range lit {
+		if state < 0 || state >= len(dfa) {
+			return -1
+		}
+		next := -1
+		for _, tr := range dfa[state].transitions {
+			if ch >= tr.lo && ch <= tr.hi {
+				next = tr.nextState
+				break
+			}
+		}
+		if next < 0 {
+			return -1
+		}
+		state = next
+	}
+	return state
+}
+
+func stringRuleValue(r *Rule) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	switch r.Kind {
+	case RuleString:
+		return r.Value, true
+	case RulePrec, RulePrecLeft, RulePrecRight, RulePrecDynamic, RuleAlias, RuleField, RuleToken, RuleImmToken:
+		if len(r.Children) == 0 {
+			return "", false
+		}
+		return stringRuleValue(r.Children[0])
+	default:
+		return "", false
+	}
+}
+
+func isLineCommentPatternWithPrefix(r *Rule, prefix string) bool {
+	if r == nil || prefix == "" {
+		return false
+	}
+	switch r.Kind {
+	case RulePattern:
+		pattern := strings.ReplaceAll(r.Value, `\/`, `/`)
+		return strings.HasPrefix(pattern, prefix) && strings.Contains(pattern, ".*")
+	case RulePrec, RulePrecLeft, RulePrecRight, RulePrecDynamic, RuleAlias, RuleField, RuleToken, RuleImmToken:
+		if len(r.Children) == 0 {
+			return false
+		}
+		return isLineCommentPatternWithPrefix(r.Children[0], prefix)
+	default:
+		return prefix == "//" && expandedRuleStartsWithPrefixAndCanContinue(r, prefix)
+	}
+}
+
+func expandedRuleStartsWithPrefixAndCanContinue(r *Rule, prefix string) bool {
+	if r == nil || prefix == "" {
+		return false
+	}
+	switch r.Kind {
+	case RuleChoice:
+		for _, child := range r.Children {
+			if expandedRuleStartsWithPrefixAndCanContinue(child, prefix) {
+				return true
+			}
+		}
+		return false
+	case RuleSeq:
+		consumed := 0
+		for i, child := range r.Children {
+			if value, ok := stringRuleValue(child); ok {
+				runes := []rune(value)
+				for j, ch := range runes {
+					if consumed >= len(prefix) || byte(ch) != prefix[consumed] {
+						return false
+					}
+					consumed++
+					if consumed == len(prefix) {
+						return j+1 < len(runes) || rulesCanMatchNonEmpty(r.Children[i+1:])
+					}
+				}
+				continue
+			}
+			if consumed == len(prefix) {
+				return ruleCanMatchNonEmpty(child) || rulesCanMatchNonEmpty(r.Children[i+1:])
+			}
+			return false
+		}
+		return false
+	case RulePrec, RulePrecLeft, RulePrecRight, RulePrecDynamic, RuleAlias, RuleField, RuleToken, RuleImmToken:
+		if len(r.Children) == 0 {
+			return false
+		}
+		return expandedRuleStartsWithPrefixAndCanContinue(r.Children[0], prefix)
+	default:
+		return false
+	}
+}
+
+func rulesCanMatchNonEmpty(rules []*Rule) bool {
+	for _, r := range rules {
+		if ruleCanMatchNonEmpty(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func ruleCanMatchNonEmpty(r *Rule) bool {
+	if r == nil {
+		return false
+	}
+	switch r.Kind {
+	case RuleString, RulePattern, RuleSymbol:
+		return r.Value != ""
+	case RuleSeq, RuleChoice:
+		return rulesCanMatchNonEmpty(r.Children)
+	case RuleRepeat, RuleRepeat1, RuleOptional:
+		return len(r.Children) > 0 && ruleCanMatchNonEmpty(r.Children[0])
+	case RulePrec, RulePrecLeft, RulePrecRight, RulePrecDynamic, RuleAlias, RuleField, RuleToken, RuleImmToken:
+		return len(r.Children) > 0 && ruleCanMatchNonEmpty(r.Children[0])
+	default:
+		return false
+	}
+}
+
+func isLineBreakOnlyRule(r *Rule) bool {
+	values, ok := finiteLineBreakStrings(r)
+	if !ok || len(values) == 0 {
+		return false
+	}
+	for value := range values {
+		switch value {
+		case "\n", "\r\n", "\r":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func finiteLineBreakStrings(r *Rule) (map[string]bool, bool) {
+	if r == nil {
+		return nil, false
+	}
+	switch r.Kind {
+	case RuleBlank:
+		return map[string]bool{"": true}, true
+	case RuleString:
+		switch r.Value {
+		case "", "\r", "\n":
+			return map[string]bool{r.Value: true}, true
+		default:
+			return nil, false
+		}
+	case RuleSeq:
+		out := map[string]bool{"": true}
+		for _, child := range r.Children {
+			childValues, ok := finiteLineBreakStrings(child)
+			if !ok {
+				return nil, false
+			}
+			next := make(map[string]bool, len(out)*len(childValues))
+			for prefix := range out {
+				for suffix := range childValues {
+					combined := prefix + suffix
+					if combined != "" && combined != "\r" && combined != "\n" && combined != "\r\n" {
+						return nil, false
+					}
+					next[combined] = true
+				}
+			}
+			out = next
+		}
+		return out, true
+	case RuleChoice:
+		out := make(map[string]bool)
+		for _, child := range r.Children {
+			childValues, ok := finiteLineBreakStrings(child)
+			if !ok {
+				return nil, false
+			}
+			for value := range childValues {
+				out[value] = true
+			}
+		}
+		return out, true
+	case RuleOptional:
+		out := map[string]bool{"": true}
+		if len(r.Children) == 0 {
+			return out, true
+		}
+		childValues, ok := finiteLineBreakStrings(r.Children[0])
+		if !ok {
+			return nil, false
+		}
+		for value := range childValues {
+			out[value] = true
+		}
+		return out, true
+	case RulePrec, RulePrecLeft, RulePrecRight, RulePrecDynamic, RuleAlias, RuleField, RuleToken, RuleImmToken:
+		if len(r.Children) == 0 {
+			return nil, false
+		}
+		return finiteLineBreakStrings(r.Children[0])
+	default:
+		return nil, false
+	}
 }
 
 // computeStringPrefixExtensions returns, for each string literal symbol that

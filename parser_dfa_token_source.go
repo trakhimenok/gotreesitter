@@ -3,6 +3,7 @@ package gotreesitter
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"unicode"
@@ -59,7 +60,7 @@ type dfaTokenSource struct {
 const maxConsecutiveZeroWidthTokens = 4
 const maxConsecutiveZeroWidthTokensExternal = 128
 const maxConsecutiveZeroWidthTokensRepeatableExternal = 4096
-const noLookaheadLexState = ^uint16(0)
+const noLookaheadLexState = ^uint32(0)
 const externalScannerSerializationBufferSize = 4096
 
 var dfaTokenSourcePool = sync.Pool{
@@ -80,6 +81,7 @@ func initDFATokenSource(ts *dfaTokenSource, lexer *Lexer, language *Language, lo
 	if lexer != nil && language != nil {
 		ts.lexer.states = language.LexStates
 		ts.lexer.immediateTokens = language.ImmediateTokens
+		ts.lexer.zeroWidthTokens = language.ZeroWidthTokens
 		ts.lexer.asciiTable = language.LexAsciiTable()
 	}
 	if language != nil && language.ExternalScanner != nil {
@@ -125,6 +127,7 @@ func (d *dfaTokenSource) Reset(source []byte) {
 	if d.language != nil {
 		d.lexer.states = d.language.LexStates
 		d.lexer.immediateTokens = d.language.ImmediateTokens
+		d.lexer.zeroWidthTokens = d.language.ZeroWidthTokens
 		d.lexer.asciiTable = d.language.LexAsciiTable()
 	}
 	d.state = 0
@@ -206,6 +209,9 @@ func (d *dfaTokenSource) Next() Token {
 			tok = glrTok
 		} else {
 			tok = d.nextDFAToken()
+		}
+		if d.shouldSuppressFortranPreprocDefineNewline(tok) {
+			continue
 		}
 
 		// Some grammars can emit zero-width non-EOF tokens that have no parse
@@ -328,11 +334,11 @@ func (d *dfaTokenSource) syntheticEOFLookaheadToken() Token {
 	return d.nextTokenForLexState(noLookaheadLexState)
 }
 
-func (d *dfaTokenSource) nextTokenForLexState(lexState uint16) Token {
+func (d *dfaTokenSource) nextTokenForLexState(lexState uint32) Token {
 	if d == nil || d.lexer == nil {
 		return Token{}
 	}
-	if lexState == ^uint16(0) {
+	if lexState == noLookaheadLexState {
 		tok := d.eofTokenAtLexerPos()
 		tok.NoLookahead = true
 		return tok
@@ -384,8 +390,8 @@ func (d *dfaTokenSource) nextGLRUnionDFAToken() (Token, bool) {
 	bestOriginActions := 0
 
 	type lexModeKey struct {
-		lexState                uint16
-		afterWhitespaceLexState uint16
+		lexState                uint32
+		afterWhitespaceLexState uint32
 	}
 
 	// Deduplicate equivalent lex mode pairs to avoid redundant scans.
@@ -396,8 +402,8 @@ func (d *dfaTokenSource) nextGLRUnionDFAToken() (Token, bool) {
 		}
 		mode := d.language.LexModes[st]
 		key := lexModeKey{
-			lexState:                mode.LexState,
-			afterWhitespaceLexState: mode.AfterWhitespaceLexState,
+			lexState:                mode.LexStateIndex(),
+			afterWhitespaceLexState: mode.AfterWhitespaceLexStateIndex(),
 		}
 		if _, ok := seen[key]; ok {
 			continue
@@ -460,15 +466,15 @@ func (d *dfaTokenSource) nextGLRUnionDFAToken() (Token, bool) {
 	return bestTok, true
 }
 
-func (d *dfaTokenSource) lexStateForState(state StateID) uint16 {
+func (d *dfaTokenSource) lexStateForState(state StateID) uint32 {
 	if d == nil || d.language == nil || int(state) >= len(d.language.LexModes) {
 		return 0
 	}
 	mode := d.language.LexModes[state]
-	if mode.AfterWhitespaceLexState != 0 && d.isAfterWhitespacePosition() {
-		return mode.AfterWhitespaceLexState
+	if after := mode.AfterWhitespaceLexStateIndex(); after != 0 && d.isAfterWhitespacePosition() {
+		return after
 	}
-	return mode.LexState
+	return mode.LexStateIndex()
 }
 
 func (d *dfaTokenSource) scanPreferredTokenForState(state StateID) (Token, int, uint32, uint32) {
@@ -476,22 +482,22 @@ func (d *dfaTokenSource) scanPreferredTokenForState(state StateID) (Token, int, 
 		return Token{}, d.lexer.pos, d.lexer.row, d.lexer.col
 	}
 	mode := d.language.LexModes[state]
-	if mode.AfterWhitespaceLexState == 0 {
-		return d.scanDFATokenForState(state, mode.LexState)
+	if mode.AfterWhitespaceLexStateIndex() == 0 {
+		return d.scanDFATokenForState(state, mode.LexStateIndex())
 	}
 	if !d.isAtWhitespacePosition() && !d.isAfterWhitespacePosition() {
-		return d.scanDFATokenForState(state, mode.LexState)
+		return d.scanDFATokenForState(state, mode.LexStateIndex())
 	}
 
-	baseTok, baseEndPos, baseEndRow, baseEndCol := d.scanDFATokenForState(state, mode.LexState)
-	afterTok, afterEndPos, afterEndRow, afterEndCol := d.scanDFATokenForState(state, mode.AfterWhitespaceLexState)
+	baseTok, baseEndPos, baseEndRow, baseEndCol := d.scanDFATokenForState(state, mode.LexStateIndex())
+	afterTok, afterEndPos, afterEndRow, afterEndCol := d.scanDFATokenForState(state, mode.AfterWhitespaceLexStateIndex())
 	if d.shouldPreferBaseLexStateToken(baseTok, afterTok) {
 		return baseTok, baseEndPos, baseEndRow, baseEndCol
 	}
 	return afterTok, afterEndPos, afterEndRow, afterEndCol
 }
 
-func (d *dfaTokenSource) scanDFATokenForState(state StateID, lexState uint16) (Token, int, uint32, uint32) {
+func (d *dfaTokenSource) scanDFATokenForState(state StateID, lexState uint32) (Token, int, uint32, uint32) {
 	if d == nil || d.lexer == nil {
 		return Token{}, 0, 0, 0
 	}
@@ -1138,6 +1144,9 @@ func (d *dfaTokenSource) nextExternalToken() (Token, bool) {
 			return Token{}, false
 		}
 	}
+	if d.shouldDeferFortranExternalEndOfStatementToDFA(valid, states) {
+		return Token{}, false
+	}
 
 	if d.language.ExternalScanner == nil {
 		tok, ok := d.syntheticExternalToken(valid)
@@ -1164,6 +1173,126 @@ func (d *dfaTokenSource) nextExternalToken() (Token, bool) {
 	d.lexer.row = tok.EndPoint.Row
 	d.lexer.col = tok.EndPoint.Column
 	return tok, true
+}
+
+func (d *dfaTokenSource) shouldDeferFortranExternalEndOfStatementToDFA(valid []bool, states []StateID) bool {
+	if d == nil || d.language == nil || d.lexer == nil || d.language.Name != "fortran" {
+		return false
+	}
+	if d.lexer.pos < 0 || d.lexer.pos >= len(d.lexer.source) {
+		return false
+	}
+	switch d.lexer.source[d.lexer.pos] {
+	case '\n', '\r':
+	default:
+		return false
+	}
+	if !d.currentLineStartsWithHashDirective() {
+		return false
+	}
+	hasExternalEnd := false
+	for i, ok := range valid {
+		if !ok || i >= len(d.language.ExternalSymbols) {
+			continue
+		}
+		if d.symbolName(d.language.ExternalSymbols[i]) == "_external_end_of_statement" {
+			hasExternalEnd = true
+			break
+		}
+	}
+	if !hasExternalEnd {
+		return false
+	}
+	if len(states) == 0 {
+		states = []StateID{d.state}
+	}
+	for _, st := range states {
+		tok, endPos, _, _ := d.scanPreferredTokenForState(st)
+		if tok.Symbol == 0 || tok.StartByte != uint32(d.lexer.pos) || endPos <= d.lexer.pos {
+			continue
+		}
+		name := d.symbolName(tok.Symbol)
+		if strings.Contains(name, "preproc_") || isExplicitLineBreakSymbolName(name) {
+			return true
+		}
+	}
+	return false
+}
+
+func isExplicitLineBreakSymbolName(name string) bool {
+	switch name {
+	case "\n", "\r", "\r\n":
+		return true
+	default:
+		return false
+	}
+}
+
+func (d *dfaTokenSource) currentLineStartsWithHashDirective() bool {
+	if d == nil || d.lexer == nil {
+		return false
+	}
+	pos := d.lexer.pos - 1
+	for pos >= 0 && d.lexer.source[pos] != '\n' && d.lexer.source[pos] != '\r' {
+		pos--
+	}
+	pos++
+	for pos < len(d.lexer.source) {
+		switch d.lexer.source[pos] {
+		case ' ', '\t':
+			pos++
+			continue
+		case '#':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+func (d *dfaTokenSource) shouldSuppressFortranPreprocDefineNewline(tok Token) bool {
+	if d == nil || d.language == nil || d.lexer == nil || d.language.Name != "fortran" || tok.Symbol == 0 {
+		return false
+	}
+	name := d.symbolName(tok.Symbol)
+	if !strings.Contains(name, "preproc_def_token") {
+		return false
+	}
+	if tok.EndByte <= tok.StartByte || int(tok.StartByte) > len(d.lexer.source) {
+		return false
+	}
+	return !d.lineAtByteStartsWithHashDefine(int(tok.StartByte))
+}
+
+func (d *dfaTokenSource) lineAtByteStartsWithHashDefine(pos int) bool {
+	if d == nil || d.lexer == nil {
+		return false
+	}
+	if pos > len(d.lexer.source) {
+		pos = len(d.lexer.source)
+	}
+	start := pos - 1
+	for start >= 0 && d.lexer.source[start] != '\n' && d.lexer.source[start] != '\r' {
+		start--
+	}
+	start++
+	for start < len(d.lexer.source) {
+		switch d.lexer.source[start] {
+		case ' ', '\t':
+			start++
+			continue
+		case '#':
+			start++
+			for start < len(d.lexer.source) && (d.lexer.source[start] == ' ' || d.lexer.source[start] == '\t') {
+				start++
+			}
+			return bytes.HasPrefix(d.lexer.source[start:], []byte("define"))
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 func (d *dfaTokenSource) nextGLRScoredExternalToken(states []StateID) (Token, bool) {

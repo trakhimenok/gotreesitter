@@ -106,6 +106,8 @@ type NormalizedGrammar struct {
 	// against the named precedence of a competing shift action.
 	PrecedenceOrder *precOrderTable
 
+	PreserveKeywordIdentifierConflicts bool
+
 	// conflictCache is built lazily by LR conflict resolution so repeated
 	// resolveActionConflict calls can reuse the same reverse indexes.
 	conflictCache *conflictResolutionCache
@@ -630,6 +632,7 @@ func Normalize(g *Grammar) (*NormalizedGrammar, error) {
 	ng.ReservedWordSets = reservedWordSets
 	ng.ExternalSymbols = externalSymbols
 	ng.PrecedenceOrder = buildPrecOrderTable(g.Precedences, buildNamedPrecMapFromLevels(g.Precedences))
+	ng.PreserveKeywordIdentifierConflicts = g.PreserveKeywordIdentifierConflicts
 
 	// Set tokenCount boundary on symbols so assembly knows where terminals end.
 	_ = tokenCount
@@ -3587,6 +3590,7 @@ func expandInlineRules(g *Grammar) *Grammar {
 	out.Precedences = g.Precedences
 	out.BinaryRepeatMode = g.BinaryRepeatMode
 	out.EnableLRSplitting = g.EnableLRSplitting
+	out.PreserveKeywordIdentifierConflicts = g.PreserveKeywordIdentifierConflicts
 	out.ChoiceLiftThreshold = g.ChoiceLiftThreshold
 	// Don't propagate Inline — they've been expanded.
 
