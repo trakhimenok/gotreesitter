@@ -2631,15 +2631,14 @@ func (ctx *lrContext) buildItemSets() []lrItemSet {
 		(len(ctx.ng.ExternalSymbols) > 0 && len(ctx.ng.Productions) <= 2000)
 	useBoundaryMerging := len(ctx.ng.ExternalSymbols) > 0 && len(ctx.ng.Productions) > 2000
 	exactPrefixStates := 0
-	if len(ctx.ng.ExternalSymbols) > 0 {
+	if ctx.ng.ExactPrefixStates > 0 {
+		exactPrefixStates = ctx.ng.ExactPrefixStates
+	} else if len(ctx.ng.ExternalSymbols) > 0 {
 		exactPrefixStates = 1024
-		if ctx.ng.ExactPrefixStates > 0 {
-			exactPrefixStates = ctx.ng.ExactPrefixStates
-		}
-		if v := os.Getenv("GOT_LR_EXACT_PREFIX_STATES"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-				exactPrefixStates = n
-			}
+	}
+	if v := os.Getenv("GOT_LR_EXACT_PREFIX_STATES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			exactPrefixStates = n
 		}
 	}
 	preciseStateBudget := 0

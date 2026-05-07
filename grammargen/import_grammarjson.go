@@ -25,6 +25,12 @@ func applyImportGrammarShapeHints(g *Grammar) {
 		// compaction can deterministically choose the primary-expression path.
 		g.BinaryRepeatMode = true
 		g.ExactPrefixStates = 999999
+	case "gomod":
+		// Go module's bracketed retract intervals need the `retract_spec`
+		// reduce lookahead kept distinct through the closing `)` of grouped
+		// retract directives. LALR merge compaction otherwise gives the DFA a
+		// state that skips the close delimiter and truncates the parse.
+		g.ExactPrefixStates = 999999
 	case "javascript", "typescript", "tsx", "sql":
 		// These grammars rely heavily on tree-sitter's binary repeat helper
 		// shape. Keeping the upstream lowering avoids large state blowups and

@@ -69,8 +69,8 @@
     "dot": {
       "eligible": 11,
       "no_error": 11,
-      "sexpr_parity": 10,
-      "deep_parity": 10
+      "sexpr_parity": 11,
+      "deep_parity": 11
     },
     "eds": {
       "eligible": 2,
@@ -135,8 +135,8 @@
     "gomod": {
       "eligible": 20,
       "no_error": 20,
-      "sexpr_parity": 19,
-      "deep_parity": 19
+      "sexpr_parity": 20,
+      "deep_parity": 20
     },
     "graphql": {
       "eligible": 6,
