@@ -105,6 +105,8 @@ func TestJSONParseRoundTrip(t *testing.T) {
 		{"simple array", `[1, 2, 3]`},
 		{"nested", `{"a": [1, true, null]}`},
 		{"complex", `{"key": [1, true, null]}`},
+		{"line comment", "{\n// comment\n\"key\": \"value\"\n}"},
+		{"block comment", `{"key": /* comment */ "value"}`},
 	}
 
 	for _, tt := range tests {

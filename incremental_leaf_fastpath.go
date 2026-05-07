@@ -19,11 +19,6 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 	if len(source) != len(oldTree.source) {
 		return nil, false
 	}
-	restoreState, ok := snapshotTokenSourceState(ts)
-	if !ok {
-		return nil, false
-	}
-	defer restoreState()
 	root := oldTree.RootNode()
 	leaf := oldTree.lastEditedLeaf
 	if leaf == nil || !leaf.containsByteRange(edit.StartByte, edit.OldEndByte) {
@@ -32,23 +27,30 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 	if leaf == nil || leaf.ChildCount() != 0 || leaf.hasError || leaf.isMissing || leaf.isExtra {
 		return nil, false
 	}
-	stateful, ok := ts.(parserStateTokenSource)
-	if !ok {
-		return nil, false
-	}
 	start := time.Time{}
 	if timing != nil {
 		start = time.Now()
 	}
-	stateful.SetParserState(leaf.preGotoState)
-	stateful.SetGLRStates(nil)
-	var tok Token
-	if skipper, ok := ts.(PointSkippableTokenSource); ok {
-		tok = skipper.SkipToByteWithPoint(leaf.startByte, leaf.startPoint)
-	} else if skipper, ok := ts.(ByteSkippableTokenSource); ok {
-		tok = skipper.SkipToByte(leaf.startByte)
-	} else {
-		return nil, false
+	tok, ok := scanLeafTokenWithoutMutatingSource(ts, leaf)
+	if !ok {
+		restoreState, ok := snapshotTokenSourceState(ts)
+		if !ok {
+			return nil, false
+		}
+		defer restoreState()
+		stateful, ok := ts.(parserStateTokenSource)
+		if !ok {
+			return nil, false
+		}
+		stateful.SetParserState(leaf.preGotoState)
+		stateful.SetGLRStates(nil)
+		if skipper, ok := ts.(PointSkippableTokenSource); ok {
+			tok = skipper.SkipToByteWithPoint(leaf.startByte, leaf.startPoint)
+		} else if skipper, ok := ts.(ByteSkippableTokenSource); ok {
+			tok = skipper.SkipToByte(leaf.startByte)
+		} else {
+			return nil, false
+		}
 	}
 	if tok.Symbol != leaf.symbol || tok.StartByte != leaf.startByte || tok.EndByte != leaf.endByte {
 		return nil, false
@@ -80,6 +82,95 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 		timing.singleStackTokens = 1
 	}
 	return tree, true
+}
+
+func scanLeafTokenWithoutMutatingSource(ts TokenSource, leaf *Node) (Token, bool) {
+	if leaf == nil {
+		return Token{}, false
+	}
+	switch typed := ts.(type) {
+	case *dfaTokenSource:
+		return scanDFALeafTokenWithoutMutatingSource(typed, leaf)
+	case *includedRangeTokenSource:
+		if typed == nil {
+			return Token{}, false
+		}
+		base, ok := typed.base.(*dfaTokenSource)
+		if !ok {
+			return Token{}, false
+		}
+		snapshot, ok := prepareDFALeafScan(base, leaf)
+		if !ok {
+			return Token{}, false
+		}
+		idx := typed.idx
+		tok := typed.SkipToByteWithPoint(leaf.startByte, leaf.startPoint)
+		restoreDFALeafScan(base, snapshot)
+		typed.idx = idx
+		return tok, true
+	default:
+		return Token{}, false
+	}
+}
+
+func scanDFALeafTokenWithoutMutatingSource(dts *dfaTokenSource, leaf *Node) (Token, bool) {
+	snapshot, ok := prepareDFALeafScan(dts, leaf)
+	if !ok {
+		return Token{}, false
+	}
+	tok := dts.SkipToByteWithPoint(leaf.startByte, leaf.startPoint)
+	restoreDFALeafScan(dts, snapshot)
+	return tok, true
+}
+
+type dfaLeafScanSnapshot struct {
+	state                  StateID
+	glrStates              []StateID
+	lexer                  Lexer
+	lastExternalTokenStart uint32
+	lastExternalTokenEnd   uint32
+	lastExternalTokenValid bool
+	extZeroPos             int
+	extZeroState           StateID
+	zeroWidthPos           int
+	zeroWidthCount         int
+}
+
+func prepareDFALeafScan(dts *dfaTokenSource, leaf *Node) (dfaLeafScanSnapshot, bool) {
+	if dts == nil || dts.lexer == nil || dts.language == nil || leaf == nil {
+		return dfaLeafScanSnapshot{}, false
+	}
+	if dts.language.ExternalScanner != nil || len(dts.language.ExternalSymbols) != 0 {
+		return dfaLeafScanSnapshot{}, false
+	}
+	snapshot := dfaLeafScanSnapshot{
+		state:                  dts.state,
+		glrStates:              dts.glrStates,
+		lexer:                  *dts.lexer,
+		lastExternalTokenStart: dts.lastExternalTokenStartByte,
+		lastExternalTokenEnd:   dts.lastExternalTokenEndByte,
+		lastExternalTokenValid: dts.lastExternalTokenValid,
+		extZeroPos:             dts.extZeroPos,
+		extZeroState:           dts.extZeroState,
+		zeroWidthPos:           dts.zeroWidthPos,
+		zeroWidthCount:         dts.zeroWidthCount,
+	}
+	dts.state = leaf.preGotoState
+	dts.glrStates = nil
+	return snapshot, true
+}
+
+func restoreDFALeafScan(dts *dfaTokenSource, snapshot dfaLeafScanSnapshot) {
+	dts.state = snapshot.state
+	dts.glrStates = snapshot.glrStates
+	*dts.lexer = snapshot.lexer
+	dts.lastExternalTokenStartByte = snapshot.lastExternalTokenStart
+	dts.lastExternalTokenEndByte = snapshot.lastExternalTokenEnd
+	dts.lastExternalTokenValid = snapshot.lastExternalTokenValid
+	dts.extZeroPos = snapshot.extZeroPos
+	dts.extZeroState = snapshot.extZeroState
+	dts.zeroWidthPos = snapshot.zeroWidthPos
+	dts.zeroWidthCount = snapshot.zeroWidthCount
 }
 
 type dfaTokenSourceStateSnapshot struct {

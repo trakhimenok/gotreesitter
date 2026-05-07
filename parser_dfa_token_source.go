@@ -1167,12 +1167,50 @@ func (d *dfaTokenSource) nextExternalToken() (Token, bool) {
 		return Token{}, false
 	}
 
+	if dfaTok, endPos, endRow, endCol, ok := d.preferDFASemicolonOverJSXText(tok, states); ok {
+		d.lexer.pos = endPos
+		d.lexer.row = endRow
+		d.lexer.col = endCol
+		return dfaTok, true
+	}
+
 	d.trackZeroWidthExternalToken(tok)
 
 	d.lexer.pos = int(tok.EndByte)
 	d.lexer.row = tok.EndPoint.Row
 	d.lexer.col = tok.EndPoint.Column
 	return tok, true
+}
+
+func (d *dfaTokenSource) preferDFASemicolonOverJSXText(tok Token, states []StateID) (Token, int, uint32, uint32, bool) {
+	if d == nil || d.lexer == nil || d.language == nil || d.lookupActionIndex == nil {
+		return Token{}, 0, 0, 0, false
+	}
+	sym := int(tok.Symbol)
+	if sym < 0 || sym >= len(d.language.SymbolNames) || d.language.SymbolNames[sym] != extNameJSXText {
+		return Token{}, 0, 0, 0, false
+	}
+	start := int(tok.StartByte)
+	if start < 0 || start >= len(d.lexer.source) || d.lexer.source[start] != ';' {
+		return Token{}, 0, 0, 0, false
+	}
+
+	for _, st := range states {
+		cand, endPos, endRow, endCol := d.scanPreferredTokenForState(st)
+		candSym := int(cand.Symbol)
+		if int(cand.StartByte) != start || candSym < 0 || candSym >= len(d.language.SymbolNames) {
+			continue
+		}
+		if d.language.SymbolNames[candSym] != ";" {
+			continue
+		}
+		if d.lookupActionIndex(st, cand.Symbol) == 0 {
+			continue
+		}
+		return cand, endPos, endRow, endCol, true
+	}
+
+	return Token{}, 0, 0, 0, false
 }
 
 func (d *dfaTokenSource) shouldDeferFortranExternalEndOfStatementToDFA(valid []bool, states []StateID) bool {

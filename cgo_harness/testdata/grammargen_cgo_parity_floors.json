@@ -1,25 +1,25 @@
 {
   "version": 1,
-  "generated_at": "2026-03-21T08:42:17Z",
+  "generated_at": "2026-05-07T03:29:04Z",
   "corpus_root": "/tmp/grammar_parity",
-  "max_cases": 10,
+  "max_cases": 20,
   "max_bytes": 262144,
-  "grammar_count": 7,
-  "total_eligible": 65,
-  "total_no_error": 56,
-  "total_tree_parity": 41,
+  "grammar_count": 8,
+  "total_eligible": 126,
+  "total_no_error": 124,
+  "total_tree_parity": 120,
   "metrics": {
     "c": {
-      "eligible": 10,
-      "no_error": 9,
-      "tree_parity": 8,
-      "divergences": 2
+      "eligible": 20,
+      "no_error": 20,
+      "tree_parity": 20,
+      "divergences": 0
     },
     "c_sharp": {
-      "eligible": 5,
-      "no_error": 0,
-      "tree_parity": 0,
-      "divergences": 5
+      "eligible": 20,
+      "no_error": 20,
+      "tree_parity": 20,
+      "divergences": 0
     },
     "cobol": {
       "eligible": 10,
@@ -28,10 +28,16 @@
       "divergences": 3
     },
     "javascript": {
-      "eligible": 10,
-      "no_error": 10,
-      "tree_parity": 8,
-      "divergences": 2
+      "eligible": 20,
+      "no_error": 20,
+      "tree_parity": 20,
+      "divergences": 0
+    },
+    "json": {
+      "eligible": 6,
+      "no_error": 6,
+      "tree_parity": 6,
+      "divergences": 0
     },
     "scala": {
       "eligible": 10,
@@ -40,16 +46,16 @@
       "divergences": 4
     },
     "tsx": {
-      "eligible": 10,
-      "no_error": 10,
-      "tree_parity": 6,
-      "divergences": 5
+      "eligible": 20,
+      "no_error": 20,
+      "tree_parity": 20,
+      "divergences": 0
     },
     "typescript": {
-      "eligible": 10,
-      "no_error": 9,
-      "tree_parity": 5,
-      "divergences": 6
+      "eligible": 20,
+      "no_error": 20,
+      "tree_parity": 20,
+      "divergences": 0
     }
   }
 }

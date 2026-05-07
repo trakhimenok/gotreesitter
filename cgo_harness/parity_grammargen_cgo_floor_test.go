@@ -21,6 +21,12 @@ func TestMergeGrammargenCGOFloorsPreservesRatchetDirection(t *testing.T) {
 			TreeParity:  0,
 			Divergences: 25,
 		},
+		"javascript": {
+			Eligible:    10,
+			NoError:     10,
+			TreeParity:  10,
+			Divergences: 5,
+		},
 	}
 	observed := map[string]grammargenCGOFloorEntry{
 		"c": {
@@ -30,6 +36,12 @@ func TestMergeGrammargenCGOFloorsPreservesRatchetDirection(t *testing.T) {
 			Divergences: 14,
 		},
 		"json": {
+			Eligible:    10,
+			NoError:     10,
+			TreeParity:  10,
+			Divergences: 0,
+		},
+		"javascript": {
 			Eligible:    10,
 			NoError:     10,
 			TreeParity:  10,
@@ -50,6 +62,9 @@ func TestMergeGrammargenCGOFloorsPreservesRatchetDirection(t *testing.T) {
 	}
 	if got, want := merged["c"].Divergences, 11; got != want {
 		t.Fatalf("c divergences = %d, want %d", got, want)
+	}
+	if got, want := merged["javascript"].Divergences, 0; got != want {
+		t.Fatalf("javascript divergences = %d, want %d", got, want)
 	}
 	if got, want := merged["scala"], existing["scala"]; got != want {
 		t.Fatalf("scala entry = %+v, want %+v", got, want)
@@ -80,5 +95,23 @@ func TestGrammargenCGORatchetRegressionsIncludesDivergences(t *testing.T) {
 	}
 	if !strings.Contains(msgs[0], "divergences") {
 		t.Fatalf("regression message %q does not mention divergences", msgs[0])
+	}
+
+	msgs = grammargenCGORatchetRegressions("json",
+		grammargenCGOFloorEntry{
+			Eligible:    10,
+			NoError:     10,
+			TreeParity:  10,
+			Divergences: 0,
+		},
+		grammargenCGOFloorEntry{
+			Eligible:    10,
+			NoError:     10,
+			TreeParity:  10,
+			Divergences: 1,
+		},
+	)
+	if len(msgs) != 1 {
+		t.Fatalf("zero-floor regressions = %v, want one divergence regression", msgs)
 	}
 }

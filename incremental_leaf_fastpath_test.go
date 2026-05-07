@@ -145,3 +145,147 @@ func TestSnapshotTokenSourceStateSupportsIncludedRangeWrapper(t *testing.T) {
 		t.Fatalf("underlying lexer.pos = %d, want %d", underlying.lexer.pos, 3)
 	}
 }
+
+func TestScanLeafTokenWithoutMutatingDFATokenSource(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+	oldSource := []byte("1+2")
+	newSource := []byte("1+3")
+	tree := mustParse(t, parser, oldSource)
+	tree.Edit(InputEdit{
+		StartByte:   2,
+		OldEndByte:  3,
+		NewEndByte:  3,
+		StartPoint:  Point{Row: 0, Column: 2},
+		OldEndPoint: Point{Row: 0, Column: 3},
+		NewEndPoint: Point{Row: 0, Column: 3},
+	})
+	leaf := tree.lastEditedLeaf
+	if leaf == nil {
+		t.Fatal("expected edited leaf to be tracked")
+	}
+
+	ts := newDFATokenSourceDirect(NewLexer(lang.LexStates, newSource), lang, parser.lookupActionIndex, parser.hasKeywordState)
+	ts.state = 88
+	ts.glrStates = []StateID{1, 3, 5}
+	ts.zeroWidthPos = 7
+	ts.zeroWidthCount = 9
+	beforeLexer := *ts.lexer
+	beforeGLR := append([]StateID(nil), ts.glrStates...)
+
+	tok, ok := scanLeafTokenWithoutMutatingSource(ts, leaf)
+	if !ok {
+		t.Fatal("scanLeafTokenWithoutMutatingSource returned false for DFA token source")
+	}
+	if tok.Symbol != 1 || tok.StartByte != 2 || tok.EndByte != 3 {
+		t.Fatalf("token = %+v, want NUMBER at [2,3)", tok)
+	}
+	if ts.state != 88 {
+		t.Fatalf("source parser state mutated to %d, want 88", ts.state)
+	}
+	if !reflect.DeepEqual(ts.glrStates, beforeGLR) {
+		t.Fatalf("source GLR states mutated to %v, want %v", ts.glrStates, beforeGLR)
+	}
+	if ts.zeroWidthPos != 7 || ts.zeroWidthCount != 9 {
+		t.Fatalf("zero-width guard mutated to pos=%d count=%d, want 7/9", ts.zeroWidthPos, ts.zeroWidthCount)
+	}
+	if !reflect.DeepEqual(*ts.lexer, beforeLexer) {
+		t.Fatalf("source lexer mutated to %#v, want %#v", *ts.lexer, beforeLexer)
+	}
+}
+
+func TestScanLeafTokenWithoutMutatingIncludedRangeTokenSource(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+	oldSource := []byte("1+2")
+	newSource := []byte("1+3")
+	tree := mustParse(t, parser, oldSource)
+	tree.Edit(InputEdit{
+		StartByte:   2,
+		OldEndByte:  3,
+		NewEndByte:  3,
+		StartPoint:  Point{Row: 0, Column: 2},
+		OldEndPoint: Point{Row: 0, Column: 3},
+		NewEndPoint: Point{Row: 0, Column: 3},
+	})
+	leaf := tree.lastEditedLeaf
+	if leaf == nil {
+		t.Fatal("expected edited leaf to be tracked")
+	}
+
+	base := newDFATokenSourceDirect(NewLexer(lang.LexStates, newSource), lang, parser.lookupActionIndex, parser.hasKeywordState)
+	wrapped := &includedRangeTokenSource{
+		base: base,
+		ranges: []Range{
+			{StartByte: 0, EndByte: 1},
+			{StartByte: 2, EndByte: 3},
+		},
+	}
+	beforeBaseLexer := *base.lexer
+
+	tok, ok := scanLeafTokenWithoutMutatingSource(wrapped, leaf)
+	if !ok {
+		t.Fatal("scanLeafTokenWithoutMutatingSource returned false for included range token source")
+	}
+	if tok.Symbol != 1 || tok.StartByte != 2 || tok.EndByte != 3 {
+		t.Fatalf("token = %+v, want NUMBER at [2,3)", tok)
+	}
+	if wrapped.idx != 0 {
+		t.Fatalf("included range idx mutated to %d, want 0", wrapped.idx)
+	}
+	if !reflect.DeepEqual(*base.lexer, beforeBaseLexer) {
+		t.Fatalf("base lexer mutated to %#v, want %#v", *base.lexer, beforeBaseLexer)
+	}
+}
+
+func TestScanLeafTokenWithoutMutatingRejectsExternalScanner(t *testing.T) {
+	lang := *buildArithmeticLanguage()
+	lang.ExternalScanner = parserTestUnsafeExternalScanner{}
+	parser := NewParser(&lang)
+	oldSource := []byte("1+2")
+	newSource := []byte("1+3")
+	tree := mustParse(t, parser, oldSource)
+	tree.Edit(InputEdit{
+		StartByte:   2,
+		OldEndByte:  3,
+		NewEndByte:  3,
+		StartPoint:  Point{Row: 0, Column: 2},
+		OldEndPoint: Point{Row: 0, Column: 3},
+		NewEndPoint: Point{Row: 0, Column: 3},
+	})
+	leaf := tree.lastEditedLeaf
+	if leaf == nil {
+		t.Fatal("expected edited leaf to be tracked")
+	}
+
+	ts := newDFATokenSourceDirect(NewLexer(lang.LexStates, newSource), &lang, parser.lookupActionIndex, parser.hasKeywordState)
+	if tok, ok := scanLeafTokenWithoutMutatingSource(ts, leaf); ok {
+		t.Fatalf("scanLeafTokenWithoutMutatingSource succeeded for external-scanner language: %+v", tok)
+	}
+}
+
+func TestScanLeafTokenWithoutMutatingRejectsSyntheticExternalSymbols(t *testing.T) {
+	lang := *buildArithmeticLanguage()
+	lang.ExternalSymbols = []Symbol{1}
+	parser := NewParser(&lang)
+	oldSource := []byte("1+2")
+	newSource := []byte("1+3")
+	tree := mustParse(t, parser, oldSource)
+	tree.Edit(InputEdit{
+		StartByte:   2,
+		OldEndByte:  3,
+		NewEndByte:  3,
+		StartPoint:  Point{Row: 0, Column: 2},
+		OldEndPoint: Point{Row: 0, Column: 3},
+		NewEndPoint: Point{Row: 0, Column: 3},
+	})
+	leaf := tree.lastEditedLeaf
+	if leaf == nil {
+		t.Fatal("expected edited leaf to be tracked")
+	}
+
+	ts := newDFATokenSourceDirect(NewLexer(lang.LexStates, newSource), &lang, parser.lookupActionIndex, parser.hasKeywordState)
+	if tok, ok := scanLeafTokenWithoutMutatingSource(ts, leaf); ok {
+		t.Fatalf("scanLeafTokenWithoutMutatingSource succeeded for synthetic-external language: %+v", tok)
+	}
+}

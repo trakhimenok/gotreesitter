@@ -11,3 +11,7 @@ point built-in grammar loaders at local grammargen `.bin` overrides.
 `test_race_serial.sh` is a legacy host-side race wrapper. Prefer CI or a
 dedicated container first; if you ever fall back to it, keep it scoped to one
 package and one target at a time.
+
+`prune_harness_artifacts.sh` reports generated harness artifact directories by
+size and removes them only when run with `--delete`. It intentionally excludes
+private notes and defaults to a dry run.
