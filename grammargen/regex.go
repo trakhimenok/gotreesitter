@@ -440,6 +440,8 @@ func (p *regexParser) parseEscapeChar() (rune, error) {
 		return r, nil
 	case 'u':
 		return p.parseUnicodeEscape()
+	case 'U':
+		return p.parseLongUnicodeEscape()
 	case 'x':
 		return p.parseHexEscape()
 	default:
@@ -704,6 +706,41 @@ func (p *regexParser) parseUnicodeEscape() (rune, error) {
 	n, err := strconv.ParseUint(hex, 16, 32)
 	if err != nil {
 		return 0, fmt.Errorf("invalid \\u escape: %s", hex)
+	}
+	return rune(n), nil
+}
+
+// parseLongUnicodeEscape parses \UXXXXXXXX or \U{XXXXXXXX}.
+func (p *regexParser) parseLongUnicodeEscape() (rune, error) {
+	// Braced form for symmetry with \u{...}; uncommon, but harmless.
+	if p.pos < len(p.input) && p.input[p.pos] == '{' {
+		p.pos++ // consume '{'
+		end := strings.IndexByte(p.input[p.pos:], '}')
+		if end < 0 {
+			return 0, fmt.Errorf("unterminated \\U{...} escape")
+		}
+		hex := p.input[p.pos : p.pos+end]
+		p.pos += end + 1 // consume hex digits and '}'
+		n, err := strconv.ParseUint(hex, 16, 32)
+		if err != nil {
+			return 0, fmt.Errorf("invalid \\U escape: {%s}", hex)
+		}
+		if n > utf8.MaxRune {
+			return 0, fmt.Errorf("invalid \\U escape above MaxRune: {%s}", hex)
+		}
+		return rune(n), nil
+	}
+	if p.pos+8 > len(p.input) {
+		return 0, fmt.Errorf("incomplete \\U escape")
+	}
+	hex := p.input[p.pos : p.pos+8]
+	p.pos += 8
+	n, err := strconv.ParseUint(hex, 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid \\U escape: %s", hex)
+	}
+	if n > utf8.MaxRune {
+		return 0, fmt.Errorf("invalid \\U escape above MaxRune: %s", hex)
 	}
 	return rune(n), nil
 }

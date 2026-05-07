@@ -1326,6 +1326,7 @@ func TestRegexParser(t *testing.T) {
 		{`[\pL\p{Mn}\pN_']*`, false},          // haskell: \pL shorthand
 		{`\p{White_Space}|\\\\\\r?\n`, false}, // perl: White_Space property
 		{`[\p{L}\p{M}\p{N}\p{Emoji}]`, false}, // kdl: Emoji property
+		{`[\U00010400-\U00010427]`, false},    // elm: astral Unicode ranges
 	}
 
 	for _, tt := range tests {

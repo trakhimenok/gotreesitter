@@ -141,3 +141,26 @@ func TestAliasedInlinePatternWinsSameLengthNamedPatternTie(t *testing.T) {
 		t.Fatalf("SExpr = %s, want (source_file (preproc_include (system_lib_string)))", got)
 	}
 }
+
+func TestUppercaseUnicodeEscapeIdentifierDoesNotCaptureDigits(t *testing.T) {
+	g := NewGrammar("unicode_escape_identifier_digit_split")
+	g.Define("source_file", Choice(
+		Sym("upper_case_identifier"),
+		Sym("number_literal"),
+	))
+	g.Define("upper_case_identifier", Pat(`[A-Z\U00010400-\U00010427][A-Z0-9]*`))
+	g.Define("number_literal", Pat(`[0-9]+`))
+
+	lang, err := GenerateLanguage(g)
+	if err != nil {
+		t.Fatalf("GenerateLanguage: %v", err)
+	}
+	tree, err := gotreesitter.NewParser(lang).Parse([]byte("1"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	defer tree.Release()
+	if got := tree.RootNode().SExpr(lang); got != "(source_file (number_literal))" {
+		t.Fatalf("SExpr = %s, want (source_file (number_literal))", got)
+	}
+}
