@@ -442,16 +442,33 @@ func (p *Parser) tryRelexBroadDFA(tok Token, parserState StateID, ts TokenSource
 	// Save lexer state
 	savedPos, savedRow, savedCol := dts.lexer.pos, dts.lexer.row, dts.lexer.col
 
-	tryAt := func(pos int, row, col uint32) (Token, bool) {
+	type broadRelexCandidate struct {
+		token      Token
+		extraShift bool
+	}
+
+	tryAt := func(pos int, row, col uint32) (broadRelexCandidate, bool) {
 		dts.lexer.pos, dts.lexer.row, dts.lexer.col = pos, row, col
 		tok2 := dts.lexer.Next(broadLS)
 		if tok2.Symbol == 0 {
-			return Token{}, false
+			return broadRelexCandidate{}, false
+		}
+		// The broad lexer can skip extras before returning a token. Relexing is
+		// only safe when any intentional layout skip is explicit at the call site.
+		if int(tok2.StartByte) != pos {
+			return broadRelexCandidate{}, false
 		}
 		actionIdx := p.lookupActionIndex(parserState, tok2.Symbol)
 		if actionIdx == 0 || int(actionIdx) >= len(p.language.ParseActions) ||
 			len(p.language.ParseActions[actionIdx].Actions) == 0 {
-			return Token{}, false
+			return broadRelexCandidate{}, false
+		}
+		extraShift := false
+		for _, action := range p.language.ParseActions[actionIdx].Actions {
+			if action.Type == ParseActionShift && action.Extra {
+				extraShift = true
+				break
+			}
 		}
 		if p.glrTrace {
 			fmt.Printf("  RELEX: %s(%d) → %s(%d) in state=%d\n",
@@ -459,11 +476,18 @@ func (p *Parser) tryRelexBroadDFA(tok Token, parserState StateID, ts TokenSource
 				p.language.SymbolNames[tok2.Symbol], tok2.Symbol,
 				parserState)
 		}
-		return tok2, true
+		return broadRelexCandidate{token: tok2, extraShift: extraShift}, true
 	}
 
-	if tok2, ok := tryAt(int(tok.StartByte), tok.StartPoint.Row, tok.StartPoint.Column); ok {
-		return tok2, true
+	isImmediate := int(tok.Symbol) < len(p.language.ImmediateTokens) && p.language.ImmediateTokens[tok.Symbol]
+	if isImmediate {
+		if cand, ok := tryAt(int(tok.StartByte), tok.StartPoint.Row, tok.StartPoint.Column); ok {
+			return cand.token, true
+		}
+	} else {
+		if cand, ok := tryAt(int(tok.StartByte), tok.StartPoint.Row, tok.StartPoint.Column); ok && cand.extraShift {
+			return cand.token, true
+		}
 	}
 
 	skipPos, skipCol := int(tok.StartByte), tok.StartPoint.Column
@@ -473,8 +497,38 @@ func (p *Parser) tryRelexBroadDFA(tok Token, parserState StateID, ts TokenSource
 		skipCol++
 	}
 	if skipPos > int(tok.StartByte) {
-		if tok2, ok := tryAt(skipPos, tok.StartPoint.Row, skipCol); ok {
-			return tok2, true
+		if cand, ok := tryAt(skipPos, tok.StartPoint.Row, skipCol); ok && (isImmediate || cand.extraShift) {
+			return cand.token, true
+		}
+	}
+
+	isStringContent := int(tok.Symbol) < len(p.language.SymbolNames) && p.language.SymbolNames[tok.Symbol] == "string_content"
+	if isStringContent {
+		skipPos, skipRow, skipCol := int(tok.StartByte), tok.StartPoint.Row, tok.StartPoint.Column
+		for skipPos < len(dts.lexer.source) {
+			b := dts.lexer.source[skipPos]
+			if b == ' ' || b == '\t' {
+				skipPos++
+				skipCol++
+				continue
+			}
+			if b == '\n' {
+				skipPos++
+				skipRow++
+				skipCol = 0
+				continue
+			}
+			if b == '\r' {
+				skipPos++
+				skipCol = 0
+				continue
+			}
+			break
+		}
+		if skipPos > int(tok.StartByte) {
+			if cand, ok := tryAt(skipPos, skipRow, skipCol); ok {
+				return cand.token, true
+			}
 		}
 	}
 
