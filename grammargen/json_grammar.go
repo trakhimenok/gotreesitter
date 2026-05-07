@@ -27,9 +27,9 @@ func JSONGrammar() *Grammar {
 		Str("}"),
 	))
 
-	// pair: seq(field("key", choice(string, number)), ":", field("value", _value))
+	// pair: seq(field("key", string), ":", field("value", _value))
 	g.Define("pair", Seq(
-		Field("key", Choice(Sym("string"), Sym("number"))),
+		Field("key", Sym("string")),
 		Str(":"),
 		Field("value", Sym("_value")),
 	))
@@ -41,18 +41,21 @@ func JSONGrammar() *Grammar {
 		Str("]"),
 	))
 
-	// string: seq('"', repeat(choice(string_content, escape_sequence)), '"')
+	// string: seq('"', optional(_string_content), '"')
 	g.Define("string", Seq(
 		Str("\""),
-		Repeat(Choice(
-			Sym("string_content"),
-			Sym("escape_sequence"),
-		)),
+		Optional(Sym("_string_content")),
 		Str("\""),
 	))
 
-	// string_content: token.immediate(prec(1, /[^\\"]+/))
-	g.Define("string_content", ImmToken(Prec(1, Pat(`[^\\\"]+`))))
+	// _string_content: repeat1(choice(string_content, escape_sequence))
+	g.Define("_string_content", Repeat1(Choice(
+		Sym("string_content"),
+		Sym("escape_sequence"),
+	)))
+
+	// string_content: token.immediate(prec(1, /[^\\\"\n]+/))
+	g.Define("string_content", ImmToken(Prec(1, Pat(`[^\\\"\n]+`))))
 
 	// escape_sequence: token.immediate(seq("\\", choice(/["\\/bfnrt]/, /u[0-9a-fA-F]{4}/)))
 	g.Define("escape_sequence", ImmToken(Seq(
@@ -84,8 +87,14 @@ func JSONGrammar() *Grammar {
 	g.Define("false", Str("false"))
 	g.Define("null", Str("null"))
 
-	// Extras: whitespace.
-	g.SetExtras(Pat(`\s`))
+	// comment: token(choice(seq("//", /.*/), seq("/*", /[^*]*\*+([^/*][^*]*\*+)*/, "/")))
+	g.Define("comment", Token(Choice(
+		Seq(Str("//"), Pat(`.*`)),
+		Seq(Str("/*"), Pat(`[^*]*\*+([^/*][^*]*\*+)*`), Str("/")),
+	)))
+
+	// Extras: whitespace and comments.
+	g.SetExtras(Pat(`\s`), Sym("comment"))
 
 	// _value is a supertype.
 	g.SetSupertypes("_value")

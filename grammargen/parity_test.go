@@ -1064,6 +1064,8 @@ var jsonParityInputs = []struct {
 	{"number key", `{"key": 42}`},
 	{"bool values", `{"t": true, "f": false}`},
 	{"null value", `{"n": null}`},
+	{"line comment extra", "{\n// comment\n\"a\": 1\n}"},
+	{"block comment extra", `{"a": /* comment */ 1}`},
 
 	// Arrays.
 	{"empty array", `[]`},
@@ -1156,6 +1158,34 @@ func TestParityJSONNoErrors(t *testing.T) {
 				t.Errorf("generated parser produced MISSING: %s", sexp)
 			}
 		})
+	}
+}
+
+func TestParityJSONRejectsNumberKeysLikeReference(t *testing.T) {
+	refLang := grammars.JsonLanguage()
+	if refLang == nil {
+		t.Fatal("reference JSON language not available")
+	}
+	genLang, err := GenerateLanguage(JSONGrammar())
+	if err != nil {
+		t.Fatalf("GenerateLanguage failed: %v", err)
+	}
+
+	src := []byte(`{1: "value"}`)
+	refTree, err := gotreesitter.NewParser(refLang).Parse(src)
+	if err != nil {
+		t.Fatalf("reference parse failed: %v", err)
+	}
+	genTree, err := gotreesitter.NewParser(genLang).Parse(src)
+	if err != nil {
+		t.Fatalf("generated parse failed: %v", err)
+	}
+
+	if !refTree.RootNode().HasError() {
+		t.Fatalf("reference JSON unexpectedly accepted a numeric object key: %s", refTree.RootNode().SExpr(refLang))
+	}
+	if !genTree.RootNode().HasError() {
+		t.Fatalf("generated JSON accepted a numeric object key: %s", genTree.RootNode().SExpr(genLang))
 	}
 }
 
@@ -1516,12 +1546,7 @@ func TestParityJSONProperties(t *testing.T) {
 		}
 	}
 
-	// Symbols that the reference has but grammargen intentionally omits.
-	// tree-sitter adds a "comment" symbol to all grammars by default;
-	// grammargen only includes it if the grammar declares a comment rule.
-	refOnlyExpected := map[string]bool{
-		"comment": true,
-	}
+	refOnlyExpected := map[string]bool{}
 
 	// Every visible symbol in the reference should exist in generated
 	// (modulo intentional omissions).

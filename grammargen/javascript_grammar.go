@@ -2855,5 +2855,12 @@ func JavaScriptGrammar() *Grammar {
 
 	g.BinaryRepeatMode = true
 
+	g.FlattenGeneratedRepeatAux = true
+
+	g.ReuseRepeatAuxForParents = []string{
+		"jsx_opening_element",
+		"jsx_self_closing_element",
+	}
+
 	return g
 }

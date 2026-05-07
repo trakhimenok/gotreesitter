@@ -23,6 +23,10 @@ func applyImportGrammarShapeHints(g *Grammar) {
 		// shape. Keeping the upstream lowering avoids large state blowups and
 		// preserves upstream ambiguity handling for imported grammars.
 		g.BinaryRepeatMode = true
+		if g.Name == "javascript" {
+			g.FlattenGeneratedRepeatAux = true
+			g.ReuseRepeatAuxForParents = []string{"jsx_opening_element", "jsx_self_closing_element"}
+		}
 	}
 }
 
