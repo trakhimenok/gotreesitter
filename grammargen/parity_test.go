@@ -2316,7 +2316,7 @@ func init() {
 		// Popular languages
 		{name: "java", blobFunc: grammars.JavaLanguage, timeout: 90 * time.Second, expectNoErrors: 1, expectParity: 1},
 		{name: "lua", blobFunc: grammars.LuaLanguage, expectNoErrors: 1, expectParity: 1},
-		{name: "zig", blobFunc: grammars.ZigLanguage, timeout: 60 * time.Second, expectNoErrors: 1},
+		{name: "zig", blobFunc: grammars.ZigLanguage, timeout: 60 * time.Second, expectNoErrors: 1, expectParity: 1},
 		{name: "swift", blobFunc: grammars.SwiftLanguage, timeout: 90 * time.Second, expectNoErrors: 1, expectParity: 1},
 		{name: "clojure", blobFunc: grammars.ClojureLanguage, expectNoErrors: 1, expectParity: 1},
 		{name: "groovy", blobFunc: grammars.GroovyLanguage, timeout: 60 * time.Second, expectNoErrors: 1, expectParity: 1},

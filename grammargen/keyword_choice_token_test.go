@@ -1,6 +1,10 @@
 package grammargen
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/odvcencio/gotreesitter"
+)
 
 func TestNamedStringChoiceTokenBecomesKeyword(t *testing.T) {
 	g := NewGrammar("named_string_choice_keyword")
@@ -55,5 +59,46 @@ func TestNamedStringChoiceTokenBecomesKeyword(t *testing.T) {
 	}
 	if !foundEntry {
 		t.Fatalf("predefined_type sym %d missing from keyword entries", predefinedTypeSym)
+	}
+}
+
+func TestBareLexicalChoiceBecomesNamedToken(t *testing.T) {
+	g := NewGrammar("bare_lexical_choice_named_token")
+	g.Define("source_file", Sym("builtin_type"))
+	g.Define("builtin_type", Choice(
+		Str("bool"),
+		Pat(`(i|u)[1-9][0-9]*`),
+	))
+	g.Define("identifier", Pat(`[A-Za-z_][A-Za-z0-9_]*`))
+	g.SetWord("identifier")
+
+	ng, err := Normalize(g)
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	builtinTypeSym := -1
+	for i, sym := range ng.Symbols {
+		if sym.Name == "builtin_type" {
+			builtinTypeSym = i
+			if sym.Kind != SymbolNamedToken {
+				t.Fatalf("builtin_type kind = %v, want SymbolNamedToken", sym.Kind)
+			}
+			break
+		}
+	}
+	if builtinTypeSym < 0 {
+		t.Fatal("builtin_type symbol not found")
+	}
+	lang, err := GenerateLanguage(g)
+	if err != nil {
+		t.Fatalf("GenerateLanguage: %v", err)
+	}
+	tree, err := gotreesitter.NewParser(lang).Parse([]byte("i32"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	defer tree.Release()
+	if got := tree.RootNode().SExpr(lang); got != "(source_file (builtin_type))" {
+		t.Fatalf("SExpr = %s, want (source_file (builtin_type))", got)
 	}
 }

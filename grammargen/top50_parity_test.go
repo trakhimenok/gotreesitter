@@ -10,7 +10,7 @@ import (
 
 const (
 	top50MinNoErrorFloors     = 50
-	top50MinExactParityFloors = 40
+	top50MinExactParityFloors = 41
 )
 
 func TestTop50GrammarImportParityCoverage(t *testing.T) {

@@ -1179,6 +1179,16 @@ func isTerminalRule(r *Rule) bool {
 		return true
 	case RuleToken, RuleImmToken:
 		return true
+	case RuleChoice:
+		if len(r.Children) == 0 {
+			return false
+		}
+		for _, child := range r.Children {
+			if !isTerminalRule(child) {
+				return false
+			}
+		}
+		return true
 	case RulePrec, RulePrecLeft, RulePrecRight, RulePrecDynamic:
 		if len(r.Children) > 0 {
 			return isTerminalRule(r.Children[0])
@@ -2594,6 +2604,9 @@ func expandTokenRule(r *Rule) (*Rule, bool, int, error) {
 	case RuleImmToken:
 		inner, prec, err := flattenTokenInnerPrec(r.Children[0])
 		return inner, true, prec, err
+	case RuleChoice:
+		inner, err := flattenTokenInner(r)
+		return inner, false, 0, err
 	case RulePrec, RulePrecLeft, RulePrecRight, RulePrecDynamic:
 		if len(r.Children) > 0 {
 			rule, imm, _, err := expandTokenRule(r.Children[0])
