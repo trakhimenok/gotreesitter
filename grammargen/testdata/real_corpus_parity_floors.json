@@ -8,9 +8,9 @@
   "max_sample_bytes": 524288,
   "grammar_count": 53,
   "total_eligible": 1019,
-  "total_no_error": 970,
-  "total_sexpr_parity": 745,
-  "total_deep_parity": 740,
+  "total_no_error": 982,
+  "total_sexpr_parity": 778,
+  "total_deep_parity": 773,
   "metrics": {
     "bash": {
       "eligible": 25,
@@ -105,8 +105,8 @@
     "git_config": {
       "eligible": 13,
       "no_error": 13,
-      "sexpr_parity": 12,
-      "deep_parity": 12
+      "sexpr_parity": 13,
+      "deep_parity": 13
     },
     "git_rebase": {
       "eligible": 14,
@@ -170,9 +170,9 @@
     },
     "javascript": {
       "eligible": 25,
-      "no_error": 24,
-      "sexpr_parity": 24,
-      "deep_parity": 24
+      "no_error": 25,
+      "sexpr_parity": 25,
+      "deep_parity": 25
     },
     "jsdoc": {
       "eligible": 16,

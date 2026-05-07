@@ -2017,9 +2017,18 @@ func extractTerminals(g *Grammar, st *symbolTable, stringLits []string, namedTok
 		})
 	}
 
-	// Inline patterns (regex appearing directly in non-terminal rules, not in token()).
-	// These have no explicit prec, so priority is 0.
+	var keywordInlinePatterns, broadInlinePatterns []string
 	for _, pat := range inlinePatterns {
+		if isKeywordLikeInlinePattern(pat) {
+			keywordInlinePatterns = append(keywordInlinePatterns, pat)
+		} else {
+			broadInlinePatterns = append(broadInlinePatterns, pat)
+		}
+	}
+
+	// Keyword-shaped inline patterns, such as DOT's case-insensitive
+	// `[sS][uU]...` aliases, must beat identifier tokens on same-length ties.
+	for _, pat := range keywordInlinePatterns {
 		id, ok := st.lookup(inlinePatternSymbolKey(pat))
 		if !ok {
 			continue
@@ -2060,6 +2069,27 @@ func extractTerminals(g *Grammar, st *symbolTable, stringLits []string, namedTok
 			Rule:      expanded,
 			Priority:  adjustedPriority,
 			Immediate: imm,
+		})
+	}
+
+	// Inline patterns (regex appearing directly in non-terminal rules, not in token()).
+	// These have no explicit prec, so priority is 0. Keep broad ones after named
+	// tokens in terminal extraction order so same-length ties prefer explicit
+	// named tokens, while same-priority longer inline matches still win through
+	// the runtime's longest-match scan.
+	for _, pat := range broadInlinePatterns {
+		id, ok := st.lookup(inlinePatternSymbolKey(pat))
+		if !ok {
+			continue
+		}
+		expanded, err := expandPatternRule(pat)
+		if err != nil {
+			return nil, fmt.Errorf("expand inline pattern %q: %w", pat, err)
+		}
+		patterns = append(patterns, TerminalPattern{
+			SymbolID: id,
+			Rule:     expanded,
+			Priority: 0,
 		})
 	}
 
@@ -2121,6 +2151,46 @@ func extractTerminals(g *Grammar, st *symbolTable, stringLits []string, namedTok
 	}
 
 	return patterns, nil
+}
+
+func isKeywordLikeInlinePattern(pattern string) bool {
+	if pattern == "" {
+		return false
+	}
+	consumed := false
+	for i := 0; i < len(pattern); {
+		ch := pattern[i]
+		switch {
+		case isASCIILetter(rune(ch)) || isASCIIDigit(ch) || ch == '_':
+			consumed = true
+			i++
+		case ch == '[':
+			end := strings.IndexByte(pattern[i+1:], ']')
+			if end < 0 {
+				return false
+			}
+			content := pattern[i+1 : i+1+end]
+			if len(content) == 1 && (isASCIILetter(rune(content[0])) || isASCIIDigit(content[0]) || content[0] == '_') {
+				consumed = true
+				i += end + 2
+				continue
+			}
+			if len(content) == 2 && isASCIILetter(rune(content[0])) && isASCIILetter(rune(content[1])) &&
+				strings.EqualFold(content[:1], content[1:]) {
+				consumed = true
+				i += end + 2
+				continue
+			}
+			return false
+		default:
+			return false
+		}
+	}
+	return consumed
+}
+
+func isASCIIDigit(ch byte) bool {
+	return ch >= '0' && ch <= '9'
 }
 
 func hasLongerStringPrefixPattern(patterns []TerminalPattern, prefix string) bool {

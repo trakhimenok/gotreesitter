@@ -19,6 +19,7 @@ type nfaState struct {
 	transitions []nfaTransition
 	accept      int // symbol ID if accepting, 0 if not
 	priority    int // for disambiguation: lower = higher priority
+	tieOrder    int // stable terminal order for same-length, same-priority ties
 }
 
 // nfa holds the complete NFA.
@@ -511,7 +512,7 @@ func buildCombinedNFA(patterns []TerminalPattern) (*nfa, error) {
 		}
 	}
 	trieEdges := make(map[int]map[rune]int)
-	addStringPattern := func(lit string, symID, priority int) {
+	addStringPattern := func(lit string, symID, priority, tieOrder int) {
 		cur := start
 		for i := 0; i < len(lit); {
 			r, size := utf8.DecodeRuneInString(lit[i:])
@@ -531,11 +532,12 @@ func buildCombinedNFA(patterns []TerminalPattern) (*nfa, error) {
 		}
 		b.states[cur].accept = symID
 		b.states[cur].priority = priority
+		b.states[cur].tieOrder = tieOrder
 	}
 
-	for _, pat := range patterns {
+	for i, pat := range patterns {
 		if pat.Rule != nil && pat.Rule.Kind == RuleString && stringCounts[pat.Rule.Value] == 1 {
-			addStringPattern(pat.Rule.Value, pat.SymbolID, pat.Priority)
+			addStringPattern(pat.Rule.Value, pat.SymbolID, pat.Priority, i)
 			continue
 		}
 		frag, err := b.buildFromRule(pat.Rule)
@@ -545,6 +547,7 @@ func buildCombinedNFA(patterns []TerminalPattern) (*nfa, error) {
 		b.addEpsilon(start, frag.start)
 		b.states[frag.end].accept = pat.SymbolID
 		b.states[frag.end].priority = pat.Priority
+		b.states[frag.end].tieOrder = i
 	}
 
 	return &nfa{states: b.states, start: start}, nil

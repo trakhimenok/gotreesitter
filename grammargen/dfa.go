@@ -691,17 +691,23 @@ func subsetConstruction(ctx context.Context, n *nfa, _ ...map[int]bool) ([]dfaSt
 		stateSets = append(stateSets, stored)
 
 		// Determine accept symbol (highest priority = lowest priority number).
-		// On tie, prefer the lower symbol ID — this matches tree-sitter C's
-		// implicit ordering where string terminals (keywords) get lower IDs
-		// than pattern terminals (identifiers).
+		// On same-priority ties in the same DFA state, prefer terminal
+		// extraction order. The runtime still performs longest-match across
+		// later DFA states with the same priority, so this only settles true
+		// same-length ambiguities.
 		accept := 0
 		bestPriority := int(^uint(0) >> 1) // max int
+		bestTieOrder := int(^uint(0) >> 1)
 		for _, s := range stored {
 			if n.states[s].accept > 0 {
 				p := n.states[s].priority
 				sym := n.states[s].accept
-				if p < bestPriority || (p == bestPriority && sym < accept) {
+				tieOrder := n.states[s].tieOrder
+				if p < bestPriority ||
+					(p == bestPriority && tieOrder < bestTieOrder) ||
+					(p == bestPriority && tieOrder == bestTieOrder && (accept == 0 || sym < accept)) {
 					bestPriority = p
+					bestTieOrder = tieOrder
 					accept = sym
 				}
 			}
