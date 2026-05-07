@@ -31,7 +31,7 @@ func applyImportGrammarShapeHints(g *Grammar) {
 		// retract directives. LALR merge compaction otherwise gives the DFA a
 		// state that skips the close delimiter and truncates the parse.
 		g.ExactPrefixStates = 999999
-	case "javascript", "typescript", "tsx", "sql", "d":
+	case "javascript", "typescript", "tsx", "sql", "d", "objc":
 		// These grammars rely heavily on tree-sitter's binary repeat helper
 		// shape. Keeping the upstream lowering avoids large state blowups and
 		// preserves upstream ambiguity handling for imported grammars.

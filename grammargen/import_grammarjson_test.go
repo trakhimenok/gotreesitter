@@ -3,7 +3,7 @@ package grammargen
 import "testing"
 
 func TestApplyImportGrammarShapeHintsPowerShellBinaryRepeat(t *testing.T) {
-	for _, name := range []string{"d", "powershell"} {
+	for _, name := range []string{"d", "objc", "powershell"} {
 		t.Run(name, func(t *testing.T) {
 			g := NewGrammar(name)
 			applyImportGrammarShapeHints(g)

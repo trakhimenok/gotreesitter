@@ -2323,7 +2323,7 @@ func init() {
 		{name: "pascal", blobFunc: grammars.PascalLanguage, timeout: 60 * time.Second, expectNoErrors: 1},
 		{name: "prolog", blobFunc: grammars.PrologLanguage, expectNoErrors: 1, expectParity: 1},
 		{name: "solidity", blobFunc: grammars.SolidityLanguage, timeout: 60 * time.Second, expectNoErrors: 1, expectParity: 1},
-		{name: "objc", blobFunc: grammars.ObjcLanguage, timeout: 300 * time.Second, expectNoErrors: 1},
+		{name: "objc", blobFunc: grammars.ObjcLanguage, timeout: 300 * time.Second, expectNoErrors: 1, expectParity: 1},
 		{name: "verilog", blobFunc: grammars.VerilogLanguage, timeout: 60 * time.Second, expectNoErrors: 1, expectParity: 1},
 		{name: "ada", blobFunc: grammars.AdaLanguage, timeout: 60 * time.Second, expectNoErrors: 1},
 		{name: "apex", blobFunc: grammars.ApexLanguage, timeout: 60 * time.Second, expectNoErrors: 1,
