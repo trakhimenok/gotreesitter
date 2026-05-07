@@ -100,13 +100,13 @@ func BenchmarkSelfParseWarmReuse(b *testing.B) {
 }
 
 // TestArenaGCRetentionAfterRelease verifies that arena memory can be collected
-// by the GC after parsing a large file and releasing the tree. With the partial-
-// clear bug (clear(slab.data[:used]) instead of clear(slab.data)), stale *Node
-// pointers in the unused tail of slab backing arrays pin hundreds of megabytes
+// by the GC after parsing a large file and releasing the tree. Reset must clear
+// every written Node slot and release discarded slab headers; stale *Node
+// pointers in retained backing storage can otherwise pin hundreds of megabytes
 // of arena memory across GC cycles.
 //
 // This test is intentionally strict: 30 MB is well above the expected ~12 MB
-// but far below the ~545 MB that a partial-clear implementation retains.
+// but far below the ~545 MB that stale node-pointer retention can cause.
 func TestArenaGCRetentionAfterRelease(t *testing.T) {
 	src, err := os.ReadFile("parser_test.go")
 	if err != nil {
@@ -129,7 +129,7 @@ func TestArenaGCRetentionAfterRelease(t *testing.T) {
 	runtime.ReadMemStats(&ms)
 
 	// 60 MB is well above the expected ~12-20 MB post-fix but far below the
-	// ~545 MB retained by a partial-clear (clear(slab.data[:used])) implementation.
+	// ~545 MB retained by reset implementations that leave stale node pointers.
 	const maxRetainedBytes = 60 * 1024 * 1024
 	if ms.HeapAlloc > maxRetainedBytes {
 		t.Fatalf("HeapAlloc after parse+release+GC = %d MB, want < %d MB\n"+

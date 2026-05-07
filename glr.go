@@ -100,8 +100,8 @@ type glrMergeSlot struct {
 }
 
 type glrNodeEquivCacheEntry struct {
-	a        *Node
-	b        *Node
+	a        uintptr
+	b        uintptr
 	aVersion uint32
 	bVersion uint32
 	epoch    uint32
@@ -391,8 +391,11 @@ func lookupNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int) (bool
 		return false, false
 	}
 	depthKey := uint16(depth)
-	if uintptr(unsafe.Pointer(a)) > uintptr(unsafe.Pointer(b)) {
+	ap := uintptr(unsafe.Pointer(a))
+	bp := uintptr(unsafe.Pointer(b))
+	if ap > bp {
 		a, b = b, a
+		ap, bp = bp, ap
 	}
 	idx := nodeEquivCacheIndex(a, b, depth)
 	entry := &scratch.equivCache[idx]
@@ -401,7 +404,7 @@ func lookupNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int) (bool
 	if entry.epoch != scratch.equivEpoch {
 		return false, false
 	}
-	if entry.a != a || entry.b != b || entry.depth != depthKey {
+	if entry.a != ap || entry.b != bp || entry.depth != depthKey {
 		return false, false
 	}
 	if entry.aVersion != a.equivVersion || entry.bVersion != b.equivVersion {
@@ -418,13 +421,16 @@ func storeNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int, result
 		return
 	}
 	depthKey := uint16(depth)
-	if uintptr(unsafe.Pointer(a)) > uintptr(unsafe.Pointer(b)) {
+	ap := uintptr(unsafe.Pointer(a))
+	bp := uintptr(unsafe.Pointer(b))
+	if ap > bp {
 		a, b = b, a
+		ap, bp = bp, ap
 	}
 	idx := nodeEquivCacheIndex(a, b, depth)
 	scratch.equivCache[idx] = glrNodeEquivCacheEntry{
-		a:        a,
-		b:        b,
+		a:        ap,
+		b:        bp,
 		aVersion: a.equivVersion,
 		bVersion: b.equivVersion,
 		epoch:    scratch.equivEpoch,
@@ -1286,8 +1292,8 @@ func (s *glrMergeScratch) reset() {
 		s.result = nil
 		s.resultBytes = 0
 	} else {
-		if cap(s.result) > 0 {
-			clear(s.result[:cap(s.result)])
+		if len(s.result) > 0 {
+			clear(s.result)
 		}
 		s.result = s.result[:0]
 		s.resultBytes = glrStackBytesForCap(cap(s.result))
@@ -1296,20 +1302,13 @@ func (s *glrMergeScratch) reset() {
 		s.slots = nil
 		s.slotBytes = 0
 	} else {
-		if cap(s.slots) > 0 {
-			clear(s.slots[:cap(s.slots)])
-		}
 		s.slots = s.slots[:0]
 		s.slotBytes = glrMergeSlotBytesForCap(cap(s.slots))
-	}
-	if len(s.equivCache) > 0 {
-		clear(s.equivCache)
 	}
 	s.equivCacheBytes = glrNodeEquivCacheBytesForCap(cap(s.equivCache))
 	s.perKeyCap = 0
 	s.language = nil
 	s.audit = nil
-	s.equivEpoch = 0
 	s.budgetBytes = 0
 }
 
@@ -1436,13 +1435,20 @@ func (s *glrEntryScratch) reset() {
 			retained = next
 		}
 		if keepFrom > 0 {
+			oldLen := len(s.slabs)
 			copy(s.slabs, s.slabs[keepFrom:])
-			s.slabs = s.slabs[:len(s.slabs)-keepFrom]
+			newLen := oldLen - keepFrom
+			for i := newLen; i < oldLen; i++ {
+				s.slabs[i] = stackEntrySlab{}
+			}
+			s.slabs = s.slabs[:newLen]
 		}
-		// Clear the full backing array: stackEntry contains *Node, partial clear
-		// leaves stale GC-visible pointers in the unused tail.
 		for i := range s.slabs {
-			clear(s.slabs[i].data)
+			used := s.slabs[i].used
+			if used > len(s.slabs[i].data) {
+				used = len(s.slabs[i].data)
+			}
+			clear(s.slabs[i].data[:used])
 			s.slabs[i].used = 0
 		}
 		s.slabCursor = 0
@@ -1452,10 +1458,12 @@ func (s *glrEntryScratch) reset() {
 		return
 	}
 
-	// Clear the full backing array: stackEntry contains *Node, partial clear
-	// leaves stale GC-visible pointers in the unused tail.
 	for i := range s.slabs {
-		clear(s.slabs[i].data)
+		used := s.slabs[i].used
+		if used > len(s.slabs[i].data) {
+			used = len(s.slabs[i].data)
+		}
+		clear(s.slabs[i].data[:used])
 		s.slabs[i].used = 0
 	}
 	s.slabCursor = 0

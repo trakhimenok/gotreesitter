@@ -254,11 +254,11 @@ func TestEvictionGuardPreventsOversizedArenaReuse(t *testing.T) {
 	}
 }
 
-// TestArenaNodeSlabFullClearOnReset verifies that reset() zeros the full backing
-// array of each node slab, not just [:used]. This is required so that Go's GC
-// can collect Node structs: Node contains pointer fields (children, parent, etc.)
-// and stale pointers in the unused tail of the backing array prevent GC collection.
-func TestArenaNodeSlabFullClearOnReset(t *testing.T) {
+// TestArenaNodeSlabClearsWrittenSlotsOnReset verifies that reset() zeros every
+// node slot written during the parse. Node contains pointer fields (children,
+// parent, ownerArena), and stale pointers in retained arena slabs prevent GC
+// collection.
+func TestArenaNodeSlabClearsWrittenSlotsOnReset(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
 
 	// Fill primary array and spill into at least one overflow slab.
@@ -280,7 +280,7 @@ func TestArenaNodeSlabFullClearOnReset(t *testing.T) {
 	}
 
 	// Capture a raw pointer to the first element of the first overflow slab.
-	// We will check after reset() that the slot is fully zeroed.
+	// We will check after reset() that the written slot is zeroed.
 	firstSlab := &arena.nodeSlabs[0]
 	if firstSlab.used == 0 {
 		t.Fatal("expected overflow slab to have used > 0")
@@ -293,17 +293,12 @@ func TestArenaNodeSlabFullClearOnReset(t *testing.T) {
 	if firstSlab.used != 0 {
 		t.Fatalf("slab.used after reset = %d, want 0", firstSlab.used)
 	}
-	// After reset(), the first element of the slab must be zero.
-	// If only [:used] was cleared, a Node that was at index 0 before reset
-	// would have its parent pointer still set, keeping the Node alive for GC.
-	// Check that the parent pointer field is zeroed. Before the fix,
-	// clear(slab.data[:used]) left stale pointers in the unused tail
-	// after the first reset when primaryCap < len(slab.data).
+	// After reset(), every written slot in the retained slab must be zeroed.
 	got := (*Node)(firstSlabDataPtr)
 	if got.parent != nil {
-		t.Fatalf("slab.data[0].parent after reset is %p, want nil; full clear not applied", got.parent)
+		t.Fatalf("slab.data[0].parent after reset is %p, want nil; written slot not cleared", got.parent)
 	}
 	if got.ownerArena != nil {
-		t.Fatalf("slab.data[0].ownerArena after reset is %p, want nil; full clear not applied", got.ownerArena)
+		t.Fatalf("slab.data[0].ownerArena after reset is %p, want nil; written slot not cleared", got.ownerArena)
 	}
 }
