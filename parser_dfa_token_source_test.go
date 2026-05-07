@@ -75,6 +75,35 @@ func TestNextExternalTokenPrefersCandidateUsableByPrimaryState(t *testing.T) {
 	}
 }
 
+func TestAppendExternalLexStateForStateKeepsUniqueValidOrder(t *testing.T) {
+	lang := &Language{
+		ExternalLexStates: [][]bool{
+			{false},
+			{true},
+			{false, true},
+		},
+		LexModes: []LexMode{
+			{ExternalLexState: 1},
+			{ExternalLexState: 2},
+			{ExternalLexState: 1},
+			{ExternalLexState: 99},
+		},
+	}
+
+	var buf [4]int
+	order := buf[:0]
+	for _, st := range []StateID{0, 1, 2, 3, 4} {
+		order = appendExternalLexStateForState(lang, order, st)
+	}
+
+	if got, want := len(order), 2; got != want {
+		t.Fatalf("order len = %d, want %d: %v", got, want, order)
+	}
+	if order[0] != 1 || order[1] != 2 {
+		t.Fatalf("order = %v, want [1 2]", order)
+	}
+}
+
 type byteStateExternalScanner struct{}
 
 func (byteStateExternalScanner) Create() any {
@@ -138,6 +167,65 @@ func TestCaptureExternalScannerStateUsesIndependentReusableBuffers(t *testing.T)
 	ts.restoreExternalScannerState(inner)
 	if got, want := *state, byte(9); got != want {
 		t.Fatalf("restored inner state = %d, want %d", got, want)
+	}
+}
+
+func TestResetPooledDFATokenSourcePreservesScannerScratch(t *testing.T) {
+	lookup := func(StateID, Symbol) uint16 { return 0 }
+	ts := &dfaTokenSource{
+		language:                   &Language{Name: "old"},
+		lookupActionIndex:          lookup,
+		externalValid:              make([]bool, 3, 8),
+		externalTokenStart:         make([]byte, 2, externalScannerSerializationBufferSize),
+		externalTokenEnd:           make([]byte, 3, externalScannerSerializationBufferSize),
+		externalSnapshot:           make([]byte, 4, externalScannerSerializationBufferSize),
+		externalRetrySnap:          make([]byte, 5, externalScannerSerializationBufferSize),
+		externalCompare:            make([]byte, 6, externalScannerSerializationBufferSize),
+		maskedScratch:              make([]bool, 7, 9),
+		extZeroTried:               make([]bool, 4, 10),
+		extZeroPos:                 99,
+		zeroWidthPos:               77,
+		lastExternalTokenValid:     true,
+		lastExternalTokenStartByte: 12,
+		lastExternalTokenEndByte:   34,
+	}
+
+	resetPooledDFATokenSource(ts)
+
+	if ts.language != nil || ts.lookupActionIndex != nil {
+		t.Fatalf("reset retained parser wiring: lang=%v lookupSet=%t", ts.language, ts.lookupActionIndex != nil)
+	}
+	if got, want := cap(ts.externalValid), 8; got != want {
+		t.Fatalf("externalValid cap = %d, want %d", got, want)
+	}
+	if got, want := cap(ts.externalTokenStart), externalScannerSerializationBufferSize; got != want {
+		t.Fatalf("externalTokenStart cap = %d, want %d", got, want)
+	}
+	if got, want := cap(ts.externalTokenEnd), externalScannerSerializationBufferSize; got != want {
+		t.Fatalf("externalTokenEnd cap = %d, want %d", got, want)
+	}
+	if got, want := cap(ts.externalSnapshot), externalScannerSerializationBufferSize; got != want {
+		t.Fatalf("externalSnapshot cap = %d, want %d", got, want)
+	}
+	if got, want := cap(ts.externalRetrySnap), externalScannerSerializationBufferSize; got != want {
+		t.Fatalf("externalRetrySnap cap = %d, want %d", got, want)
+	}
+	if got, want := cap(ts.externalCompare), externalScannerSerializationBufferSize; got != want {
+		t.Fatalf("externalCompare cap = %d, want %d", got, want)
+	}
+	if got, want := cap(ts.maskedScratch), 9; got != want {
+		t.Fatalf("maskedScratch cap = %d, want %d", got, want)
+	}
+	if got, want := cap(ts.extZeroTried), 10; got != want {
+		t.Fatalf("extZeroTried cap = %d, want %d", got, want)
+	}
+	if len(ts.externalValid) != 0 || len(ts.externalTokenStart) != 0 || len(ts.externalTokenEnd) != 0 ||
+		len(ts.externalSnapshot) != 0 || len(ts.externalRetrySnap) != 0 || len(ts.externalCompare) != 0 ||
+		len(ts.maskedScratch) != 0 || len(ts.extZeroTried) != 0 {
+		t.Fatalf("reset should keep scratch capacity with zero length: %+v", ts)
+	}
+	if ts.extZeroPos != -1 || ts.zeroWidthPos != -1 || ts.lastExternalTokenValid {
+		t.Fatalf("reset did not clear scanner state: extZeroPos=%d zeroWidthPos=%d lastValid=%t", ts.extZeroPos, ts.zeroWidthPos, ts.lastExternalTokenValid)
 	}
 }
 

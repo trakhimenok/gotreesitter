@@ -91,16 +91,37 @@ func initDFATokenSource(ts *dfaTokenSource, lexer *Lexer, language *Language, lo
 
 func acquireDFATokenSource(lexer *Lexer, language *Language, lookupActionIndex func(state StateID, sym Symbol) uint16, hasKeywordState []bool) *dfaTokenSource {
 	ts := dfaTokenSourcePool.Get().(*dfaTokenSource)
+	resetPooledDFATokenSource(ts)
+	initDFATokenSource(ts, lexer, language, lookupActionIndex, hasKeywordState)
+	return ts
+}
+
+func resetPooledDFATokenSource(ts *dfaTokenSource) {
+	if ts == nil {
+		return
+	}
 	// Preserve pooled scratch slices across the struct reset below so they can
 	// be reused without reallocation on the next parse.
-	savedMasked := ts.maskedScratch
+	savedExternalValid := ts.externalValid[:0]
+	savedExternalTokenStart := ts.externalTokenStart[:0]
+	savedExternalTokenEnd := ts.externalTokenEnd[:0]
+	savedExternalSnapshot := ts.externalSnapshot[:0]
+	savedExternalRetrySnap := ts.externalRetrySnap[:0]
+	savedExternalCompare := ts.externalCompare[:0]
+	savedMasked := ts.maskedScratch[:0]
+	savedExtZeroTried := ts.extZeroTried[:0]
 	*ts = dfaTokenSource{
 		extZeroPos:   -1,
 		zeroWidthPos: -1,
 	}
+	ts.externalValid = savedExternalValid
+	ts.externalTokenStart = savedExternalTokenStart
+	ts.externalTokenEnd = savedExternalTokenEnd
+	ts.externalSnapshot = savedExternalSnapshot
+	ts.externalRetrySnap = savedExternalRetrySnap
+	ts.externalCompare = savedExternalCompare
 	ts.maskedScratch = savedMasked
-	initDFATokenSource(ts, lexer, language, lookupActionIndex, hasKeywordState)
-	return ts
+	ts.extZeroTried = savedExtZeroTried
 }
 
 func newDFATokenSourceDirect(lexer *Lexer, language *Language, lookupActionIndex func(state StateID, sym Symbol) uint16, hasKeywordState []bool) *dfaTokenSource {
@@ -1346,25 +1367,11 @@ func (d *dfaTokenSource) nextGLRScoredExternalToken(states []StateID) (Token, bo
 		primaryELS = int(d.language.LexModes[d.state].ExternalLexState)
 	}
 
-	elsOrder := make([]int, 0, len(states))
-	seen := make(map[int]struct{}, len(states))
-	addELS := func(st StateID) {
-		if int(st) >= len(d.language.LexModes) {
-			return
-		}
-		elsID := int(d.language.LexModes[st].ExternalLexState)
-		if elsID < 0 || elsID >= len(d.language.ExternalLexStates) {
-			return
-		}
-		if _, ok := seen[elsID]; ok {
-			return
-		}
-		seen[elsID] = struct{}{}
-		elsOrder = append(elsOrder, elsID)
-	}
-	addELS(d.state)
+	var elsOrderBuf [16]int
+	elsOrder := elsOrderBuf[:0]
+	elsOrder = appendExternalLexStateForState(d.language, elsOrder, d.state)
 	for _, st := range states {
-		addELS(st)
+		elsOrder = appendExternalLexStateForState(d.language, elsOrder, st)
 	}
 	if len(elsOrder) <= 1 {
 		return Token{}, false
@@ -1475,6 +1482,22 @@ func (d *dfaTokenSource) nextGLRScoredExternalToken(states []StateID) (Token, bo
 	d.lexer.row = tok.EndPoint.Row
 	d.lexer.col = tok.EndPoint.Column
 	return tok, true
+}
+
+func appendExternalLexStateForState(lang *Language, order []int, st StateID) []int {
+	if lang == nil || int(st) >= len(lang.LexModes) {
+		return order
+	}
+	elsID := int(lang.LexModes[st].ExternalLexState)
+	if elsID < 0 || elsID >= len(lang.ExternalLexStates) {
+		return order
+	}
+	for _, existing := range order {
+		if existing == elsID {
+			return order
+		}
+	}
+	return append(order, elsID)
 }
 
 func tokenSymbolSpecificity(lang *Language, sym Symbol) int {
