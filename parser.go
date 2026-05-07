@@ -423,17 +423,14 @@ func (p *Parser) preferRootSymbol(candidate, current Symbol) bool {
 // layout fallback lex state (state 0's DFA), which includes ALL terminal
 // symbols. If it produces a different token that has valid actions in the
 // current parser state, return it. This handles cases where the per-state
-// lex mode's IMMTOKEN catch-all consumed input meant for a keyword.
+// lex mode's catch-all consumed input meant for a keyword/comment after
+// reductions changed the parser state.
 func (p *Parser) tryRelexBroadDFA(tok Token, parserState StateID, ts TokenSource) (Token, bool) {
 	if p == nil || p.language == nil || ts == nil {
 		return Token{}, false
 	}
 	dts, ok := ts.(*dfaTokenSource)
 	if !ok || dts == nil || dts.lexer == nil {
-		return Token{}, false
-	}
-	// Only try if the token is an immediate token
-	if int(tok.Symbol) >= len(p.language.ImmediateTokens) || !p.language.ImmediateTokens[tok.Symbol] {
 		return Token{}, false
 	}
 	// Get the broad lex state (state 0's lex mode)
@@ -445,21 +442,38 @@ func (p *Parser) tryRelexBroadDFA(tok Token, parserState StateID, ts TokenSource
 	// Save lexer state
 	savedPos, savedRow, savedCol := dts.lexer.pos, dts.lexer.row, dts.lexer.col
 
-	// Re-lex from token start with broad DFA
-	dts.lexer.pos = int(tok.StartByte)
-	tok2 := dts.lexer.Next(broadLS)
-
-	if tok2.Symbol > 0 && tok2.Symbol != tok.Symbol {
-		// Check if the new token has actions in the current parser state
+	tryAt := func(pos int, row, col uint32) (Token, bool) {
+		dts.lexer.pos, dts.lexer.row, dts.lexer.col = pos, row, col
+		tok2 := dts.lexer.Next(broadLS)
+		if tok2.Symbol == 0 {
+			return Token{}, false
+		}
 		actionIdx := p.lookupActionIndex(parserState, tok2.Symbol)
-		if actionIdx != 0 && int(actionIdx) < len(p.language.ParseActions) &&
-			len(p.language.ParseActions[actionIdx].Actions) > 0 {
-			if p.glrTrace {
-				fmt.Printf("  RELEX: %s(%d) → %s(%d) in state=%d\n",
-					p.language.SymbolNames[tok.Symbol], tok.Symbol,
-					p.language.SymbolNames[tok2.Symbol], tok2.Symbol,
-					parserState)
-			}
+		if actionIdx == 0 || int(actionIdx) >= len(p.language.ParseActions) ||
+			len(p.language.ParseActions[actionIdx].Actions) == 0 {
+			return Token{}, false
+		}
+		if p.glrTrace {
+			fmt.Printf("  RELEX: %s(%d) → %s(%d) in state=%d\n",
+				p.language.SymbolNames[tok.Symbol], tok.Symbol,
+				p.language.SymbolNames[tok2.Symbol], tok2.Symbol,
+				parserState)
+		}
+		return tok2, true
+	}
+
+	if tok2, ok := tryAt(int(tok.StartByte), tok.StartPoint.Row, tok.StartPoint.Column); ok {
+		return tok2, true
+	}
+
+	skipPos, skipCol := int(tok.StartByte), tok.StartPoint.Column
+	for skipPos < len(dts.lexer.source) &&
+		(dts.lexer.source[skipPos] == ' ' || dts.lexer.source[skipPos] == '\t') {
+		skipPos++
+		skipCol++
+	}
+	if skipPos > int(tok.StartByte) {
+		if tok2, ok := tryAt(skipPos, tok.StartPoint.Row, skipCol); ok {
 			return tok2, true
 		}
 	}
@@ -1855,7 +1869,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 				// produced a token that's not valid in this state (e.g.,
 				// an IMMTOKEN catch-all consumed a keyword), the broad
 				// DFA may produce the correct token.
-				if len(stacks) <= 1 {
+				if sameState {
 					if reTok, ok := p.tryRelexBroadDFA(tok, currentState, ts); ok {
 						tok = reTok
 						needToken = false
