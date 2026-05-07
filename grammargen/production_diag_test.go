@@ -30,7 +30,7 @@ func TestProductionChildCountDiag(t *testing.T) {
 	// Grammars and symbols flagged by logReduceActionDiff as having
 	// gen-cc ≠ ref-cc (missing shorter variants).
 	type diagCase struct {
-		grammar string // grammar dir name
+		grammar string   // grammar dir name
 		symbols []string // symbols to check
 	}
 
@@ -652,6 +652,95 @@ func TestProductionRepeatInSeq(t *testing.T) {
 				t.Errorf("repeat aux %q missing cc=2 production", info.Name)
 			}
 		}
+	}
+}
+
+func TestProductionBinaryRepeatAuxForVisibleParentFlattensBaseCase(t *testing.T) {
+	g := &Grammar{
+		Name:             "javascript",
+		BinaryRepeatMode: true,
+		Rules: map[string]*Rule{
+			"program":    Repeat(Sym("statement")),
+			"statement":  Sym("identifier"),
+			"identifier": Pat(`[a-z]+`),
+		},
+		RuleOrder: []string{"program", "statement", "identifier"},
+	}
+
+	ng, err := Normalize(g)
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+
+	auxID := -1
+	for i, info := range ng.Symbols {
+		if info.Name == "program_repeat1" {
+			auxID = i
+			break
+		}
+	}
+	if auxID < 0 {
+		t.Fatal("program_repeat1 symbol not found")
+	}
+
+	var auxCCs []int
+	for _, p := range ng.Productions {
+		if p.LHS == auxID {
+			auxCCs = append(auxCCs, len(p.RHS))
+		}
+	}
+	t.Logf("program_repeat1 cc values = %v", auxCCs)
+	if len(auxCCs) == 0 {
+		t.Fatal("program_repeat1 has no productions")
+	}
+	hasTwo := false
+	for _, cc := range auxCCs {
+		if cc == 2 {
+			hasTwo = true
+			continue
+		}
+		t.Fatalf("program_repeat1 has non-tree-sitter child count %d (ccs=%v)", cc, auxCCs)
+	}
+	if !hasTwo {
+		t.Fatalf("program_repeat1 missing cc=2 production (ccs=%v)", auxCCs)
+	}
+}
+
+func TestJavaScriptJSXAttributeRepeatHelpersFlattenBaseCases(t *testing.T) {
+	ng, err := Normalize(JavaScriptGrammar())
+	if err != nil {
+		t.Fatalf("normalize javascript: %v", err)
+	}
+
+	checked := 0
+	selfClosingHelpers := 0
+	for i, info := range ng.Symbols {
+		if strings.HasPrefix(info.Name, "jsx_self_closing_element_repeat") {
+			selfClosingHelpers++
+		}
+		if !strings.HasPrefix(info.Name, "jsx_self_closing_element_repeat") &&
+			!strings.HasPrefix(info.Name, "jsx_opening_element_repeat") {
+			continue
+		}
+		checked++
+		var auxCCs []int
+		for _, p := range ng.Productions {
+			if p.LHS == i {
+				auxCCs = append(auxCCs, len(p.RHS))
+			}
+		}
+		t.Logf("%s cc values = %v", info.Name, auxCCs)
+		for _, cc := range auxCCs {
+			if cc != 2 {
+				t.Fatalf("%s has non-tree-sitter child count %d (ccs=%v)", info.Name, cc, auxCCs)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no JSX attribute repeat helpers found")
+	}
+	if selfClosingHelpers != 0 {
+		t.Fatalf("self-closing JSX attributes should reuse the opening-element repeat helper, found %d separate helpers", selfClosingHelpers)
 	}
 }
 
