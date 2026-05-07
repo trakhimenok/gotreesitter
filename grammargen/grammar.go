@@ -74,6 +74,8 @@ type Grammar struct {
 	Tests                              []TestCase    // embedded test cases
 	EnableLRSplitting                  bool          // opt-in: attempt LR(1) state splitting for merge pathology
 	BinaryRepeatMode                   bool          // use tree-sitter's binary repeat helper shape (aux→seq(aux,aux)|inner)
+	FlattenGeneratedRepeatAux          bool          // allow generated repeat helpers to participate in hidden-choice flattening
+	ReuseRepeatAuxForParents           []string      // parent rule names whose repeat helpers may be shared by canonical body
 	PreserveKeywordIdentifierConflicts bool          // keep keyword-as-identifier S/R ambiguity for grammars like Fortran
 	Precedences                        [][]PrecEntry // ordered precedence levels (each level: earlier = higher prec)
 	ChoiceLiftThreshold                int           // if >0, lift inline CHOICE nodes with more alternatives than this into auxiliary nonterminals to prevent production explosion
@@ -321,6 +323,8 @@ func ExtendGrammar(name string, base *Grammar, customize func(g *Grammar)) *Gram
 		Tests:                              make([]TestCase, len(base.Tests)),
 		EnableLRSplitting:                  base.EnableLRSplitting,
 		BinaryRepeatMode:                   base.BinaryRepeatMode,
+		FlattenGeneratedRepeatAux:          base.FlattenGeneratedRepeatAux,
+		ReuseRepeatAuxForParents:           make([]string, len(base.ReuseRepeatAuxForParents)),
 		PreserveKeywordIdentifierConflicts: base.PreserveKeywordIdentifierConflicts,
 		Precedences:                        clonePrecedenceLevels(base.Precedences),
 		ChoiceLiftThreshold:                base.ChoiceLiftThreshold,
@@ -344,6 +348,7 @@ func ExtendGrammar(name string, base *Grammar, customize func(g *Grammar)) *Gram
 	copy(g.Inline, base.Inline)
 	copy(g.Supertypes, base.Supertypes)
 	copy(g.Tests, base.Tests)
+	copy(g.ReuseRepeatAuxForParents, base.ReuseRepeatAuxForParents)
 
 	// Let the caller customize.
 	customize(g)

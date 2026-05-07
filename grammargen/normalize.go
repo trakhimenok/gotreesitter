@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -115,14 +116,18 @@ type NormalizedGrammar struct {
 
 // symbolTable is used during normalization.
 type symbolTable struct {
+	grammarName         string
 	byName              map[string]int // terminal name → symbol ID
 	nontermByName       map[string]int // nonterminal name → symbol ID
 	namedTokenByName    map[string]int // named token name → symbol ID (when distinct from anonymous)
 	symbols             []SymbolInfo
 	fieldMap            map[string]int
 	fields              []string
+	repeatAuxByKey      map[string]string // canonical repeat body key → generated aux rule
+	repeatAuxReuseRules map[string]bool
 	binaryRepeatMode    bool // use tree-sitter binary repeat helper shape
-	choiceLiftThreshold int  // if >0, lift inline CHOICE nodes exceeding this width
+	flattenRepeatAux    bool
+	choiceLiftThreshold int // if >0, lift inline CHOICE nodes exceeding this width
 }
 
 const inlinePatternSymbolPrefix = "\x00inline_pattern:"
@@ -137,6 +142,7 @@ func newSymbolTable() *symbolTable {
 		nontermByName:    make(map[string]int),
 		namedTokenByName: make(map[string]int),
 		fieldMap:         make(map[string]int),
+		repeatAuxByKey:   make(map[string]string),
 		fields:           []string{""}, // index 0 is always ""
 	}
 	// Symbol 0 = "end" (EOF). Tree-sitter C marks this Named=true.
@@ -265,7 +271,15 @@ func Normalize(g *Grammar) (*NormalizedGrammar, error) {
 	}
 
 	st := newSymbolTable()
+	st.grammarName = g.Name
 	st.binaryRepeatMode = g.BinaryRepeatMode
+	st.flattenRepeatAux = g.FlattenGeneratedRepeatAux
+	if len(g.ReuseRepeatAuxForParents) > 0 {
+		st.repeatAuxReuseRules = make(map[string]bool, len(g.ReuseRepeatAuxForParents))
+		for _, name := range g.ReuseRepeatAuxForParents {
+			st.repeatAuxReuseRules[name] = true
+		}
+	}
 	st.choiceLiftThreshold = g.ChoiceLiftThreshold
 	ng := &NormalizedGrammar{}
 
@@ -420,7 +434,7 @@ func Normalize(g *Grammar) (*NormalizedGrammar, error) {
 	auxCounter := 0
 	processedRules := make(map[string]*Rule)
 	auxRules := make(map[string]*Rule)
-	auxOrigin := make(map[string]string) // aux rule name → originating grammar rule name
+	auxOrigins := make(map[string]map[string]bool) // aux rule name → originating grammar rule names
 
 	for _, name := range nonterminals {
 		rule := g.Rules[name]
@@ -431,24 +445,15 @@ func Normalize(g *Grammar) (*NormalizedGrammar, error) {
 		// the rule itself into the repetition binary tree instead of
 		// introducing another auxiliary rule.
 		rule = expandTopLevelRepeat(cloneRule(rule), name, st.binaryRepeatMode)
-		prevAuxCount := len(auxRules)
-		processed := prepareRule(rule, name, st, auxRules, &auxCounter)
+		processed := prepareRule(rule, name, st, auxRules, auxOrigins, &auxCounter)
 		processedRules[name] = processed
-		// Track which grammar rule each new auxiliary rule originates from.
-		if len(auxRules) > prevAuxCount {
-			for auxName := range auxRules {
-				if _, tracked := auxOrigin[auxName]; !tracked {
-					auxOrigin[auxName] = name
-				}
-			}
-		}
 	}
 
 	// Tree-sitter expands repeats before flattening hidden pass-through
 	// alternatives. Running this after prepareRule lets us flatten the cc=1
 	// branches introduced by repeat lowering, especially for hidden repeat
 	// helpers and top-level hidden repeat1 rules.
-	processedRules, auxRules = flattenPreparedRules(g.Name, nonterminals, processedRules, auxRules, g.Supertypes)
+	processedRules, auxRules = flattenPreparedRules(g.Name, nonterminals, processedRules, auxRules, g.Supertypes, st.flattenRepeatAux)
 
 	// Phase 5: Mark extra symbols.
 	extraSymbols := resolveExtras(g, st)
@@ -526,8 +531,8 @@ func Normalize(g *Grammar) (*NormalizedGrammar, error) {
 		auxNames = append(auxNames, name)
 	}
 	sort.Slice(auxNames, func(i, j int) bool {
-		oi := ruleOrderIdx[auxOrigin[auxNames[i]]]
-		oj := ruleOrderIdx[auxOrigin[auxNames[j]]]
+		oi := earliestAuxOriginOrder(auxOrigins[auxNames[i]], ruleOrderIdx)
+		oj := earliestAuxOriginOrder(auxOrigins[auxNames[j]], ruleOrderIdx)
 		if oi != oj {
 			return oi < oj
 		}
@@ -574,18 +579,20 @@ func Normalize(g *Grammar) (*NormalizedGrammar, error) {
 		}
 		// For each auxiliary rule, check if its originating rule is in any
 		// conflict group. If so, add the auxiliary's symbol ID to that group.
-		for auxName, originName := range auxOrigin {
-			gis := conflictGroupsByName[originName]
-			if len(gis) == 0 {
-				continue
-			}
+		for auxName, origins := range auxOrigins {
 			auxID, ok := st.lookupNonterm(auxName)
 			if !ok {
 				continue
 			}
-			for _, gi := range gis {
-				if gi < len(conflicts) {
-					conflicts[gi] = append(conflicts[gi], auxID)
+			for originName := range origins {
+				gis := conflictGroupsByName[originName]
+				if len(gis) == 0 {
+					continue
+				}
+				for _, gi := range gis {
+					if gi < len(conflicts) {
+						conflicts[gi] = append(conflicts[gi], auxID)
+					}
 				}
 			}
 		}
@@ -1438,7 +1445,7 @@ func escapeAnonymousName(s string) string {
 // - Expands Optional(x) → Choice(x, Blank())
 // - Replaces Repeat(x) and Repeat1(x) with auxiliary nonterminal symbols
 // This handles repeat/repeat1 at ALL levels including the root.
-func prepareRule(r *Rule, parentName string, st *symbolTable, auxRules map[string]*Rule, counter *int) *Rule {
+func prepareRule(r *Rule, parentName string, st *symbolTable, auxRules map[string]*Rule, auxOrigins map[string]map[string]bool, counter *int) *Rule {
 	if r == nil {
 		return r
 	}
@@ -1450,38 +1457,42 @@ func prepareRule(r *Rule, parentName string, st *symbolTable, auxRules map[strin
 	// Handle the current node.
 	switch r.Kind {
 	case RuleRepeat:
-		preparedInner := prepareRule(cloneRule(r.Children[0]), parentName, st, auxRules, counter)
+		preparedInner := prepareRule(cloneRule(r.Children[0]), parentName, st, auxRules, auxOrigins, counter)
 		// If the inner rule is a wide CHOICE and we have a lift threshold,
 		// extract it into an auxiliary nonterminal to prevent the repeat
 		// helper from creating N² productions (where N = choice width).
-		preparedInner = maybeExtractWideChoice(preparedInner, parentName, st, auxRules, counter)
+		preparedInner = maybeExtractWideChoice(preparedInner, parentName, st, auxRules, auxOrigins, counter)
 		if st.binaryRepeatMode {
 			auxName := ensureRepeatAuxBinary(parentName, preparedInner, st, auxRules, counter)
+			recordAuxOrigin(auxOrigins, auxName, parentName)
 			return Choice(Sym(auxName), Blank())
 		}
 		auxName := ensureRepeatAuxLinear(parentName, preparedInner, st, auxRules, counter)
+		recordAuxOrigin(auxOrigins, auxName, parentName)
 		return Choice(Blank(), cloneRule(preparedInner), Sym(auxName))
 
 	case RuleRepeat1:
-		preparedInner := prepareRule(cloneRule(r.Children[0]), parentName, st, auxRules, counter)
-		preparedInner = maybeExtractWideChoice(preparedInner, parentName, st, auxRules, counter)
+		preparedInner := prepareRule(cloneRule(r.Children[0]), parentName, st, auxRules, auxOrigins, counter)
+		preparedInner = maybeExtractWideChoice(preparedInner, parentName, st, auxRules, auxOrigins, counter)
 		if st.binaryRepeatMode {
 			auxName := ensureRepeatAuxBinary(parentName, preparedInner, st, auxRules, counter)
+			recordAuxOrigin(auxOrigins, auxName, parentName)
 			return Sym(auxName)
 		}
 		auxName := ensureRepeatAuxLinear(parentName, preparedInner, st, auxRules, counter)
+		recordAuxOrigin(auxOrigins, auxName, parentName)
 		return Choice(cloneRule(preparedInner), Sym(auxName))
 
 	case RuleOptional:
 		// optional(x) → choice(x, blank)
-		inner := prepareRule(r.Children[0], parentName, st, auxRules, counter)
+		inner := prepareRule(r.Children[0], parentName, st, auxRules, auxOrigins, counter)
 		return Choice(inner, Blank())
 
 	}
 
 	// Recurse into children.
 	for i, c := range r.Children {
-		r.Children[i] = prepareRule(c, parentName, st, auxRules, counter)
+		r.Children[i] = prepareRule(c, parentName, st, auxRules, auxOrigins, counter)
 	}
 
 	// For SEQ nodes in grammars with ChoiceLiftThreshold: lift inline CHOICE
@@ -1489,7 +1500,7 @@ func prepareRule(r *Rule, parentName string, st *symbolTable, auxRules map[strin
 	// This prevents Cartesian product explosion in production extraction.
 	// Only enabled for grammars that explicitly opt in (e.g. COBOL with 1071 rules).
 	if r.Kind == RuleSeq && st.choiceLiftThreshold > 0 {
-		r = liftLargeSeqChoices(r, parentName, st, auxRules, counter)
+		r = liftLargeSeqChoices(r, parentName, st, auxRules, auxOrigins, counter)
 	}
 
 	return r
@@ -1504,7 +1515,7 @@ func prepareRule(r *Rule, parentName string, st *symbolTable, auxRules map[strin
 // choiceLiftThreshold. If so, it extracts the CHOICE into an auxiliary
 // nonterminal and returns a symbol reference. This prevents repeat helpers
 // from creating N² productions when their body is a wide CHOICE.
-func maybeExtractWideChoice(r *Rule, parentName string, st *symbolTable, auxRules map[string]*Rule, counter *int) *Rule {
+func maybeExtractWideChoice(r *Rule, parentName string, st *symbolTable, auxRules map[string]*Rule, auxOrigins map[string]map[string]bool, counter *int) *Rule {
 	if st.choiceLiftThreshold <= 0 || r == nil || r.Kind != RuleChoice {
 		return r
 	}
@@ -1519,6 +1530,7 @@ func maybeExtractWideChoice(r *Rule, parentName string, st *symbolTable, auxRule
 		})
 		auxRules[auxName] = r
 	}
+	recordAuxOrigin(auxOrigins, auxName, parentName)
 	return Sym(auxName)
 }
 
@@ -1562,7 +1574,7 @@ func estimateAlternativeCount(r *Rule) int {
 // liftLargeSeqChoices examines a SEQ node and lifts CHOICE children into
 // auxiliary nonterminals when the total Cartesian product exceeds the
 // choiceLiftThreshold. Only active when st.choiceLiftThreshold > 0.
-func liftLargeSeqChoices(seq *Rule, parentName string, st *symbolTable, auxRules map[string]*Rule, counter *int) *Rule {
+func liftLargeSeqChoices(seq *Rule, parentName string, st *symbolTable, auxRules map[string]*Rule, auxOrigins map[string]map[string]bool, counter *int) *Rule {
 	threshold := st.choiceLiftThreshold
 	if threshold <= 0 {
 		return seq
@@ -1614,6 +1626,7 @@ func liftLargeSeqChoices(seq *Rule, parentName string, st *symbolTable, auxRules
 			})
 			auxRules[auxName] = cloneRule(newChildren[bestIdx])
 		}
+		recordAuxOrigin(auxOrigins, auxName, parentName)
 		newChildren[bestIdx] = Sym(auxName)
 
 		newSeq := &Rule{Kind: RuleSeq, Children: newChildren}
@@ -1626,6 +1639,13 @@ func liftLargeSeqChoices(seq *Rule, parentName string, st *symbolTable, auxRules
 }
 
 func ensureRepeatAuxLinear(parentName string, inner *Rule, st *symbolTable, auxRules map[string]*Rule, counter *int) string {
+	key := ""
+	if shouldReuseRepeatAux(st, parentName) {
+		key = "linear:" + canonicalRuleKey(inner)
+		if auxName, ok := st.repeatAuxByKey[key]; ok {
+			return auxName
+		}
+	}
 	*counter++
 	auxName := fmt.Sprintf("%s_repeat%d", parentName, *counter)
 	if _, exists := st.lookupNonterm(auxName); !exists {
@@ -1637,10 +1657,20 @@ func ensureRepeatAuxLinear(parentName string, inner *Rule, st *symbolTable, auxR
 			Seq(cloneRule(inner), cloneRule(inner)),
 		)
 	}
+	if key != "" {
+		st.repeatAuxByKey[key] = auxName
+	}
 	return auxName
 }
 
 func ensureRepeatAuxBinary(parentName string, inner *Rule, st *symbolTable, auxRules map[string]*Rule, counter *int) string {
+	key := ""
+	if shouldReuseRepeatAux(st, parentName) {
+		key = "binary:" + canonicalRuleKey(inner)
+		if auxName, ok := st.repeatAuxByKey[key]; ok {
+			return auxName
+		}
+	}
 	*counter++
 	auxName := fmt.Sprintf("%s_repeat%d", parentName, *counter)
 	if _, exists := st.lookupNonterm(auxName); !exists {
@@ -1652,7 +1682,64 @@ func ensureRepeatAuxBinary(parentName string, inner *Rule, st *symbolTable, auxR
 			cloneRule(inner),
 		)
 	}
+	if key != "" {
+		st.repeatAuxByKey[key] = auxName
+	}
 	return auxName
+}
+
+func shouldReuseRepeatAux(st *symbolTable, parentName string) bool {
+	return st != nil && st.repeatAuxReuseRules[parentName]
+}
+
+func recordAuxOrigin(auxOrigins map[string]map[string]bool, auxName, origin string) {
+	if auxName == "" || origin == "" {
+		return
+	}
+	origins := auxOrigins[auxName]
+	if origins == nil {
+		origins = make(map[string]bool)
+		auxOrigins[auxName] = origins
+	}
+	origins[origin] = true
+}
+
+func earliestAuxOriginOrder(origins map[string]bool, ruleOrderIdx map[string]int) int {
+	best := len(ruleOrderIdx)
+	for origin := range origins {
+		if idx, ok := ruleOrderIdx[origin]; ok && idx < best {
+			best = idx
+		}
+	}
+	return best
+}
+
+func canonicalRuleKey(r *Rule) string {
+	var sb strings.Builder
+	writeRuleKey(r, &sb)
+	return sb.String()
+}
+
+func writeRuleKey(r *Rule, sb *strings.Builder) {
+	if r == nil {
+		sb.WriteString("nil")
+		return
+	}
+	sb.WriteString(strconv.Itoa(int(r.Kind)))
+	sb.WriteByte(':')
+	sb.WriteString(strconv.Quote(r.Value))
+	sb.WriteByte(':')
+	sb.WriteString(strconv.Itoa(r.Prec))
+	sb.WriteByte(':')
+	sb.WriteString(strconv.FormatBool(r.Named))
+	sb.WriteByte('[')
+	for i, c := range r.Children {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		writeRuleKey(c, sb)
+	}
+	sb.WriteByte(']')
 }
 
 // expandTopLevelRepeat expands repeat1 at the top level of a hidden rule into
@@ -1710,9 +1797,10 @@ func expandTopLevelRepeat(r *Rule, ruleName string, binaryMode bool) *Rule {
 	return expanded
 }
 
-func flattenPreparedRules(grammarName string, nonterminals []string, processedRules, auxRules map[string]*Rule, supertypes []string) (map[string]*Rule, map[string]*Rule) {
+func flattenPreparedRules(grammarName string, nonterminals []string, processedRules, auxRules map[string]*Rule, supertypes []string, flattenGeneratedRepeatAux bool) (map[string]*Rule, map[string]*Rule) {
 	tmp := NewGrammar(grammarName)
 	tmp.Supertypes = append(tmp.Supertypes, supertypes...)
+	tmp.FlattenGeneratedRepeatAux = flattenGeneratedRepeatAux
 
 	for _, name := range nonterminals {
 		if rule := processedRules[name]; rule != nil {
@@ -1721,8 +1809,10 @@ func flattenPreparedRules(grammarName string, nonterminals []string, processedRu
 	}
 
 	auxNames := make([]string, 0, len(auxRules))
+	generatedHiddenRules := make(map[string]bool, len(auxRules))
 	for name := range auxRules {
 		auxNames = append(auxNames, name)
+		generatedHiddenRules[name] = true
 	}
 	sort.Strings(auxNames)
 	for _, name := range auxNames {
@@ -1731,7 +1821,7 @@ func flattenPreparedRules(grammarName string, nonterminals []string, processedRu
 		}
 	}
 
-	flattened := flattenHiddenChoiceAlts(tmp)
+	flattened := flattenHiddenChoiceAlts(tmp, generatedHiddenRules)
 	if flattened == nil {
 		return processedRules, auxRules
 	}
@@ -3029,12 +3119,13 @@ func deduplicateProductions(prods []Production) []Production {
 //	A → Choice(_H, X, Y, Z)          (pass-through alts inlined)
 //
 // This matches tree-sitter C's flatten_grammar.cc behavior.
-func flattenHiddenChoiceAlts(g *Grammar) *Grammar {
+func flattenHiddenChoiceAlts(g *Grammar, generatedHiddenRules map[string]bool) *Grammar {
 	// 1. Identify hidden nonterminals with mixed pass-through and compound alts.
 	flattenMap := make(map[string]*flattenInfo)
 
 	for _, name := range g.RuleOrder {
-		if !strings.HasPrefix(name, "_") {
+		isGeneratedHidden := generatedHiddenRules[name] && g.FlattenGeneratedRepeatAux
+		if !strings.HasPrefix(name, "_") && !isGeneratedHidden {
 			continue // only hidden rules
 		}
 		// Skip supertypes.
@@ -3100,6 +3191,8 @@ func flattenHiddenChoiceAlts(g *Grammar) *Grammar {
 			continue
 		}
 
+		generatedRepeatHelper := isGeneratedHidden && isGeneratedRepeatAuxName(name)
+
 		// Skip arbitrary self-recursive flattening, but allow the exact
 		// repetition shape introduced by repeat lowering:
 		//   choice(seq(self, inner), seq(inner, inner), passthrough...)
@@ -3128,7 +3221,7 @@ func flattenHiddenChoiceAlts(g *Grammar) *Grammar {
 		// would leave the rule unreachable — it can only reduce from
 		// itself, with no way to create a base instance. Skip flattening
 		// for these rules to preserve their base cases.
-		if allCompoundsAreSelfRecursive {
+		if allCompoundsAreSelfRecursive && !generatedRepeatHelper {
 			continue
 		}
 
@@ -3186,9 +3279,10 @@ func flattenHiddenChoiceAlts(g *Grammar) *Grammar {
 		}
 
 		flattenMap[name] = &flattenInfo{
-			passThrough: pt,
-			compound:    compound,
-			replaceRule: true,
+			passThrough:    pt,
+			compound:       compound,
+			replaceRule:    true,
+			inlineCompound: generatedRepeatHelper && allCompoundsAreSelfRecursive,
 		}
 	}
 
@@ -3212,6 +3306,9 @@ func flattenHiddenChoiceAlts(g *Grammar) *Grammar {
 			} else {
 				newRule = Choice(fi.compound...)
 			}
+			if fi.inlineCompound {
+				newRule = inlinePassthroughRefs(newRule, flattenMap)
+			}
 			out.Define(name, newRule)
 			continue
 		}
@@ -3234,6 +3331,12 @@ func flattenHiddenChoiceAlts(g *Grammar) *Grammar {
 	out.ReservedWordSets = cloneReservedWordSets(g.ReservedWordSets)
 	out.Supertypes = g.Supertypes
 	out.Inline = g.Inline
+	out.FlattenGeneratedRepeatAux = g.FlattenGeneratedRepeatAux
+	out.ReuseRepeatAuxForParents = append(out.ReuseRepeatAuxForParents, g.ReuseRepeatAuxForParents...)
+	out.BinaryRepeatMode = g.BinaryRepeatMode
+	out.EnableLRSplitting = g.EnableLRSplitting
+	out.PreserveKeywordIdentifierConflicts = g.PreserveKeywordIdentifierConflicts
+	out.ChoiceLiftThreshold = g.ChoiceLiftThreshold
 	return out
 }
 
@@ -3328,6 +3431,23 @@ func isRepeatSelfRef(r *Rule, name string) bool {
 		return true
 	}
 	return false
+}
+
+func isGeneratedRepeatAuxName(name string) bool {
+	idx := strings.LastIndex(name, "_repeat")
+	if idx < 0 {
+		return false
+	}
+	suffix := name[idx+len("_repeat"):]
+	if suffix == "" {
+		return false
+	}
+	for _, r := range suffix {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func isDirectSelfRef(r *Rule, name string) bool {
@@ -3468,9 +3588,10 @@ func stripTopAlias(r *Rule) *Rule {
 }
 
 type flattenInfo struct {
-	passThrough []*Rule
-	compound    []*Rule
-	replaceRule bool
+	passThrough    []*Rule
+	compound       []*Rule
+	replaceRule    bool
+	inlineCompound bool
 }
 
 // expandInlineRules returns a copy of the grammar with all inline rule
@@ -3589,6 +3710,8 @@ func expandInlineRules(g *Grammar) *Grammar {
 	out.Supertypes = g.Supertypes
 	out.Precedences = g.Precedences
 	out.BinaryRepeatMode = g.BinaryRepeatMode
+	out.FlattenGeneratedRepeatAux = g.FlattenGeneratedRepeatAux
+	out.ReuseRepeatAuxForParents = append(out.ReuseRepeatAuxForParents, g.ReuseRepeatAuxForParents...)
 	out.EnableLRSplitting = g.EnableLRSplitting
 	out.PreserveKeywordIdentifierConflicts = g.PreserveKeywordIdentifierConflicts
 	out.ChoiceLiftThreshold = g.ChoiceLiftThreshold
