@@ -139,6 +139,18 @@ func EmitGrammarGo(g *Grammar, pkgName, funcName string) ([]byte, error) {
 		fmt.Fprintf(&buf, "\tg.BinaryRepeatMode = true\n\n")
 	}
 
+	if g.FlattenGeneratedRepeatAux {
+		fmt.Fprintf(&buf, "\tg.FlattenGeneratedRepeatAux = true\n\n")
+	}
+
+	if len(g.ReuseRepeatAuxForParents) > 0 {
+		fmt.Fprintf(&buf, "\tg.ReuseRepeatAuxForParents = []string{\n")
+		for _, name := range g.ReuseRepeatAuxForParents {
+			fmt.Fprintf(&buf, "\t\t%s,\n", goString(name))
+		}
+		fmt.Fprintf(&buf, "\t}\n\n")
+	}
+
 	if g.PreserveKeywordIdentifierConflicts {
 		fmt.Fprintf(&buf, "\tg.PreserveKeywordIdentifierConflicts = true\n\n")
 	}

@@ -1,25 +1,25 @@
 {
   "version": 1,
-  "generated_at": "2026-05-07T03:23:52Z",
+  "generated_at": "2026-05-07T03:29:04Z",
   "corpus_root": "/tmp/grammar_parity",
   "max_cases": 20,
   "max_bytes": 262144,
-  "grammar_count": 7,
-  "total_eligible": 120,
-  "total_no_error": 118,
-  "total_tree_parity": 114,
+  "grammar_count": 8,
+  "total_eligible": 126,
+  "total_no_error": 124,
+  "total_tree_parity": 120,
   "metrics": {
     "c": {
       "eligible": 20,
       "no_error": 20,
       "tree_parity": 20,
-      "divergences": 2
+      "divergences": 0
     },
     "c_sharp": {
       "eligible": 20,
       "no_error": 20,
       "tree_parity": 20,
-      "divergences": 5
+      "divergences": 0
     },
     "cobol": {
       "eligible": 10,
@@ -31,7 +31,13 @@
       "eligible": 20,
       "no_error": 20,
       "tree_parity": 20,
-      "divergences": 2
+      "divergences": 0
+    },
+    "json": {
+      "eligible": 6,
+      "no_error": 6,
+      "tree_parity": 6,
+      "divergences": 0
     },
     "scala": {
       "eligible": 10,
@@ -43,13 +49,13 @@
       "eligible": 20,
       "no_error": 20,
       "tree_parity": 20,
-      "divergences": 5
+      "divergences": 0
     },
     "typescript": {
       "eligible": 20,
       "no_error": 20,
       "tree_parity": 20,
-      "divergences": 6
+      "divergences": 0
     }
   }
 }

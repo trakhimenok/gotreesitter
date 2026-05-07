@@ -24,6 +24,8 @@ func TestExtendGrammarCopiesImportMetadata(t *testing.T) {
 	}
 	base.EnableLRSplitting = true
 	base.BinaryRepeatMode = true
+	base.FlattenGeneratedRepeatAux = true
+	base.ReuseRepeatAuxForParents = []string{"program", "statement_list"}
 	base.ChoiceLiftThreshold = 16
 	base.Test("identifier", "abc", "")
 
@@ -40,6 +42,12 @@ func TestExtendGrammarCopiesImportMetadata(t *testing.T) {
 	}
 	if !extended.EnableLRSplitting || !extended.BinaryRepeatMode {
 		t.Fatalf("extension did not inherit generator mode flags")
+	}
+	if !extended.FlattenGeneratedRepeatAux {
+		t.Fatalf("extension did not inherit generated repeat flattening flag")
+	}
+	if !slices.Equal(extended.ReuseRepeatAuxForParents, []string{"program", "statement_list"}) {
+		t.Fatalf("ReuseRepeatAuxForParents = %v, want [program statement_list]", extended.ReuseRepeatAuxForParents)
 	}
 	if extended.ChoiceLiftThreshold != 16 {
 		t.Fatalf("ChoiceLiftThreshold = %d, want 16", extended.ChoiceLiftThreshold)
@@ -86,6 +94,8 @@ func TestEmitGrammarGoIncludesImportMetadata(t *testing.T) {
 	}
 	g.EnableLRSplitting = true
 	g.BinaryRepeatMode = true
+	g.FlattenGeneratedRepeatAux = true
+	g.ReuseRepeatAuxForParents = []string{"program"}
 	g.ChoiceLiftThreshold = 8
 	g.Test("valid identifier", "abc", "(program (identifier))")
 	g.TestError("invalid identifier", "123")
@@ -101,6 +111,9 @@ func TestEmitGrammarGoIncludesImportMetadata(t *testing.T) {
 		"{IsSymbol: true, Name: \"program\"}",
 		"g.EnableLRSplitting = true",
 		"g.BinaryRepeatMode = true",
+		"g.FlattenGeneratedRepeatAux = true",
+		"g.ReuseRepeatAuxForParents = []string{",
+		"\"program\"",
 		"g.ChoiceLiftThreshold = 8",
 		"g.Test(\"valid identifier\", \"abc\", \"(program (identifier))\")",
 		"g.TestError(\"invalid identifier\", \"123\")",
@@ -310,6 +323,12 @@ func TestImportedJavaScriptTypeScriptTSXFortranGrammarConstructors(t *testing.T)
 	}
 	if JSGrammar().Name != "javascript" || JavascriptGrammar().Name != "javascript" {
 		t.Fatalf("JavaScript aliases did not return javascript grammar")
+	}
+	if !JavaScriptGrammar().FlattenGeneratedRepeatAux {
+		t.Fatalf("JavaScriptGrammar did not enable generated repeat aux flattening")
+	}
+	if !slices.Equal(JavaScriptGrammar().ReuseRepeatAuxForParents, []string{"jsx_opening_element", "jsx_self_closing_element"}) {
+		t.Fatalf("JavaScriptGrammar repeat aux reuse parents = %v", JavaScriptGrammar().ReuseRepeatAuxForParents)
 	}
 	if TSGrammar().Name != "typescript" || TypescriptGrammar().Name != "typescript" {
 		t.Fatalf("TypeScript aliases did not return typescript grammar")

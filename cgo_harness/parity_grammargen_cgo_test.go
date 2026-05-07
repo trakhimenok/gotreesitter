@@ -868,7 +868,7 @@ func grammargenCGORatchetRegressions(name string, floor, cur grammargenCGOFloorE
 	if cur.TreeParity < floor.TreeParity {
 		out = append(out, fmt.Sprintf("ratchet regression [%s] tree_parity: %d < floor %d", name, cur.TreeParity, floor.TreeParity))
 	}
-	if floor.Divergences > 0 && cur.Divergences > floor.Divergences {
+	if cur.Divergences > floor.Divergences {
 		out = append(out, fmt.Sprintf("ratchet regression [%s] divergences: %d > floor %d", name, cur.Divergences, floor.Divergences))
 	}
 	return out
@@ -934,7 +934,7 @@ func mergeGrammargenCGOFloors(existing, observed map[string]grammargenCGOFloorEn
 			if cur.TreeParity < prev.TreeParity {
 				cur.TreeParity = prev.TreeParity
 			}
-			if prev.Divergences > 0 && (cur.Divergences == 0 || prev.Divergences < cur.Divergences) {
+			if cur.Divergences > prev.Divergences {
 				cur.Divergences = prev.Divergences
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -123,8 +124,10 @@ type symbolTable struct {
 	fieldMap            map[string]int
 	fields              []string
 	repeatAuxByKey      map[string]string // canonical repeat body key → generated aux rule
-	binaryRepeatMode    bool              // use tree-sitter binary repeat helper shape
-	choiceLiftThreshold int               // if >0, lift inline CHOICE nodes exceeding this width
+	repeatAuxReuseRules map[string]bool
+	binaryRepeatMode    bool // use tree-sitter binary repeat helper shape
+	flattenRepeatAux    bool
+	choiceLiftThreshold int // if >0, lift inline CHOICE nodes exceeding this width
 }
 
 const inlinePatternSymbolPrefix = "\x00inline_pattern:"
@@ -270,6 +273,13 @@ func Normalize(g *Grammar) (*NormalizedGrammar, error) {
 	st := newSymbolTable()
 	st.grammarName = g.Name
 	st.binaryRepeatMode = g.BinaryRepeatMode
+	st.flattenRepeatAux = g.FlattenGeneratedRepeatAux
+	if len(g.ReuseRepeatAuxForParents) > 0 {
+		st.repeatAuxReuseRules = make(map[string]bool, len(g.ReuseRepeatAuxForParents))
+		for _, name := range g.ReuseRepeatAuxForParents {
+			st.repeatAuxReuseRules[name] = true
+		}
+	}
 	st.choiceLiftThreshold = g.ChoiceLiftThreshold
 	ng := &NormalizedGrammar{}
 
@@ -443,7 +453,7 @@ func Normalize(g *Grammar) (*NormalizedGrammar, error) {
 	// alternatives. Running this after prepareRule lets us flatten the cc=1
 	// branches introduced by repeat lowering, especially for hidden repeat
 	// helpers and top-level hidden repeat1 rules.
-	processedRules, auxRules = flattenPreparedRules(g.Name, nonterminals, processedRules, auxRules, g.Supertypes)
+	processedRules, auxRules = flattenPreparedRules(g.Name, nonterminals, processedRules, auxRules, g.Supertypes, st.flattenRepeatAux)
 
 	// Phase 5: Mark extra symbols.
 	extraSymbols := resolveExtras(g, st)
@@ -1630,7 +1640,7 @@ func liftLargeSeqChoices(seq *Rule, parentName string, st *symbolTable, auxRules
 
 func ensureRepeatAuxLinear(parentName string, inner *Rule, st *symbolTable, auxRules map[string]*Rule, counter *int) string {
 	key := ""
-	if shouldReuseRepeatAux(st.grammarName, parentName) {
+	if shouldReuseRepeatAux(st, parentName) {
 		key = "linear:" + canonicalRuleKey(inner)
 		if auxName, ok := st.repeatAuxByKey[key]; ok {
 			return auxName
@@ -1655,7 +1665,7 @@ func ensureRepeatAuxLinear(parentName string, inner *Rule, st *symbolTable, auxR
 
 func ensureRepeatAuxBinary(parentName string, inner *Rule, st *symbolTable, auxRules map[string]*Rule, counter *int) string {
 	key := ""
-	if shouldReuseRepeatAux(st.grammarName, parentName) {
+	if shouldReuseRepeatAux(st, parentName) {
 		key = "binary:" + canonicalRuleKey(inner)
 		if auxName, ok := st.repeatAuxByKey[key]; ok {
 			return auxName
@@ -1678,19 +1688,8 @@ func ensureRepeatAuxBinary(parentName string, inner *Rule, st *symbolTable, auxR
 	return auxName
 }
 
-func shouldReuseRepeatAux(grammarName, parentName string) bool {
-	if grammarName != "javascript" {
-		return false
-	}
-	// Upstream JavaScript reuses the opening-element attribute repeat helper
-	// for self-closing JSX tags. Without that shared helper, attribute lists
-	// can reduce into the opening-tag path and leave no valid "/>" action.
-	switch parentName {
-	case "jsx_opening_element", "jsx_self_closing_element":
-		return true
-	default:
-		return false
-	}
+func shouldReuseRepeatAux(st *symbolTable, parentName string) bool {
+	return st != nil && st.repeatAuxReuseRules[parentName]
 }
 
 func recordAuxOrigin(auxOrigins map[string]map[string]bool, auxName, origin string) {
@@ -1726,7 +1725,14 @@ func writeRuleKey(r *Rule, sb *strings.Builder) {
 		sb.WriteString("nil")
 		return
 	}
-	fmt.Fprintf(sb, "%d:%q:%d:%t[", r.Kind, r.Value, r.Prec, r.Named)
+	sb.WriteString(strconv.Itoa(int(r.Kind)))
+	sb.WriteByte(':')
+	sb.WriteString(strconv.Quote(r.Value))
+	sb.WriteByte(':')
+	sb.WriteString(strconv.Itoa(r.Prec))
+	sb.WriteByte(':')
+	sb.WriteString(strconv.FormatBool(r.Named))
+	sb.WriteByte('[')
 	for i, c := range r.Children {
 		if i > 0 {
 			sb.WriteByte(',')
@@ -1791,9 +1797,10 @@ func expandTopLevelRepeat(r *Rule, ruleName string, binaryMode bool) *Rule {
 	return expanded
 }
 
-func flattenPreparedRules(grammarName string, nonterminals []string, processedRules, auxRules map[string]*Rule, supertypes []string) (map[string]*Rule, map[string]*Rule) {
+func flattenPreparedRules(grammarName string, nonterminals []string, processedRules, auxRules map[string]*Rule, supertypes []string, flattenGeneratedRepeatAux bool) (map[string]*Rule, map[string]*Rule) {
 	tmp := NewGrammar(grammarName)
 	tmp.Supertypes = append(tmp.Supertypes, supertypes...)
+	tmp.FlattenGeneratedRepeatAux = flattenGeneratedRepeatAux
 
 	for _, name := range nonterminals {
 		if rule := processedRules[name]; rule != nil {
@@ -3117,11 +3124,7 @@ func flattenHiddenChoiceAlts(g *Grammar, generatedHiddenRules map[string]bool) *
 	flattenMap := make(map[string]*flattenInfo)
 
 	for _, name := range g.RuleOrder {
-		// JavaScript's generated repeat helpers participate in upstream
-		// flattening even when their parent rule is visible (for example
-		// program_repeat1 and JSX attribute repeats). Keep this scoped until
-		// the same shape is validated for TSX's JSX-vs-generic ambiguity.
-		isGeneratedHidden := generatedHiddenRules[name] && g.Name == "javascript"
+		isGeneratedHidden := generatedHiddenRules[name] && g.FlattenGeneratedRepeatAux
 		if !strings.HasPrefix(name, "_") && !isGeneratedHidden {
 			continue // only hidden rules
 		}
@@ -3328,6 +3331,12 @@ func flattenHiddenChoiceAlts(g *Grammar, generatedHiddenRules map[string]bool) *
 	out.ReservedWordSets = cloneReservedWordSets(g.ReservedWordSets)
 	out.Supertypes = g.Supertypes
 	out.Inline = g.Inline
+	out.FlattenGeneratedRepeatAux = g.FlattenGeneratedRepeatAux
+	out.ReuseRepeatAuxForParents = append(out.ReuseRepeatAuxForParents, g.ReuseRepeatAuxForParents...)
+	out.BinaryRepeatMode = g.BinaryRepeatMode
+	out.EnableLRSplitting = g.EnableLRSplitting
+	out.PreserveKeywordIdentifierConflicts = g.PreserveKeywordIdentifierConflicts
+	out.ChoiceLiftThreshold = g.ChoiceLiftThreshold
 	return out
 }
 
@@ -3701,6 +3710,8 @@ func expandInlineRules(g *Grammar) *Grammar {
 	out.Supertypes = g.Supertypes
 	out.Precedences = g.Precedences
 	out.BinaryRepeatMode = g.BinaryRepeatMode
+	out.FlattenGeneratedRepeatAux = g.FlattenGeneratedRepeatAux
+	out.ReuseRepeatAuxForParents = append(out.ReuseRepeatAuxForParents, g.ReuseRepeatAuxForParents...)
 	out.EnableLRSplitting = g.EnableLRSplitting
 	out.PreserveKeywordIdentifierConflicts = g.PreserveKeywordIdentifierConflicts
 	out.ChoiceLiftThreshold = g.ChoiceLiftThreshold

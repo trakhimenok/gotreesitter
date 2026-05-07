@@ -657,8 +657,9 @@ func TestProductionRepeatInSeq(t *testing.T) {
 
 func TestProductionBinaryRepeatAuxForVisibleParentFlattensBaseCase(t *testing.T) {
 	g := &Grammar{
-		Name:             "javascript",
-		BinaryRepeatMode: true,
+		Name:                      "javascript",
+		BinaryRepeatMode:          true,
+		FlattenGeneratedRepeatAux: true,
 		Rules: map[string]*Rule{
 			"program":    Repeat(Sym("statement")),
 			"statement":  Sym("identifier"),
