@@ -390,3 +390,134 @@ func TestNextDFATokenAfterWhitespacePrefersEarlierBaseLexStateToken(t *testing.T
 		t.Fatalf("token text after whitespace = %q, want %q", got, want)
 	}
 }
+
+func TestNextDFATokenPrefersParserValidZeroWidthBaseToken(t *testing.T) {
+	lang := &Language{
+		SymbolNames: []string{"end", "text", "newline"},
+		ZeroWidthTokens: []bool{
+			false,
+			true,
+			false,
+		},
+		LexStates: []LexState{
+			{
+				AcceptToken: 1,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{{Lo: ' ', Hi: ' ', NextState: 1}},
+			},
+			{
+				AcceptToken: 1,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{{Lo: ' ', Hi: ' ', NextState: 1}},
+			},
+			{
+				Default: -1,
+				EOF:     -1,
+				Transitions: []LexTransition{
+					{Lo: '\n', Hi: '\n', NextState: 3},
+				},
+			},
+			{
+				AcceptToken: 2,
+				Default:     -1,
+				EOF:         -1,
+			},
+		},
+		LexModes: []LexMode{
+			{LexState: 0},
+			{LexState: 0, AfterWhitespaceLexState: 2},
+		},
+		ParseActions: []ParseActionEntry{
+			{},
+			{Actions: []ParseAction{{Type: ParseActionShift}}},
+		},
+	}
+
+	d := &dfaTokenSource{
+		lexer:    NewLexer(lang.LexStates, []byte(";\n")),
+		language: lang,
+		state:    1,
+		lookupActionIndex: func(_ StateID, sym Symbol) uint16 {
+			if sym == 1 || sym == 2 {
+				return 1
+			}
+			return 0
+		},
+	}
+	d.lexer.zeroWidthTokens = lang.ZeroWidthTokens
+	d.lexer.pos = 1
+
+	tok := d.nextDFAToken()
+	if got, want := tok.Symbol, Symbol(1); got != want {
+		t.Fatalf("token symbol at whitespace boundary = %d (%q), want %d (%q)", got, lang.SymbolNames[got], want, lang.SymbolNames[want])
+	}
+	if got, want := tok.StartByte, uint32(1); got != want {
+		t.Fatalf("token start = %d, want %d", got, want)
+	}
+	if got, want := tok.EndByte, uint32(1); got != want {
+		t.Fatalf("token end = %d, want %d", got, want)
+	}
+}
+
+func TestNextDFATokenPrefersParserValidZeroWidthStartAccept(t *testing.T) {
+	lang := &Language{
+		SymbolNames: []string{"end", "text", "newline"},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "end"},
+			{Name: "text", Visible: true, Named: true},
+			{Name: "newline"},
+		},
+		ZeroWidthTokens: []bool{
+			false,
+			true,
+			false,
+		},
+		LexStates: []LexState{
+			{
+				AcceptToken: 1,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{{Lo: '\n', Hi: '\n', NextState: 1}},
+			},
+			{
+				AcceptToken: 2,
+				Default:     -1,
+				EOF:         -1,
+			},
+		},
+		LexModes: []LexMode{
+			{LexState: 0},
+			{LexState: 0},
+		},
+		ParseActions: []ParseActionEntry{
+			{},
+			{Actions: []ParseAction{{Type: ParseActionShift}}},
+		},
+	}
+
+	d := &dfaTokenSource{
+		lexer:    NewLexer(lang.LexStates, []byte("\n")),
+		language: lang,
+		state:    1,
+		lookupActionIndex: func(_ StateID, sym Symbol) uint16 {
+			if sym == 1 || sym == 2 {
+				return 1
+			}
+			return 0
+		},
+	}
+	d.lexer.zeroWidthTokens = lang.ZeroWidthTokens
+
+	tok := d.nextDFAToken()
+	if got, want := tok.Symbol, Symbol(1); got != want {
+		t.Fatalf("token symbol at zero-width start accept = %d (%q), want %d (%q)", got, lang.SymbolNames[got], want, lang.SymbolNames[want])
+	}
+	if got, want := tok.StartByte, uint32(0); got != want {
+		t.Fatalf("token start = %d, want %d", got, want)
+	}
+	if got, want := tok.EndByte, uint32(0); got != want {
+		t.Fatalf("token end = %d, want %d", got, want)
+	}
+}

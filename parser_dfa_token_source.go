@@ -527,6 +527,12 @@ func (d *dfaTokenSource) scanDFATokenForState(state StateID, lexState uint32) (T
 
 	d.state = state
 	tok := d.nextTokenForLexState(lexState)
+	if zeroTok, ok := d.preferZeroWidthStartAcceptForState(state, lexState, tok, savedPos, savedRow, savedCol); ok {
+		tok = zeroTok
+		d.lexer.pos = savedPos
+		d.lexer.row = savedRow
+		d.lexer.col = savedCol
+	}
 	tok = d.promoteKeyword(tok)
 	tok, endPos, endRow, endCol := d.normalizeDFAToken(tok, d.lexer.pos, d.lexer.row, d.lexer.col)
 
@@ -545,7 +551,82 @@ func (d *dfaTokenSource) shouldPreferBaseLexStateToken(baseTok, afterTok Token) 
 	if afterTok.Symbol == 0 {
 		return true
 	}
+	if d.shouldPreferZeroWidthBaseLexStateToken(baseTok, afterTok) {
+		return true
+	}
 	return baseTok.StartByte < afterTok.StartByte
+}
+
+func (d *dfaTokenSource) shouldPreferZeroWidthBaseLexStateToken(baseTok, afterTok Token) bool {
+	if d == nil || d.language == nil || len(d.language.ZeroWidthTokens) == 0 {
+		return false
+	}
+	if baseTok.StartByte != afterTok.StartByte || baseTok.EndByte != baseTok.StartByte {
+		return false
+	}
+	sym := int(baseTok.Symbol)
+	if sym < 0 || sym >= len(d.language.ZeroWidthTokens) || !d.language.ZeroWidthTokens[sym] {
+		return false
+	}
+	return d.hasShiftActionForStateSymbol(d.state, baseTok.Symbol)
+}
+
+func (d *dfaTokenSource) preferZeroWidthStartAcceptForState(state StateID, lexState uint32, tok Token, startPos int, startRow, startCol uint32) (Token, bool) {
+	if d == nil || d.language == nil || lexState == noLookaheadLexState || int(lexState) >= len(d.language.LexStates) {
+		return Token{}, false
+	}
+	if tok.Symbol != 0 && tok.StartByte != uint32(startPos) {
+		return Token{}, false
+	}
+	startAccept := d.language.LexStates[lexState].AcceptToken
+	if startAccept == 0 || startAccept == tok.Symbol || !d.isZeroWidthSymbol(startAccept) {
+		return Token{}, false
+	}
+	if !d.hasShiftActionForStateSymbol(state, startAccept) {
+		return Token{}, false
+	}
+	if tok.Symbol != 0 && d.symbolVisibleOrNamed(tok.Symbol) && !d.sameSymbolName(startAccept, tok.Symbol) {
+		return Token{}, false
+	}
+	pt := Point{Row: startRow, Column: startCol}
+	return Token{
+		Symbol:     startAccept,
+		StartByte:  uint32(startPos),
+		EndByte:    uint32(startPos),
+		StartPoint: pt,
+		EndPoint:   pt,
+	}, true
+}
+
+func (d *dfaTokenSource) isZeroWidthSymbol(sym Symbol) bool {
+	if d == nil || d.language == nil || len(d.language.ZeroWidthTokens) == 0 {
+		return false
+	}
+	idx := int(sym)
+	return idx >= 0 && idx < len(d.language.ZeroWidthTokens) && d.language.ZeroWidthTokens[idx]
+}
+
+func (d *dfaTokenSource) hasShiftActionForStateSymbol(state StateID, sym Symbol) bool {
+	if d == nil || d.language == nil || d.lookupActionIndex == nil || sym == 0 {
+		return false
+	}
+	idx := d.lookupActionIndex(state, sym)
+	if idx == 0 || int(idx) >= len(d.language.ParseActions) {
+		return false
+	}
+	for _, act := range d.language.ParseActions[idx].Actions {
+		if act.Type == ParseActionShift {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *dfaTokenSource) symbolVisibleOrNamed(sym Symbol) bool {
+	if meta, ok := d.symbolMetadata(sym); ok {
+		return meta.Visible || meta.Named
+	}
+	return false
 }
 
 func (d *dfaTokenSource) isAtWhitespacePosition() bool {
