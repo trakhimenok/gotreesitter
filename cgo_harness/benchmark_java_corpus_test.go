@@ -242,18 +242,21 @@ func newCTreeSitterJavaParser(tb testing.TB) *sitter.Parser {
 }
 
 type javaCorpusStats struct {
-	files       int
-	bytes       int64
-	duration    time.Duration
-	ok          int
-	hasError    int
-	incomplete  int
-	stopped     int
-	timeout     int
-	fallback    int
-	maxDuration time.Duration
-	maxFile     string
-	stopReasons map[gotreesitter.ParseStopReason]int
+	files             int
+	bytes             int64
+	duration          time.Duration
+	ok                int
+	hasError          int
+	incomplete        int
+	stopped           int
+	timeout           int
+	fallback          int
+	maxDuration       time.Duration
+	maxFile           string
+	firstIssueFile    string
+	firstIssueSummary string
+	firstIssueHasErr  bool
+	stopReasons       map[gotreesitter.ParseStopReason]int
 }
 
 type javaParseResult struct {
@@ -290,6 +293,31 @@ func parseJavaWithMode(pool *gotreesitter.ParserPool, lang *gotreesitter.Languag
 	default:
 		return javaParseResult{duration: time.Since(start), parseMode: mode}, fmt.Errorf("unknown java parse mode %q", mode)
 	}
+}
+
+func javaParseModes(tb testing.TB) []javaParseMode {
+	tb.Helper()
+	raw := strings.TrimSpace(os.Getenv("GOT_JAVA_PARSE_MODES"))
+	if raw == "" {
+		raw = "dfa,token_source,aspect_fallback"
+	}
+	parts := strings.Split(raw, ",")
+	modes := make([]javaParseMode, 0, len(parts))
+	for _, part := range parts {
+		mode := javaParseMode(strings.TrimSpace(part))
+		switch mode {
+		case "":
+			continue
+		case javaParseModeDFA, javaParseModeTokenSource, javaParseModeAspectFallback:
+			modes = append(modes, mode)
+		default:
+			tb.Fatalf("invalid GOT_JAVA_PARSE_MODES value %q; want dfa, token_source, or aspect_fallback", part)
+		}
+	}
+	if len(modes) == 0 {
+		tb.Fatal("GOT_JAVA_PARSE_MODES produced no parse modes")
+	}
+	return modes
 }
 
 func runJavaCorpus(files []javaCorpusFile, mode javaParseMode, timeoutMicros uint64) (javaCorpusStats, error) {
@@ -338,6 +366,11 @@ func runJavaCorpus(files []javaCorpusFile, mode javaParseMode, timeoutMicros uin
 		if root.EndByte() != uint32(len(file.source)) || rt.Truncated {
 			stats.incomplete++
 		}
+		if stats.firstIssueFile == "" && (root.HasError() || tree.ParseStoppedEarly() || root.EndByte() != uint32(len(file.source)) || rt.Truncated) {
+			stats.firstIssueFile = file.path
+			stats.firstIssueSummary = rt.Summary()
+			stats.firstIssueHasErr = root.HasError()
+		}
 		if !root.HasError() && !tree.ParseStoppedEarly() && root.EndByte() == uint32(len(file.source)) && !rt.Truncated {
 			stats.ok++
 		}
@@ -369,7 +402,7 @@ func formatJavaStopReasons(counts map[gotreesitter.ParseStopReason]int) string {
 
 func TestJavaCorpusTimeoutSweep(t *testing.T) {
 	files := loadJavaCorpus(t)
-	modes := []javaParseMode{javaParseModeDFA, javaParseModeTokenSource, javaParseModeAspectFallback}
+	modes := javaParseModes(t)
 	for _, timeoutMicros := range javaTimeoutSweep(t) {
 		for _, mode := range modes {
 			stats, err := runJavaCorpus(files, mode, timeoutMicros)
@@ -381,7 +414,7 @@ func TestJavaCorpusTimeoutSweep(t *testing.T) {
 				nsPerByte = float64(stats.duration.Nanoseconds()) / float64(stats.bytes)
 			}
 			t.Logf(
-				"java-timeout-sweep timeout=%s mode=%s files=%d bytes=%d total=%s ns_per_byte=%.2f ok=%d has_error=%d incomplete=%d stopped=%d timeouts=%d fallback=%d max=%s max_file=%s stops=%s",
+				"java-timeout-sweep timeout=%s mode=%s files=%d bytes=%d total=%s ns_per_byte=%.2f ok=%d has_error=%d incomplete=%d stopped=%d timeouts=%d fallback=%d max=%s max_file=%s stops=%s first_issue=%s first_issue_has_error=%v first_issue_runtime=%q",
 				formatJavaTimeout(timeoutMicros),
 				mode,
 				stats.files,
@@ -397,6 +430,9 @@ func TestJavaCorpusTimeoutSweep(t *testing.T) {
 				stats.maxDuration,
 				stats.maxFile,
 				formatJavaStopReasons(stats.stopReasons),
+				stats.firstIssueFile,
+				stats.firstIssueHasErr,
+				stats.firstIssueSummary,
 			)
 		}
 	}
