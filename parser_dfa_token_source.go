@@ -2574,6 +2574,12 @@ func (d *dfaTokenSource) promoteKeyword(tok Token) Token {
 				}
 			}
 		}
+		if !kwHasAction {
+			if altSym, ok := d.activeLiteralKeywordSymbol(tok); ok {
+				tok.Symbol = altSym
+				return tok
+			}
+		}
 		if !kwHasAction && idHasAction {
 			return tok // no active stack needs the keyword
 		}
@@ -2584,6 +2590,37 @@ func (d *dfaTokenSource) promoteKeyword(tok Token) Token {
 
 	tok.Symbol = kwTok.Symbol
 	return tok
+}
+
+func (d *dfaTokenSource) activeLiteralKeywordSymbol(tok Token) (Symbol, bool) {
+	if d == nil || d.language == nil || d.lookupActionIndex == nil || tok.Text == "" {
+		return 0, false
+	}
+	seen := map[StateID]struct{}{}
+	visit := func(state StateID) (Symbol, bool) {
+		if _, ok := seen[state]; ok {
+			return 0, false
+		}
+		seen[state] = struct{}{}
+		for sym := Symbol(1); uint32(sym) < d.language.SymbolCount && int(sym) < len(d.language.SymbolNames); sym++ {
+			if d.language.SymbolNames[sym] != tok.Text {
+				continue
+			}
+			if d.lookupActionIndex(state, sym) != 0 {
+				return sym, true
+			}
+		}
+		return 0, false
+	}
+	if sym, ok := visit(d.state); ok {
+		return sym, true
+	}
+	for _, state := range d.glrStates {
+		if sym, ok := visit(state); ok {
+			return sym, true
+		}
+	}
+	return 0, false
 }
 
 // parseIterations returns the iteration limit scaled to input size.

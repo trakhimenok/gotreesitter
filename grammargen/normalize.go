@@ -2337,6 +2337,62 @@ func identifyKeywords(g *Grammar, st *symbolTable, stringLits []string, namedTok
 	var keywordSyms []int
 	var keywordEntries []TerminalPattern
 
+	addKeywordEntry := func(id int, rule *Rule) {
+		if keywordSet[id] {
+			return
+		}
+		keywordSet[id] = true
+		keywordSyms = append(keywordSyms, id)
+		keywordEntries = append(keywordEntries, TerminalPattern{
+			SymbolID: id,
+			Rule:     rule,
+			Priority: 0,
+		})
+	}
+
+	// Named token rules that expand to a finite set of identifier-like string
+	// literals must precede anonymous string literals in the keyword DFA. Java
+	// has visible wrappers such as integral_type = choice("int", "long", ...)
+	// and requires_modifier = choice("transitive", "static"). Tree-sitter C
+	// returns those named token symbols, not the anonymous literal symbols, on
+	// equal-length matches.
+	for _, name := range namedTokens {
+		if name == g.Word {
+			continue
+		}
+		rule := g.Rules[name]
+		if rule == nil {
+			continue
+		}
+		id, ok := st.lookupNamedToken(name)
+		if !ok {
+			if id2, ok2 := st.lookup(name); ok2 {
+				id = id2
+			} else {
+				continue
+			}
+		}
+		expanded, _, _, err := expandTokenRule(rule)
+		if err != nil || !isStringOnlyRule(expanded) {
+			continue
+		}
+		lits, ok := collectStringOnlyRuleLiterals(expanded)
+		if !ok || len(lits) == 0 {
+			continue
+		}
+		allKeyword := true
+		for _, lit := range lits {
+			if !matchesDFA(wordDFA, lit) || !isIdentifierLikeKeywordLiteral(lit) {
+				allKeyword = false
+				break
+			}
+		}
+		if !allKeyword {
+			continue
+		}
+		addKeywordEntry(id, expanded)
+	}
+
 	for _, s := range stringLits {
 		id, ok := st.lookup(s)
 		if !ok {
@@ -2346,18 +2402,12 @@ func identifyKeywords(g *Grammar, st *symbolTable, stringLits []string, namedTok
 		// Some grammars have broad `word` tokens that also match punctuation
 		// literals (e.g. //, $$), which should remain regular terminals.
 		if matchesDFA(wordDFA, s) && isIdentifierLikeKeywordLiteral(s) {
-			keywordSet[id] = true
-			keywordSyms = append(keywordSyms, id)
-			// All keyword entries use the same priority (0) so the DFA
-			// lexer's greedy longest-match tiebreaker selects correctly.
-			// Sequential priorities would cause shorter prefix keywords
-			// (e.g. "as") to beat longer ones (e.g. "assert") because the
-			// lexer prefers lower priority numbers.
-			keywordEntries = append(keywordEntries, TerminalPattern{
-				SymbolID: id,
-				Rule:     Str(s),
-				Priority: 0,
-			})
+			// All keyword entries use the same priority (0) so the DFA lexer's
+			// greedy longest-match tiebreaker selects correctly. Sequential
+			// priorities would cause shorter prefix keywords (e.g. "as") to
+			// beat longer ones (e.g. "assert") because the lexer prefers lower
+			// priority numbers.
+			addKeywordEntry(id, Str(s))
 		}
 	}
 
@@ -2415,63 +2465,8 @@ func identifyKeywords(g *Grammar, st *symbolTable, stringLits []string, namedTok
 			continue
 		}
 		if dfaAcceptsSubsetOf(candDFA, wordDFA) {
-			keywordSet[id] = true
-			keywordSyms = append(keywordSyms, id)
-			keywordEntries = append(keywordEntries, TerminalPattern{
-				SymbolID: id,
-				Rule:     candExpanded,
-				Priority: 0,
-			})
+			addKeywordEntry(id, candExpanded)
 		}
-	}
-
-	// Named token rules that expand to a finite set of identifier-like string
-	// literals can also ride the keyword DFA path. This captures visible tokens
-	// like C#'s predefined_type = token(choice("int", "string", ...)).
-	for _, name := range namedTokens {
-		if name == g.Word {
-			continue
-		}
-		rule := g.Rules[name]
-		if rule == nil {
-			continue
-		}
-		id, ok := st.lookupNamedToken(name)
-		if !ok {
-			if id2, ok2 := st.lookup(name); ok2 {
-				id = id2
-			} else {
-				continue
-			}
-		}
-		if keywordSet[id] {
-			continue
-		}
-		expanded, _, _, err := expandTokenRule(rule)
-		if err != nil || !isStringOnlyRule(expanded) {
-			continue
-		}
-		lits, ok := collectStringOnlyRuleLiterals(expanded)
-		if !ok || len(lits) == 0 {
-			continue
-		}
-		allKeyword := true
-		for _, lit := range lits {
-			if !matchesDFA(wordDFA, lit) || !isIdentifierLikeKeywordLiteral(lit) {
-				allKeyword = false
-				break
-			}
-		}
-		if !allKeyword {
-			continue
-		}
-		keywordSet[id] = true
-		keywordSyms = append(keywordSyms, id)
-		keywordEntries = append(keywordEntries, TerminalPattern{
-			SymbolID: id,
-			Rule:     expanded,
-			Priority: 0,
-		})
 	}
 
 	return keywordSet, keywordSyms, keywordEntries

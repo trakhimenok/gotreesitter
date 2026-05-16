@@ -633,6 +633,35 @@ func TestKeywordParse(t *testing.T) {
 	}
 }
 
+func TestNamedKeywordTokenBeatsAnonymousLiteral(t *testing.T) {
+	g := NewGrammar("named_keyword_token")
+	g.Define("program", Seq(Sym("_type"), Sym("identifier")))
+	g.Define("_type", Choice(
+		Sym("primitive_type"),
+		Alias(Sym("identifier"), "type_identifier", true),
+	))
+	g.Define("primitive_type", Choice(Str("int"), Str("long")))
+	g.Define("identifier", Pat(`[a-zA-Z_][a-zA-Z0-9_]*`))
+	g.SetWord("identifier")
+	g.SetExtras(Pat(`\s`))
+
+	lang, err := GenerateLanguage(g)
+	if err != nil {
+		t.Fatalf("GenerateLanguage failed: %v", err)
+	}
+	tree, err := gotreesitter.NewParser(lang).Parse([]byte("int value"))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	sexp := tree.RootNode().SExpr(lang)
+	if !strings.Contains(sexp, "(primitive_type)") {
+		t.Fatalf("expected primitive_type keyword token, got %s", sexp)
+	}
+	if strings.Contains(sexp, "type_identifier") {
+		t.Fatalf("named keyword token lost to identifier alias: %s", sexp)
+	}
+}
+
 // ── Milestone 5: External Scanner Slots ────────────────────────────────────────
 
 func TestExtGenerate(t *testing.T) {
