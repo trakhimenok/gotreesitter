@@ -2001,6 +2001,12 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			// For single-action entries (the common case), no fork occurs.
 			// For multi-action entries, clone the stack for each alternative.
 			if len(actions) > 1 {
+				if reuse == nil && p.language != nil && p.language.Name == "java" {
+					if chosen, ok := javaRepetitionShiftConflictChoice(p.language, tok, currentState, actions); ok {
+						p.applyAction(s, chosen, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
+						continue
+					}
+				}
 				if reuse == nil && p.language != nil && p.language.Name == "c_sharp" {
 					if chosen, ok := csharpRepetitionShiftConflictChoice(p.language, tok, actions); ok {
 						p.applyAction(s, chosen, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
@@ -2280,6 +2286,47 @@ func csharpRepetitionShiftConflictChoice(lang *Language, tok Token, actions []Pa
 		return ParseAction{}, false
 	}
 	return repetitionShiftConflictChoice(actions)
+}
+
+func javaRepetitionShiftConflictChoice(lang *Language, tok Token, state StateID, actions []ParseAction) (ParseAction, bool) {
+	if lang == nil {
+		return ParseAction{}, false
+	}
+	switch state {
+	case 935:
+		if !symbolHasName(lang, tok.Symbol, "case") {
+			return ParseAction{}, false
+		}
+	case 7:
+		switch {
+		case symbolHasName(lang, tok.Symbol, "identifier"):
+		case symbolHasName(lang, tok.Symbol, "if"):
+		case symbolHasName(lang, tok.Symbol, "final"):
+		case symbolHasName(lang, tok.Symbol, "for"):
+		default:
+			return ParseAction{}, false
+		}
+	case 412:
+		switch {
+		case symbolHasName(lang, tok.Symbol, "public"):
+		case symbolHasName(lang, tok.Symbol, "private"):
+		case symbolHasName(lang, tok.Symbol, "protected"):
+		case symbolHasName(lang, tok.Symbol, "@"):
+		default:
+			return ParseAction{}, false
+		}
+	case 2:
+		if !symbolHasName(lang, tok.Symbol, "import") {
+			return ParseAction{}, false
+		}
+	default:
+		return ParseAction{}, false
+	}
+	return repetitionShiftConflictChoice(actions)
+}
+
+func symbolHasName(lang *Language, sym Symbol, name string) bool {
+	return lang != nil && int(sym) >= 0 && int(sym) < len(lang.SymbolNames) && lang.SymbolNames[sym] == name
 }
 
 func csharpRepeatConflictKind(name string) string {
