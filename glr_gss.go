@@ -334,11 +334,11 @@ func (s *gssScratch) reset() {
 			s.slabs = s.slabs[:len(s.slabs)-keepFrom]
 		}
 	}
-	// Always clear the full backing array, not just [:used]. stackEntry contains
-	// a *Node pointer field; partial clear leaves stale pointers in the unused
-	// tail which the GC traces, preventing arena memory from being collected.
+	// Clear slots touched by this parse. Reset establishes the invariant that
+	// every unused slot is already zero, so clearing [:used] drops live node
+	// pointers without bulk-clearing retained capacity on every parse.
 	for i := range s.slabs {
-		clear(s.slabs[i].data)
+		clear(s.slabs[i].data[:s.slabs[i].used])
 		s.slabs[i].used = 0
 	}
 	s.slabCursor = 0

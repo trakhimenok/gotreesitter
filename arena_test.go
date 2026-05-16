@@ -254,11 +254,10 @@ func TestEvictionGuardPreventsOversizedArenaReuse(t *testing.T) {
 	}
 }
 
-// TestArenaNodeSlabFullClearOnReset verifies that reset() zeros the full backing
-// array of each node slab, not just [:used]. This is required so that Go's GC
-// can collect Node structs: Node contains pointer fields (children, parent, etc.)
-// and stale pointers in the unused tail of the backing array prevent GC collection.
-func TestArenaNodeSlabFullClearOnReset(t *testing.T) {
+// TestArenaNodeSlabClearsTouchedSlotsOnReset verifies that reset() zeros every
+// slot touched by the just-finished parse. The unused tail is kept zero by the
+// reset invariant, so reset does not need to bulk-clear retained capacity.
+func TestArenaNodeSlabClearsTouchedSlotsOnReset(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
 
 	// Fill primary array and spill into at least one overflow slab.
@@ -278,6 +277,8 @@ func TestArenaNodeSlabFullClearOnReset(t *testing.T) {
 	if len(arena.nodeSlabs) == 0 {
 		t.Fatal("expected at least one overflow slab after allocating past primary capacity")
 	}
+	primaryPtr := unsafe.Pointer(&arena.nodes[0])
+	primaryUsedBeforeReset := len(arena.nodes)
 
 	// Capture a raw pointer to the first element of the first overflow slab.
 	// We will check after reset() that the slot is fully zeroed.
@@ -286,6 +287,7 @@ func TestArenaNodeSlabFullClearOnReset(t *testing.T) {
 		t.Fatal("expected overflow slab to have used > 0")
 	}
 	firstSlabDataPtr := unsafe.Pointer(&firstSlab.data[0])
+	slabUsedBeforeReset := firstSlab.used
 
 	arena.reset()
 
@@ -293,17 +295,22 @@ func TestArenaNodeSlabFullClearOnReset(t *testing.T) {
 	if firstSlab.used != 0 {
 		t.Fatalf("slab.used after reset = %d, want 0", firstSlab.used)
 	}
-	// After reset(), the first element of the slab must be zero.
-	// If only [:used] was cleared, a Node that was at index 0 before reset
-	// would have its parent pointer still set, keeping the Node alive for GC.
-	// Check that the parent pointer field is zeroed. Before the fix,
-	// clear(slab.data[:used]) left stale pointers in the unused tail
-	// after the first reset when primaryCap < len(slab.data).
-	got := (*Node)(firstSlabDataPtr)
-	if got.parent != nil {
-		t.Fatalf("slab.data[0].parent after reset is %p, want nil; full clear not applied", got.parent)
+	for i := 0; i < primaryUsedBeforeReset; i++ {
+		got := (*Node)(unsafe.Add(primaryPtr, uintptr(i)*unsafe.Sizeof(Node{})))
+		if got.parent != nil {
+			t.Fatalf("primary node[%d].parent after reset is %p, want nil", i, got.parent)
+		}
+		if got.ownerArena != nil {
+			t.Fatalf("primary node[%d].ownerArena after reset is %p, want nil", i, got.ownerArena)
+		}
 	}
-	if got.ownerArena != nil {
-		t.Fatalf("slab.data[0].ownerArena after reset is %p, want nil; full clear not applied", got.ownerArena)
+	for i := 0; i < slabUsedBeforeReset; i++ {
+		got := (*Node)(unsafe.Add(firstSlabDataPtr, uintptr(i)*unsafe.Sizeof(Node{})))
+		if got.parent != nil {
+			t.Fatalf("slab.data[%d].parent after reset is %p, want nil", i, got.parent)
+		}
+		if got.ownerArena != nil {
+			t.Fatalf("slab.data[%d].ownerArena after reset is %p, want nil", i, got.ownerArena)
+		}
 	}
 }

@@ -433,7 +433,7 @@ func (p *Parser) tryFastVisibleReduceActionFromGSS(s *glrStack, act ParseAction,
 		return false
 	}
 
-	children := arena.allocNodeSlice(childCount)
+	children := arena.allocNodeSliceNoClear(childCount)
 	copy(children, childBuf[:childCount])
 	named := p.isNamedSymbol(act.Symbol)
 	var parent *Node
@@ -1108,7 +1108,7 @@ func materializeReduceChildrenFromScratch(scratch *reduceBuildScratch, arena *no
 	if scratch == nil || len(scratch.nodes) == 0 {
 		return nil, nil, nil
 	}
-	children := arena.allocNodeSlice(len(scratch.nodes))
+	children := arena.allocNodeSliceNoClear(len(scratch.nodes))
 	copy(children, scratch.nodes)
 	if !scratch.trackFields {
 		return children, nil, nil
@@ -1150,7 +1150,7 @@ func (p *Parser) buildReduceChildrenAllVisible(entries []stackEntry, start, end,
 		return nil, nil, nil, true
 	}
 
-	children := arena.allocNodeSlice(visibleCount)
+	children := arena.allocNodeSliceNoClear(visibleCount)
 	var fieldIDs []FieldID
 	var fieldSources []uint8
 	if rawFieldIDs != nil {
@@ -1407,7 +1407,7 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 		if visibleCount == 0 {
 			return nil, nil, nil
 		}
-		children := arena.allocNodeSlice(visibleCount)
+		children := arena.allocNodeSliceNoClear(visibleCount)
 		out := 0
 		for i := start; i < end; i++ {
 			n := entries[i].node
@@ -2270,8 +2270,8 @@ func (p *Parser) fieldFlagScratch(childCount int) ([]bool, []bool) {
 	return p.fieldInheritedScratch, p.fieldConflictedScratch
 }
 
-// buildFieldIDs creates the field ID slice for a reduce action.
-func (p *Parser) buildFieldIDs(childCount int, productionID uint16, arena *nodeArena) ([]FieldID, []bool) {
+// buildFieldIDs creates the temporary field ID slice for a reduce action.
+func (p *Parser) buildFieldIDs(childCount int, productionID uint16, _ *nodeArena) ([]FieldID, []bool) {
 	if childCount <= 0 || len(p.language.FieldMapEntries) == 0 {
 		return nil, nil
 	}
@@ -2302,7 +2302,7 @@ func (p *Parser) buildFieldIDs(childCount int, productionID uint16, arena *nodeA
 		entry := p.language.FieldMapEntries[entryIdx]
 		if int(entry.ChildIndex) < childCount {
 			if fieldIDs == nil {
-				fieldIDs = arena.allocFieldIDSlice(childCount)
+				fieldIDs = p.fieldIDScratchFor(childCount)
 			}
 			idx := entry.ChildIndex
 			switch {
@@ -2334,4 +2334,20 @@ func (p *Parser) buildFieldIDs(childCount int, productionID uint16, arena *nodeA
 		return nil, nil
 	}
 	return fieldIDs, inherited
+}
+
+func (p *Parser) fieldIDScratchFor(childCount int) []FieldID {
+	if childCount <= 0 {
+		return nil
+	}
+	if p == nil {
+		return make([]FieldID, childCount)
+	}
+	if cap(p.fieldIDScratch) < childCount {
+		p.fieldIDScratch = make([]FieldID, childCount)
+	} else {
+		p.fieldIDScratch = p.fieldIDScratch[:childCount]
+		clear(p.fieldIDScratch)
+	}
+	return p.fieldIDScratch
 }

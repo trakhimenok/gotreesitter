@@ -300,12 +300,14 @@ func (a *nodeArena) Release() {
 }
 
 func (a *nodeArena) reset() {
-	// Clear the full backing arrays, not just [:used], so Go's GC can collect
-	// Node structs that contain pointer fields (children, parent, etc.).
-	// Partial clear leaves stale *Node pointers in the unused tail which the
-	// GC traces, preventing arena memory from being reclaimed.
-	// clear() is a no-op on nil/empty slices, no guard needed.
-	clear(a.nodes)
+	// Clear slots touched by this parse. Reset establishes the invariant that
+	// every unused slot is already zero, so clearing [:used] is enough to drop
+	// live pointers without bulk-clearing retained capacity on every parse.
+	primaryUsed := a.used
+	if primaryUsed > len(a.nodes) {
+		primaryUsed = len(a.nodes)
+	}
+	clear(a.nodes[:primaryUsed])
 	a.used = 0
 	// externalScannerCheckpointRef contains only integer fields (no pointers),
 	// so clearing it is not required for GC correctness. We clear it anyway for
@@ -316,7 +318,7 @@ func (a *nodeArena) reset() {
 	}
 	for i := range a.nodeSlabs {
 		slab := &a.nodeSlabs[i]
-		clear(slab.data)
+		clear(slab.data[:slab.used])
 		slab.used = 0
 	}
 	if len(a.nodeSlabs) > 0 {
@@ -526,6 +528,14 @@ func (a *nodeArena) ensureNodeCapacity(min int) {
 }
 
 func (a *nodeArena) allocNodeSlice(n int) []*Node {
+	return a.allocNodeSliceInternal(n, true)
+}
+
+func (a *nodeArena) allocNodeSliceNoClear(n int) []*Node {
+	return a.allocNodeSliceInternal(n, false)
+}
+
+func (a *nodeArena) allocNodeSliceInternal(n int, clearOut bool) []*Node {
 	if n <= 0 {
 		return nil
 	}
@@ -559,7 +569,9 @@ func (a *nodeArena) allocNodeSlice(n int) []*Node {
 		// Full-parse arena reset can skip bulk child-slab clearing to avoid
 		// large memclr work on release. Zero the slice on allocation so reused
 		// child slabs never leak stale child pointers into later parses.
-		clear(out)
+		if clearOut {
+			clear(out)
+		}
 		return out
 	}
 }

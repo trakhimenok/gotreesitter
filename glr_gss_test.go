@@ -155,3 +155,29 @@ func TestGSSStacksEqualWithLazyHashes(t *testing.T) {
 		t.Fatal("expected equality check to populate lazy hashes")
 	}
 }
+
+func TestGSSScratchResetClearsTouchedSlots(t *testing.T) {
+	var scratch gssScratch
+	node := &Node{endByte: 1}
+	var stack gssStack
+	stack.push(1, node, &scratch)
+	stack.push(2, node, &scratch)
+	if len(scratch.slabs) == 0 || scratch.slabs[0].used != 2 {
+		t.Fatalf("expected two used GSS slots, slabs=%d used=%d", len(scratch.slabs), scratch.slabs[0].used)
+	}
+
+	scratch.reset()
+
+	slab := scratch.slabs[0]
+	if slab.used != 0 {
+		t.Fatalf("slab.used after reset = %d, want 0", slab.used)
+	}
+	for i := 0; i < 2; i++ {
+		if slab.data[i].entry.node != nil {
+			t.Fatalf("slab.data[%d].entry.node after reset = %p, want nil", i, slab.data[i].entry.node)
+		}
+		if slab.data[i].prev != nil {
+			t.Fatalf("slab.data[%d].prev after reset = %p, want nil", i, slab.data[i].prev)
+		}
+	}
+}

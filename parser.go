@@ -51,6 +51,7 @@ type Parser struct {
 	aliasTargetSymbol                   []bool
 	singleTokenWrapperSymbol            []bool
 	reduceHasFields                     []bool
+	fieldIDScratch                      []FieldID
 	fieldInheritedScratch               []bool
 	fieldConflictedScratch              []bool
 	reduceScratch                       *reduceBuildScratch

@@ -1334,12 +1334,7 @@ func (d *dfaTokenSource) activeActionSpecificity(sym Symbol) int {
 		supporting int
 	}
 	stats := actionStats{}
-	seen := map[StateID]struct{}{}
 	visit := func(st StateID) {
-		if _, ok := seen[st]; ok {
-			return
-		}
-		seen[st] = struct{}{}
 		idx := d.lookupActionIndex(st, sym)
 		if idx == 0 || int(idx) >= len(d.language.ParseActions) {
 			return
@@ -1362,7 +1357,10 @@ func (d *dfaTokenSource) activeActionSpecificity(sym Symbol) int {
 		}
 	}
 	visit(d.state)
-	for _, st := range d.glrStates {
+	for i, st := range d.glrStates {
+		if st == d.state || d.priorGLRState(i, st) {
+			continue
+		}
 		visit(st)
 	}
 	return (((stats.maxDyn*1024)+stats.totalDyn)*1024 + stats.maxActions*64 + stats.totalActs*4 + stats.supporting)
@@ -2577,6 +2575,12 @@ func (d *dfaTokenSource) promoteKeyword(tok Token) Token {
 				}
 			}
 		}
+		if !kwHasAction {
+			if altSym, ok := d.activeLiteralKeywordSymbol(tok); ok {
+				tok.Symbol = altSym
+				return tok
+			}
+		}
 		if !kwHasAction && idHasAction {
 			return tok // no active stack needs the keyword
 		}
@@ -2587,6 +2591,52 @@ func (d *dfaTokenSource) promoteKeyword(tok Token) Token {
 
 	tok.Symbol = kwTok.Symbol
 	return tok
+}
+
+func (d *dfaTokenSource) activeLiteralKeywordSymbol(tok Token) (Symbol, bool) {
+	if d == nil || d.language == nil || d.lookupActionIndex == nil || tok.Text == "" {
+		return 0, false
+	}
+	candidates := d.language.TokenSymbolsByName(tok.Text)
+	visit := func(state StateID) (Symbol, bool) {
+		for _, sym := range candidates {
+			if d.lookupActionIndex(state, sym) != 0 {
+				return sym, true
+			}
+		}
+		if len(candidates) == 0 && d.language.TokenCount == 0 {
+			for sym := Symbol(1); uint32(sym) < d.language.SymbolCount && int(sym) < len(d.language.SymbolNames); sym++ {
+				if d.language.SymbolNames[sym] != tok.Text {
+					continue
+				}
+				if d.lookupActionIndex(state, sym) != 0 {
+					return sym, true
+				}
+			}
+		}
+		return 0, false
+	}
+	if sym, ok := visit(d.state); ok {
+		return sym, true
+	}
+	for i, state := range d.glrStates {
+		if state == d.state || d.priorGLRState(i, state) {
+			continue
+		}
+		if sym, ok := visit(state); ok {
+			return sym, true
+		}
+	}
+	return 0, false
+}
+
+func (d *dfaTokenSource) priorGLRState(limit int, state StateID) bool {
+	for i := 0; i < limit && i < len(d.glrStates); i++ {
+		if d.glrStates[i] == state {
+			return true
+		}
+	}
+	return false
 }
 
 // parseIterations returns the iteration limit scaled to input size.

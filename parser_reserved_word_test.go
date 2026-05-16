@@ -158,3 +158,61 @@ func TestReservedWordSetIDZeroDoesNotBlock(t *testing.T) {
 		t.Fatalf("setID=0: got symbol %d, want 2 (KW_IF — promoted)", got.Symbol)
 	}
 }
+
+func TestActiveLiteralKeywordSymbolUsesTokenNameIndex(t *testing.T) {
+	lang := &Language{
+		Name:        "literal_keyword_test",
+		SymbolCount: 6,
+		TokenCount:  5,
+		SymbolNames: []string{
+			"end",
+			"identifier",
+			"static",
+			"static",
+			"requires",
+			"static",
+		},
+		ParseActions: []ParseActionEntry{
+			{},
+			{Actions: []ParseAction{{Type: ParseActionShift, State: 1}}},
+		},
+	}
+	lookup := func(state StateID, sym Symbol) uint16 {
+		switch {
+		case state == 1 && sym == 3:
+			return 1
+		case state == 2 && sym == 4:
+			return 1
+		default:
+			return 0
+		}
+	}
+	d := &dfaTokenSource{
+		language:          lang,
+		state:             1,
+		glrStates:         []StateID{1, 1, 2},
+		lookupActionIndex: lookup,
+	}
+
+	// Warm the per-language symbol index; activeLiteralKeywordSymbol should not
+	// allocate while consulting it for repeated token lookups.
+	lang.TokenSymbolsByName("static")
+
+	staticTok := Token{Text: "static"}
+	if got, ok := d.activeLiteralKeywordSymbol(staticTok); !ok || got != 3 {
+		t.Fatalf("active static literal = (%d, %v), want (3, true)", got, ok)
+	}
+	requiresTok := Token{Text: "requires"}
+	if got, ok := d.activeLiteralKeywordSymbol(requiresTok); !ok || got != 4 {
+		t.Fatalf("active requires literal = (%d, %v), want (4, true)", got, ok)
+	}
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		if _, ok := d.activeLiteralKeywordSymbol(staticTok); !ok {
+			t.Fatal("active static literal not found")
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("active literal lookup allocations = %v, want 0", allocs)
+	}
+}
