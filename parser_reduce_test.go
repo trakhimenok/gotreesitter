@@ -89,3 +89,57 @@ func TestCollapsibleUnarySelfReductionAliasesSingleAnonymousLeaf(t *testing.T) {
 		t.Fatalf("collapsed span = [%d,%d), want [1,3)", got.StartByte(), got.EndByte())
 	}
 }
+
+func TestCollapsibleRawUnarySelfReductionAliasesSingleAnonymousLeaf(t *testing.T) {
+	lang := &Language{
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF"},
+			{Name: "optional_chain", Visible: true, Named: true},
+			{Name: "?.", Visible: true, Named: false},
+		},
+	}
+	p := &Parser{
+		language:                 lang,
+		singleTokenWrapperSymbol: []bool{false, true, false},
+	}
+	arena := newNodeArena(arenaClassFull)
+	child := newLeafNodeInArena(arena, 2, false, 1, 3, Point{Column: 1}, Point{Column: 3})
+	entries := []stackEntry{{node: child}}
+	act := ParseAction{Symbol: 1, ChildCount: 1}
+
+	got := p.collapsibleRawUnarySelfReduction(act, Token{}, arena, entries, 0, 1)
+	if got == nil {
+		t.Fatal("expected raw unary single-token reduction to collapse to named leaf")
+	}
+	if got.Symbol() != 1 {
+		t.Fatalf("collapsed symbol = %d, want %d", got.Symbol(), 1)
+	}
+	if !got.IsNamed() {
+		t.Fatal("collapsed node should be named")
+	}
+	if got.ChildCount() != 0 {
+		t.Fatalf("collapsed child count = %d, want 0", got.ChildCount())
+	}
+}
+
+func TestCollapsibleRawUnarySelfReductionRejectsInvisibleChild(t *testing.T) {
+	lang := &Language{
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF"},
+			{Name: "optional_chain", Visible: true, Named: true},
+			{Name: "_hidden", Visible: false, Named: false},
+		},
+	}
+	p := &Parser{
+		language:                 lang,
+		singleTokenWrapperSymbol: []bool{false, true, false},
+	}
+	arena := newNodeArena(arenaClassFull)
+	child := newLeafNodeInArena(arena, 2, false, 1, 3, Point{Column: 1}, Point{Column: 3})
+	entries := []stackEntry{{node: child}}
+	act := ParseAction{Symbol: 1, ChildCount: 1}
+
+	if got := p.collapsibleRawUnarySelfReduction(act, Token{}, arena, entries, 0, 1); got != nil {
+		t.Fatalf("raw unary collapse returned %v for invisible child", got)
+	}
+}
