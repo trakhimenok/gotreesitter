@@ -27,6 +27,7 @@ type javaParseMode string
 
 const (
 	javaParseModeDFA            javaParseMode = "dfa"
+	javaParseModeDFANoTree      javaParseMode = "dfa_no_tree"
 	javaParseModeTokenSource    javaParseMode = "token_source"
 	javaParseModeAspectFallback javaParseMode = "aspect_fallback"
 )
@@ -171,6 +172,15 @@ func javaEnvInt(tb testing.TB, name string, fallback int) int {
 	return n
 }
 
+func javaEnvBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func javaTimeoutSweep(tb testing.TB) []uint64 {
 	tb.Helper()
 	raw := strings.TrimSpace(os.Getenv("GOT_JAVA_TIMEOUT_SWEEP"))
@@ -258,6 +268,7 @@ type javaCorpusStats struct {
 	firstIssueHasErr  bool
 	stopReasons       map[gotreesitter.ParseStopReason]int
 	runtime           javaRuntimeStats
+	ambiguity         []gotreesitter.AmbiguityStat
 }
 
 type javaRuntimeStats struct {
@@ -301,6 +312,9 @@ func parseJavaWithMode(pool *gotreesitter.ParserPool, lang *gotreesitter.Languag
 	case javaParseModeDFA:
 		tree, err := pool.Parse(source)
 		return javaParseResult{tree: tree, duration: time.Since(start), parseMode: mode}, err
+	case javaParseModeDFANoTree:
+		tree, err := pool.ParseNoTreeBenchmarkOnly(source)
+		return javaParseResult{tree: tree, duration: time.Since(start), parseMode: mode}, err
 	case javaParseModeTokenSource:
 		tree, err := pool.ParseWithTokenSourceFactory(source, func(src []byte) (gotreesitter.TokenSource, error) {
 			return grammars.NewJavaTokenSource(src, lang)
@@ -337,10 +351,10 @@ func javaParseModes(tb testing.TB) []javaParseMode {
 		switch mode {
 		case "":
 			continue
-		case javaParseModeDFA, javaParseModeTokenSource, javaParseModeAspectFallback:
+		case javaParseModeDFA, javaParseModeDFANoTree, javaParseModeTokenSource, javaParseModeAspectFallback:
 			modes = append(modes, mode)
 		default:
-			tb.Fatalf("invalid GOT_JAVA_PARSE_MODES value %q; want dfa, token_source, or aspect_fallback", part)
+			tb.Fatalf("invalid GOT_JAVA_PARSE_MODES value %q; want dfa, dfa_no_tree, token_source, or aspect_fallback", part)
 		}
 	}
 	if len(modes) == 0 {
@@ -351,7 +365,13 @@ func javaParseModes(tb testing.TB) []javaParseMode {
 
 func runJavaCorpus(files []javaCorpusFile, mode javaParseMode, timeoutMicros uint64) (javaCorpusStats, error) {
 	lang := grammars.JavaLanguage()
-	pool := gotreesitter.NewParserPool(lang, gotreesitter.WithParserPoolTimeoutMicros(timeoutMicros))
+	opts := []gotreesitter.ParserPoolOption{gotreesitter.WithParserPoolTimeoutMicros(timeoutMicros)}
+	var ambiguity *gotreesitter.AmbiguityProfile
+	if javaEnvBool("GOT_JAVA_AMBIGUITY_PROFILE") {
+		ambiguity = gotreesitter.NewAmbiguityProfile()
+		opts = append(opts, gotreesitter.WithParserPoolAmbiguityProfile(ambiguity))
+	}
+	pool := gotreesitter.NewParserPool(lang, opts...)
 	stats := javaCorpusStats{stopReasons: make(map[gotreesitter.ParseStopReason]int)}
 
 	for _, file := range files {
@@ -405,6 +425,9 @@ func runJavaCorpus(files []javaCorpusFile, mode javaParseMode, timeoutMicros uin
 			stats.ok++
 		}
 		tree.Release()
+	}
+	if ambiguity != nil {
+		stats.ambiguity = ambiguity.SnapshotTop(20)
 	}
 	return stats, nil
 }
@@ -499,9 +522,66 @@ func formatJavaStopReasons(counts map[gotreesitter.ParseStopReason]int) string {
 	return sb.String()
 }
 
+func formatJavaAmbiguityTop(stats []gotreesitter.AmbiguityStat, lang *gotreesitter.Language) string {
+	if len(stats) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for i, stat := range stats {
+		if i > 0 {
+			sb.WriteString("; ")
+		}
+		fmt.Fprintf(
+			&sb,
+			"state=%d lookahead=%s(%d) actions=%d shifts=%d reduces=%d hits=%d stack_total=%d stack_max=%d action_set=%s",
+			stat.State,
+			javaSymbolName(lang, stat.Lookahead),
+			stat.Lookahead,
+			stat.ActionCount,
+			stat.ShiftCount,
+			stat.ReduceCount,
+			stat.Hits,
+			stat.StackInTotal,
+			stat.StackInMax,
+			formatJavaAmbiguityActions(stat.Actions, lang),
+		)
+	}
+	return sb.String()
+}
+
+func formatJavaAmbiguityActions(actions []gotreesitter.ParseAction, lang *gotreesitter.Language) string {
+	if len(actions) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(actions))
+	for _, action := range actions {
+		switch action.Type {
+		case gotreesitter.ParseActionShift:
+			parts = append(parts, fmt.Sprintf("shift:%d", action.State))
+		case gotreesitter.ParseActionReduce:
+			parts = append(parts, fmt.Sprintf("reduce:%s/%d#%d", javaSymbolName(lang, action.Symbol), action.Symbol, action.ProductionID))
+		case gotreesitter.ParseActionAccept:
+			parts = append(parts, "accept")
+		case gotreesitter.ParseActionRecover:
+			parts = append(parts, fmt.Sprintf("recover:%d", action.State))
+		default:
+			parts = append(parts, fmt.Sprintf("type%d", action.Type))
+		}
+	}
+	return strings.Join(parts, "|")
+}
+
+func javaSymbolName(lang *gotreesitter.Language, sym gotreesitter.Symbol) string {
+	if lang != nil && int(sym) >= 0 && int(sym) < len(lang.SymbolNames) {
+		return lang.SymbolNames[sym]
+	}
+	return "?"
+}
+
 func TestJavaCorpusTimeoutSweep(t *testing.T) {
 	files := loadJavaCorpus(t)
 	modes := javaParseModes(t)
+	lang := grammars.JavaLanguage()
 	for _, timeoutMicros := range javaTimeoutSweep(t) {
 		for _, mode := range modes {
 			stats, err := runJavaCorpus(files, mode, timeoutMicros)
@@ -513,7 +593,7 @@ func TestJavaCorpusTimeoutSweep(t *testing.T) {
 				nsPerByte = float64(stats.duration.Nanoseconds()) / float64(stats.bytes)
 			}
 			t.Logf(
-				"java-timeout-sweep timeout=%s mode=%s files=%d bytes=%d total=%s ns_per_byte=%.2f ok=%d has_error=%d incomplete=%d stopped=%d timeouts=%d fallback=%d max=%s max_file=%s stops=%s first_issue=%s first_issue_has_error=%v first_issue_runtime=%q runtime=%q",
+				"java-timeout-sweep timeout=%s mode=%s files=%d bytes=%d total=%s ns_per_byte=%.2f ok=%d has_error=%d incomplete=%d stopped=%d timeouts=%d fallback=%d max=%s max_file=%s stops=%s first_issue=%s first_issue_has_error=%v first_issue_runtime=%q runtime=%q ambiguity_top=%q",
 				formatJavaTimeout(timeoutMicros),
 				mode,
 				stats.files,
@@ -533,6 +613,7 @@ func TestJavaCorpusTimeoutSweep(t *testing.T) {
 				stats.firstIssueHasErr,
 				stats.firstIssueSummary,
 				stats.runtime.summary(),
+				formatJavaAmbiguityTop(stats.ambiguity, lang),
 			)
 		}
 	}
@@ -575,6 +656,10 @@ func benchmarkJavaCorpusGoTreeSitter(b *testing.B, mode javaParseMode) {
 
 func BenchmarkJavaCorpusGoTreeSitterParseDFA(b *testing.B) {
 	benchmarkJavaCorpusGoTreeSitter(b, javaParseModeDFA)
+}
+
+func BenchmarkJavaCorpusGoTreeSitterParseDFANoTree(b *testing.B) {
+	benchmarkJavaCorpusGoTreeSitter(b, javaParseModeDFANoTree)
 }
 
 func BenchmarkJavaCorpusGoTreeSitterParseTokenSource(b *testing.B) {

@@ -6,10 +6,11 @@ import "sync"
 type ParserPoolOption func(*parserPoolConfig)
 
 type parserPoolConfig struct {
-	logger        ParserLogger
-	timeoutMicros uint64
-	included      []Range
-	glrTrace      bool
+	logger           ParserLogger
+	timeoutMicros    uint64
+	included         []Range
+	glrTrace         bool
+	ambiguityProfile *AmbiguityProfile
 }
 
 // WithParserPoolLogger sets the logger applied to pooled parser instances.
@@ -40,6 +41,14 @@ func WithParserPoolGLRTrace(enabled bool) ParserPoolOption {
 	}
 }
 
+// WithParserPoolAmbiguityProfile installs an optional diagnostic ambiguity
+// profile on checked-out parsers.
+func WithParserPoolAmbiguityProfile(profile *AmbiguityProfile) ParserPoolOption {
+	return func(cfg *parserPoolConfig) {
+		cfg.ambiguityProfile = profile
+	}
+}
+
 // ParserPool provides concurrency-safe parsing by reusing Parser instances.
 //
 // ParserPool is safe for concurrent use. Each call checks out one parser from
@@ -50,12 +59,13 @@ func WithParserPoolGLRTrace(enabled bool) ParserPoolOption {
 // GLR trace) is reset on checkout so request-local state cannot bleed across
 // callers.
 type ParserPool struct {
-	language      *Language
-	logger        ParserLogger
-	timeoutMicros uint64
-	included      []Range
-	glrTrace      bool
-	pool          sync.Pool
+	language         *Language
+	logger           ParserLogger
+	timeoutMicros    uint64
+	included         []Range
+	glrTrace         bool
+	ambiguityProfile *AmbiguityProfile
+	pool             sync.Pool
 }
 
 // NewParserPool creates a concurrency-safe parser pool for lang.
@@ -68,11 +78,12 @@ func NewParserPool(lang *Language, opts ...ParserPoolOption) *ParserPool {
 	}
 
 	pp := &ParserPool{
-		language:      lang,
-		logger:        cfg.logger,
-		timeoutMicros: cfg.timeoutMicros,
-		included:      append([]Range(nil), cfg.included...),
-		glrTrace:      cfg.glrTrace,
+		language:         lang,
+		logger:           cfg.logger,
+		timeoutMicros:    cfg.timeoutMicros,
+		included:         append([]Range(nil), cfg.included...),
+		glrTrace:         cfg.glrTrace,
+		ambiguityProfile: cfg.ambiguityProfile,
 	}
 	pp.pool.New = func() any {
 		p := NewParser(pp.language)
@@ -99,6 +110,8 @@ func (pp *ParserPool) applyDefaults(p *Parser) {
 	p.SetCancellationFlag(nil)
 	p.SetIncludedRanges(pp.included)
 	p.SetGLRTrace(pp.glrTrace)
+	p.SetAmbiguityProfile(pp.ambiguityProfile)
+	p.noTreeBenchmarkOnly = false
 }
 
 func (pp *ParserPool) checkout() *Parser {
@@ -137,6 +150,18 @@ func (pp *ParserPool) Parse(source []byte) (*Tree, error) {
 	}
 	defer pp.release(p)
 	return p.Parse(source)
+}
+
+// ParseNoTreeBenchmarkOnly delegates to Parser.ParseNoTreeBenchmarkOnly.
+// It is intended only for parser-loop performance experiments; the returned
+// tree is not API-compatible.
+func (pp *ParserPool) ParseNoTreeBenchmarkOnly(source []byte) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseNoTreeBenchmarkOnly(source)
 }
 
 // ParseUTF16 delegates to a pooled Parser.ParseUTF16 call.

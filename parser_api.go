@@ -233,6 +233,16 @@ func (p *Parser) SetGLRTrace(enabled bool) {
 	p.glrTrace = enabled
 }
 
+// SetAmbiguityProfile installs an optional diagnostic ambiguity profile.
+// The profile receives parser state/lookahead/action counters for GLR-heavy
+// benchmark runs. Pass nil to disable profiling.
+func (p *Parser) SetAmbiguityProfile(profile *AmbiguityProfile) {
+	if p == nil {
+		return
+	}
+	p.ambiguityProfile = profile
+}
+
 // SetLogger installs a parser debug logger. Pass nil to disable logging.
 func (p *Parser) SetLogger(logger ParserLogger) {
 	if p == nil {
@@ -425,6 +435,21 @@ func (p *Parser) Parse(source []byte) (*Tree, error) {
 	}
 	normalizeReturnedTree(rootOrNil(tree), source, p.language)
 	return tree, nil
+}
+
+// ParseNoTreeBenchmarkOnly parses source while suppressing parent/child tree
+// materialization in reduce actions. It is intended only for parser-loop
+// performance experiments; the returned tree is not API-compatible.
+func (p *Parser) ParseNoTreeBenchmarkOnly(source []byte) (*Tree, error) {
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	prev := p.noTreeBenchmarkOnly
+	p.noTreeBenchmarkOnly = true
+	defer func() {
+		p.noTreeBenchmarkOnly = prev
+	}()
+	return p.Parse(source)
 }
 
 // ParseUTF16 parses UTF-16 source represented as Go UTF-16 code units.

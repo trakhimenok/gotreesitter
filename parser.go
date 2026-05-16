@@ -40,7 +40,8 @@ type Parser struct {
 	included                            []Range
 	logger                              ParserLogger
 	glrTrace                            bool // verbose GLR stack tracing
-	maxConflictWidth                    int  // widest N-way conflict in the parse table
+	ambiguityProfile                    *AmbiguityProfile
+	maxConflictWidth                    int // widest N-way conflict in the parse table
 	timeoutMicros                       uint64
 	cancellationFlag                    *uint32
 	denseLimit                          int
@@ -55,6 +56,7 @@ type Parser struct {
 	fieldInheritedScratch               []bool
 	fieldConflictedScratch              []bool
 	reduceScratch                       *reduceBuildScratch
+	noTreeBenchmarkOnly                 bool
 	currentExternalTokenCheckpoint      externalScannerCheckpoint
 	currentExternalTokenCheckpointStart uint32
 	currentExternalTokenCheckpointEnd   uint32
@@ -310,6 +312,8 @@ func resetSnippetParser(parser *Parser) {
 	parser.included = nil
 	parser.logger = nil
 	parser.glrTrace = false
+	parser.ambiguityProfile = nil
+	parser.noTreeBenchmarkOnly = false
 	parser.timeoutMicros = 0
 	parser.cancellationFlag = nil
 	// Release *Node refs so the arenas from the last incremental parse can be
@@ -1851,6 +1855,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 					fmt.Printf("    action[%d]: type=%d state=%d sym=%d cnt=%d prec=%d\n",
 						ai, a.Type, a.State, a.Symbol, a.ChildCount, a.DynamicPrecedence)
 				}
+			}
+			if p.ambiguityProfile != nil {
+				p.ambiguityProfile.record(currentState, tok.Symbol, actions, numStacks)
 			}
 			// --- Extra token handling (comments, whitespace) ---
 			if len(actions) > 0 &&
