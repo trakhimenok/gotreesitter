@@ -194,6 +194,30 @@ func TestJavaParseWithTokenSourceCompactNestedGenericRegression(t *testing.T) {
 	}
 }
 
+func TestJavaArrayInitializerTrailingCommaRegression(t *testing.T) {
+	lang := JavaLanguage()
+	parser := gotreesitter.NewParser(lang)
+
+	src := []byte(`class T {
+  int[] values = {
+    1,
+    2, // trailing comma remains optional
+  };
+}
+`)
+
+	tree, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if tree == nil || tree.RootNode() == nil {
+		t.Fatal("parse returned nil root")
+	}
+	if root := tree.RootNode(); root.HasError() {
+		t.Fatalf("expected trailing comma array initializer to parse without syntax errors, got: %s", root.SExpr(lang))
+	}
+}
+
 func TestJavaParseWithTokenSourceShiftExpressionRegression(t *testing.T) {
 	lang := JavaLanguage()
 	parser := gotreesitter.NewParser(lang)

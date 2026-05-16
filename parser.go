@@ -2002,7 +2002,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			// For multi-action entries, clone the stack for each alternative.
 			if len(actions) > 1 {
 				if reuse == nil && p.language != nil && p.language.Name == "java" {
-					if chosen, ok := javaRepetitionShiftConflictChoice(p.language, tok, currentState, actions); ok {
+					if chosen, ok := javaRepetitionShiftConflictChoice(p.language, source, tok, currentState, actions); ok {
 						p.applyAction(s, chosen, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
 						continue
 					}
@@ -2288,11 +2288,15 @@ func csharpRepetitionShiftConflictChoice(lang *Language, tok Token, actions []Pa
 	return repetitionShiftConflictChoice(actions)
 }
 
-func javaRepetitionShiftConflictChoice(lang *Language, tok Token, state StateID, actions []ParseAction) (ParseAction, bool) {
+func javaRepetitionShiftConflictChoice(lang *Language, source []byte, tok Token, state StateID, actions []ParseAction) (ParseAction, bool) {
 	if lang == nil {
 		return ParseAction{}, false
 	}
 	switch state {
+	case 1104:
+		if !symbolHasName(lang, tok.Symbol, ",") || !javaArrayInitializerCommaHasFollowingElement(source, tok.EndByte) {
+			return ParseAction{}, false
+		}
 	case 983:
 		switch {
 		case symbolHasName(lang, tok.Symbol, "escape_sequence"):
@@ -2330,6 +2334,45 @@ func javaRepetitionShiftConflictChoice(lang *Language, tok Token, state StateID,
 		return ParseAction{}, false
 	}
 	return repetitionShiftConflictChoice(actions)
+}
+
+func javaArrayInitializerCommaHasFollowingElement(source []byte, offset uint32) bool {
+	i := int(offset)
+	for i < len(source) {
+		switch source[i] {
+		case ' ', '\t', '\n', '\r', '\f':
+			i++
+			continue
+		case '/':
+			if i+1 >= len(source) {
+				return true
+			}
+			switch source[i+1] {
+			case '/':
+				i += 2
+				for i < len(source) && source[i] != '\n' && source[i] != '\r' {
+					i++
+				}
+				continue
+			case '*':
+				i += 2
+				for i+1 < len(source) && !(source[i] == '*' && source[i+1] == '/') {
+					i++
+				}
+				if i+1 >= len(source) {
+					return false
+				}
+				i += 2
+				continue
+			}
+			return true
+		case '}':
+			return false
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func symbolHasName(lang *Language, sym Symbol, name string) bool {

@@ -1,6 +1,7 @@
 package gotreesitter
 
 import (
+	"bytes"
 	"testing"
 	"time"
 )
@@ -107,7 +108,7 @@ func TestJavaRepetitionShiftConflictChoiceAllowsStringLiteralContinuation(t *tes
 	}
 
 	for _, sym := range []Symbol{1, 2} {
-		chosen, ok := javaRepetitionShiftConflictChoice(lang, Token{Symbol: sym}, 983, actions)
+		chosen, ok := javaRepetitionShiftConflictChoice(lang, nil, Token{Symbol: sym}, 983, actions)
 		if !ok {
 			t.Fatalf("javaRepetitionShiftConflictChoice(%q) = false, want true", lang.SymbolNames[sym])
 		}
@@ -124,8 +125,40 @@ func TestJavaRepetitionShiftConflictChoiceRejectsOtherStringLiteralLookahead(t *
 		{Type: ParseActionShift, State: 983, Repetition: true},
 	}
 
-	if _, ok := javaRepetitionShiftConflictChoice(lang, Token{Symbol: 1}, 983, actions); ok {
+	if _, ok := javaRepetitionShiftConflictChoice(lang, nil, Token{Symbol: 1}, 983, actions); ok {
 		t.Fatal("javaRepetitionShiftConflictChoice = true, want false")
+	}
+}
+
+func TestJavaRepetitionShiftConflictChoiceAllowsArrayInitializerSeparator(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", ",", "array_initializer_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionShift, State: 145, Repetition: true},
+	}
+	source := []byte(`class T { int[] values = { 1, /* keep going */ 2 }; }`)
+	comma := uint32(bytes.IndexByte(source, ',') + 1)
+
+	chosen, ok := javaRepetitionShiftConflictChoice(lang, source, Token{Symbol: 1, EndByte: comma}, 1104, actions)
+	if !ok {
+		t.Fatal("javaRepetitionShiftConflictChoice = false, want true")
+	}
+	if chosen.Type != ParseActionShift || chosen.State != 145 || !chosen.Repetition {
+		t.Fatalf("javaRepetitionShiftConflictChoice picked %+v, want array initializer comma shift", chosen)
+	}
+}
+
+func TestJavaRepetitionShiftConflictChoiceRejectsArrayInitializerTrailingComma(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", ",", "array_initializer_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionShift, State: 145, Repetition: true},
+	}
+	source := []byte("class T { int[] values = { 1, // trailing\n}; }")
+	comma := uint32(bytes.IndexByte(source, ',') + 1)
+
+	if _, ok := javaRepetitionShiftConflictChoice(lang, source, Token{Symbol: 1, EndByte: comma}, 1104, actions); ok {
+		t.Fatal("javaRepetitionShiftConflictChoice = true, want false for trailing comma")
 	}
 }
 
