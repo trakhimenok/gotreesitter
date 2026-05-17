@@ -54,6 +54,8 @@ type perfCountersData struct {
 	reduceChildrenAllVis   atomic.Uint64
 	reduceChildrenNoAlias  atomic.Uint64
 	reduceChildrenScratch  atomic.Uint64
+	reduceScratchNoAlias   atomic.Uint64
+	reduceScratchGeneral   atomic.Uint64
 	extraNodes             atomic.Uint64
 	errorNodes             atomic.Uint64
 	mergeStacksInHist      [perfMergeHistBins]atomic.Uint64
@@ -108,6 +110,8 @@ type PerfCounters struct {
 	ReduceChildrenAllVis   uint64
 	ReduceChildrenNoAlias  uint64
 	ReduceChildrenScratch  uint64
+	ReduceScratchNoAlias   uint64
+	ReduceScratchGeneral   uint64
 	ExtraNodes             uint64
 	ErrorNodes             uint64
 	MergeStacksInHist      [perfMergeHistBins]uint64
@@ -152,6 +156,8 @@ func ResetPerfCounters() {
 	perfCounters.reduceChildrenAllVis.Store(0)
 	perfCounters.reduceChildrenNoAlias.Store(0)
 	perfCounters.reduceChildrenScratch.Store(0)
+	perfCounters.reduceScratchNoAlias.Store(0)
+	perfCounters.reduceScratchGeneral.Store(0)
 	perfCounters.extraNodes.Store(0)
 	perfCounters.errorNodes.Store(0)
 	for i := range perfCounters.mergeStacksInHist {
@@ -227,6 +233,8 @@ func PerfCountersSnapshot() PerfCounters {
 	out.ReduceChildrenAllVis = perfCounters.reduceChildrenAllVis.Load()
 	out.ReduceChildrenNoAlias = perfCounters.reduceChildrenNoAlias.Load()
 	out.ReduceChildrenScratch = perfCounters.reduceChildrenScratch.Load()
+	out.ReduceScratchNoAlias = perfCounters.reduceScratchNoAlias.Load()
+	out.ReduceScratchGeneral = perfCounters.reduceScratchGeneral.Load()
 	out.ExtraNodes = perfCounters.extraNodes.Load()
 	out.ErrorNodes = perfCounters.errorNodes.Load()
 	for i := range out.MergeOutHist {
@@ -450,6 +458,18 @@ func perfRecordReduceChildrenNoAlias(count int) {
 func perfRecordReduceChildrenScratch(count int) {
 	if count > 0 {
 		perfCounters.reduceChildrenScratch.Add(uint64(count))
+	}
+}
+
+func perfRecordReduceScratchNoAlias(count int) {
+	if count > 0 {
+		perfCounters.reduceScratchNoAlias.Add(uint64(count))
+	}
+}
+
+func perfRecordReduceScratchGeneral(count int) {
+	if count > 0 {
+		perfCounters.reduceScratchGeneral.Add(uint64(count))
 	}
 }
 

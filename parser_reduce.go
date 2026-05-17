@@ -1423,6 +1423,9 @@ func (p *Parser) buildReduceChildren(entries []stackEntry, start, end, childCoun
 	if scratch.trackFields {
 		p.suppressReducedChildFields(scratch.nodes, scratch.fieldIDs, scratch.fieldSources)
 	}
+	if perfCountersEnabled {
+		perfRecordReduceScratchGeneral(len(scratch.nodes))
+	}
 	return materializeReduceChildrenFromScratch(scratch, arena)
 }
 
@@ -1497,6 +1500,9 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 			continue
 		}
 		scratch.appendNode(n)
+	}
+	if perfCountersEnabled {
+		perfRecordReduceScratchNoAlias(len(scratch.nodes))
 	}
 	children, _, _ := materializeReduceChildrenFromScratch(scratch, arena)
 	return children, nil, nil

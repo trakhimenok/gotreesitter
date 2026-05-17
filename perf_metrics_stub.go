@@ -48,6 +48,8 @@ type PerfCounters struct {
 	ReduceChildrenAllVis   uint64
 	ReduceChildrenNoAlias  uint64
 	ReduceChildrenScratch  uint64
+	ReduceScratchNoAlias   uint64
+	ReduceScratchGeneral   uint64
 	ExtraNodes             uint64
 	ErrorNodes             uint64
 	MergeStacksInHist      [maxGLRStacks + 2]uint64
@@ -98,5 +100,7 @@ func perfRecordReduceChildrenFastGSS(int)      {}
 func perfRecordReduceChildrenAllVisible(int)   {}
 func perfRecordReduceChildrenNoAlias(int)      {}
 func perfRecordReduceChildrenScratch(int)      {}
+func perfRecordReduceScratchNoAlias(int)       {}
+func perfRecordReduceScratchGeneral(int)       {}
 func perfRecordExtraNode()                     {}
 func perfRecordErrorNode()                     {}
