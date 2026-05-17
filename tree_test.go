@@ -385,6 +385,19 @@ func TestTree(t *testing.T) {
 	}
 }
 
+func TestReusableTreeEditScratch(t *testing.T) {
+	small := reusableTreeEditScratch(make([]InputEdit, 1, maxRetainedTreeEditCap))
+	if len(small) != 0 || cap(small) != maxRetainedTreeEditCap {
+		t.Fatalf("small edit scratch len/cap = %d/%d, want 0/%d", len(small), cap(small), maxRetainedTreeEditCap)
+	}
+	if large := reusableTreeEditScratch(make([]InputEdit, 1, maxRetainedTreeEditCap+1)); large != nil {
+		t.Fatalf("large edit scratch retained with cap %d, want nil", cap(large))
+	}
+	if none := reusableTreeEditScratch(nil); none != nil {
+		t.Fatalf("nil edit scratch retained as %v, want nil", none)
+	}
+}
+
 func TestTreeCopyIndependentNodes(t *testing.T) {
 	lang := testLanguage()
 	left := NewLeafNode(Symbol(1), true, 0, 3, Point{Row: 0, Column: 0}, Point{Row: 0, Column: 3})

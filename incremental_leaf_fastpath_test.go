@@ -289,3 +289,48 @@ func TestScanLeafTokenWithoutMutatingRejectsSyntheticExternalSymbols(t *testing.
 		t.Fatalf("scanLeafTokenWithoutMutatingSource succeeded for synthetic-external language: %+v", tok)
 	}
 }
+
+func TestReuseTreeWithNewSourceKeepsPrimaryArena(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+	oldSource := []byte("1+2")
+	newSource := []byte("1+3")
+	tree := mustParse(t, parser, oldSource)
+	defer tree.Release()
+	if tree.arena == nil {
+		t.Fatal("initial parse did not attach a primary arena")
+	}
+
+	tree.Edit(InputEdit{
+		StartByte:   2,
+		OldEndByte:  3,
+		NewEndByte:  3,
+		StartPoint:  Point{Row: 0, Column: 2},
+		OldEndPoint: Point{Row: 0, Column: 3},
+		NewEndPoint: Point{Row: 0, Column: 3},
+	})
+	if tree.lastEditedLeaf == nil {
+		t.Fatal("expected edited leaf to be tracked")
+	}
+
+	arena := tree.arena
+	refsBefore := arena.refs.Load()
+	reused := reuseTreeWithNewSource(tree, newSource, tree.lastEditedLeaf)
+	if reused == nil {
+		t.Fatal("reuseTreeWithNewSource returned nil")
+	}
+	if reused.arena != arena {
+		t.Fatalf("reused tree arena = %p, want primary arena %p", reused.arena, arena)
+	}
+	if len(reused.borrowedArena) != 0 {
+		t.Fatalf("reused tree borrowed arenas = %d, want 0", len(reused.borrowedArena))
+	}
+	if got, want := arena.refs.Load(), refsBefore+1; got != want {
+		t.Fatalf("arena refs after reuse = %d, want %d", got, want)
+	}
+
+	reused.Release()
+	if got := arena.refs.Load(); got != refsBefore {
+		t.Fatalf("arena refs after reused tree release = %d, want %d", got, refsBefore)
+	}
+}

@@ -296,20 +296,13 @@ func reuseTreeWithNewSource(oldTree *Tree, source []byte, dirtyLeaf *Node) *Tree
 	if oldTree == nil || oldTree.root == nil {
 		return nil
 	}
-	borrowed := make([]*nodeArena, 0, len(oldTree.borrowedArena)+1)
-	if oldTree.arena != nil {
-		oldTree.arena.Retain()
-		borrowed = append(borrowed, oldTree.arena)
+	arena := oldTree.arena
+	if arena != nil {
+		arena.Retain()
 	}
-	for _, a := range oldTree.borrowedArena {
-		if a == nil {
-			continue
-		}
-		a.Retain()
-		borrowed = append(borrowed, a)
-	}
+	borrowed := retainBorrowedArenasForReusedTree(oldTree, arena)
 	clearDirtyPathToRoot(dirtyLeaf)
-	return newTreeWithArenas(oldTree.root, source, oldTree.language, nil, borrowed)
+	return newTreeWithUniqueArenas(oldTree.root, source, oldTree.language, arena, borrowed)
 }
 
 func clearDirtyPathToRoot(n *Node) {
@@ -317,4 +310,29 @@ func clearDirtyPathToRoot(n *Node) {
 		n.dirty = false
 		n = n.parent
 	}
+}
+
+func retainBorrowedArenasForReusedTree(oldTree *Tree, primary *nodeArena) []*nodeArena {
+	if oldTree == nil || len(oldTree.borrowedArena) == 0 {
+		return nil
+	}
+	var borrowed []*nodeArena
+	for _, arena := range oldTree.borrowedArena {
+		if arena == nil || arena == primary {
+			continue
+		}
+		duplicate := false
+		for _, existing := range borrowed {
+			if existing == arena {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		arena.Retain()
+		borrowed = append(borrowed, arena)
+	}
+	return borrowed
 }

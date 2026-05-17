@@ -793,6 +793,8 @@ type Tree struct {
 	released       bool
 }
 
+const maxRetainedTreeEditCap = 8
+
 var treePool = sync.Pool{
 	New: func() any {
 		return &Tree{}
@@ -810,14 +812,20 @@ func NewTree(root *Node, source []byte, lang *Language) *Tree {
 }
 
 func newTreeWithArenas(root *Node, source []byte, lang *Language, arena *nodeArena, borrowed []*nodeArena) *Tree {
+	return newTreeWithUniqueArenas(root, source, lang, arena, uniqueArenas(borrowed, arena))
+}
+
+func newTreeWithUniqueArenas(root *Node, source []byte, lang *Language, arena *nodeArena, borrowed []*nodeArena) *Tree {
 	tree := treePool.Get().(*Tree)
+	edits := reusableTreeEditScratch(tree.edits)
 	*tree = Tree{
 		root:           root,
 		source:         source,
 		sourceEncoding: InputEncodingUTF8,
 		language:       lang,
+		edits:          edits,
 		arena:          arena,
-		borrowedArena:  uniqueArenas(borrowed, arena),
+		borrowedArena:  borrowed,
 	}
 	rebuildExternalScannerCheckpoints(root, lang)
 	return tree
@@ -853,6 +861,13 @@ func uniqueArenas(arenas []*nodeArena, exclude *nodeArena) []*nodeArena {
 	return out
 }
 
+func reusableTreeEditScratch(edits []InputEdit) []InputEdit {
+	if cap(edits) == 0 || cap(edits) > maxRetainedTreeEditCap {
+		return nil
+	}
+	return edits[:0]
+}
+
 // Release decrements arena references held by this tree.
 // After Release, the tree should be treated as invalid and not reused.
 func (t *Tree) Release() {
@@ -860,6 +875,7 @@ func (t *Tree) Release() {
 		return
 	}
 	t.released = true
+	edits := reusableTreeEditScratch(t.edits)
 	t.lastEditedLeaf = nil
 	for _, a := range t.borrowedArena {
 		a.Release()
@@ -878,7 +894,7 @@ func (t *Tree) Release() {
 	t.sourceUTF16 = nil
 	t.utf16Map = nil
 	t.language = nil
-	t.edits = nil
+	t.edits = edits
 	t.parseRuntime = ParseRuntime{}
 	treePool.Put(t)
 }
