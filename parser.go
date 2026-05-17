@@ -581,7 +581,8 @@ func (p *Parser) tryRelexCurrentStateDFA(tok Token, parserState StateID, ts Toke
 	if int(parserState) >= len(p.language.LexModes) {
 		return Token{}, false
 	}
-	if dts.language.ExternalScanner != nil && p.language.LexModes[parserState].ExternalLexState != 0 {
+	if dts.language.ExternalScanner != nil && p.language.LexModes[parserState].ExternalLexState != 0 &&
+		!p.canRelexExternalTokenWithCurrentStateDFA(tok) {
 		return Token{}, false
 	}
 	savedPos, savedRow, savedCol := dts.lexer.pos, dts.lexer.row, dts.lexer.col
@@ -604,6 +605,25 @@ func (p *Parser) tryRelexCurrentStateDFA(tok Token, parserState StateID, ts Toke
 	}
 	dts.lexer.pos, dts.lexer.row, dts.lexer.col = endPos, endRow, endCol
 	return tok2, true
+}
+
+func (p *Parser) canRelexExternalTokenWithCurrentStateDFA(tok Token) bool {
+	if p == nil || p.language == nil || int(tok.Symbol) >= len(p.language.SymbolNames) {
+		return false
+	}
+	if p.language.Name != "kotlin" {
+		return false
+	}
+	// Kotlin's LALR table reuses states between package headers and import
+	// lists. The external scanner can therefore produce import-only tokens
+	// before reductions reveal that the current branch needs an ordinary DFA
+	// token such as "." or "import".
+	switch p.language.SymbolNames[tok.Symbol] {
+	case "_import_dot", "_import_list_delimiter":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) canFinalizeNoActionEOF(s *glrStack) bool {

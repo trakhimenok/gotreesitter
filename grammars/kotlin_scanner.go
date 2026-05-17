@@ -50,10 +50,10 @@ var kotlinDefaultSymTable = [kotlinTokenCount]gotreesitter.Symbol{
 var kotlinExternalScannerSpec = ExternalScannerSpec{
 	Language:       "kotlin",
 	UpstreamRepo:   "https://github.com/fwcd/tree-sitter-kotlin",
-	UpstreamCommit: "57170e50a32b29122b9e41a4a24aea8be1a16599",
+	UpstreamCommit: "cbed96ab13dbc082eeeb2e8333c342a62829c29d",
 	SourceFiles: []ExternalScannerSourceFile{
-		{Path: "src/grammar.json", SHA256: "cda6f02c553962eeb62e87905e01a1de863d20795c2caf225623b0a03adf833b"},
-		{Path: "src/scanner.c", SHA256: "b90864ba11b69618c6c622c05a22bf210b4702e0a53dbdb5c28ef7b167ceff10"},
+		{Path: "src/grammar.json", SHA256: "f29862b076453c9dca62e28cf0063345b90af0c3cb80535676b4960a60fe459a"},
+		{Path: "src/scanner.c", SHA256: "cc0e641013fc19e9e37e4d7bc690abc573a6e10f54f0e8aabf816ac07f6324a4"},
 	},
 	Externals: []string{
 		"_automatic_semicolon",
