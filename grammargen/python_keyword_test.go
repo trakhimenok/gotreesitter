@@ -125,10 +125,23 @@ func TestPythonGenerateLanguageEmitsReservedWords(t *testing.T) {
 func loadPythonGrammarJSONForTest(t *testing.T) *Grammar {
 	t.Helper()
 
-	jsonPath := "/tmp/python-locked-26855ea/src/grammar.json"
-	if _, err := os.Stat(jsonPath); err != nil {
-		jsonPath = "/tmp/grammar_parity/python/src/grammar.json"
+	candidates := []string{
+		"/tmp/python-locked-26855ea/src/grammar.json",
+		"/tmp/grammar_parity/python/src/grammar.json",
+		".parity_seed/python/src/grammar.json",
+		"../.parity_seed/python/src/grammar.json",
 	}
+	jsonPath := ""
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			jsonPath = candidate
+			break
+		}
+	}
+	if jsonPath == "" {
+		t.Skip("Python grammar.json not available")
+	}
+
 	source, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Skipf("Python grammar.json not available: %v", err)

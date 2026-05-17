@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,19 @@ func TestDiagGenerateStages(t *testing.T) {
 	if getenvOr("DIAG_ENABLE_LR_SPLIT", "") == "1" {
 		gram.EnableLRSplitting = true
 	}
+	if getenvOr("DIAG_BINARY_REPEAT", "") == "1" {
+		gram.BinaryRepeatMode = true
+	}
+	if raw := strings.TrimSpace(os.Getenv("DIAG_CHOICE_LIFT_THRESHOLD")); raw != "" {
+		threshold, err := strconv.Atoi(raw)
+		if err != nil {
+			t.Fatalf("parse DIAG_CHOICE_LIFT_THRESHOLD=%q: %v", raw, err)
+		}
+		gram.ChoiceLiftThreshold = threshold
+	}
+	if getenvOr("DIAG_CLEAR_INLINE", "") == "1" {
+		gram.Inline = nil
+	}
 
 	timeout := pg.genTimeout
 	if timeout == 0 {
@@ -49,15 +63,18 @@ func TestDiagGenerateStages(t *testing.T) {
 		timeout = override
 	}
 
-	t.Logf("diag-generate: grammar=%s timeout=%s rules=%d extras=%d conflicts=%d externals=%d word=%q lr_split=%v broad_lex=%v",
+	t.Logf("diag-generate: grammar=%s timeout=%s rules=%d extras=%d conflicts=%d externals=%d inline=%d word=%q lr_split=%v binary_repeat=%v choice_lift=%d broad_lex=%v",
 		grammarName,
 		timeout,
 		len(gram.Rules),
 		len(gram.Extras),
 		len(gram.Conflicts),
 		len(gram.Externals),
+		len(gram.Inline),
 		gram.Word,
 		gram.EnableLRSplitting,
+		gram.BinaryRepeatMode,
+		gram.ChoiceLiftThreshold,
 		useForcedBroadLexFallback(),
 	)
 	t.Logf("diag-generate: mem[start]=%s", diagGenerateMemSnapshot())
@@ -87,6 +104,20 @@ func TestDiagGenerateStages(t *testing.T) {
 		len(ng.ExternalSymbols),
 		diagGenerateMemSnapshot(),
 	)
+	if raw := strings.TrimSpace(os.Getenv("DIAG_PROD_LHS")); raw != "" {
+		wanted := map[string]bool{}
+		for _, part := range strings.Split(raw, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				wanted[part] = true
+			}
+		}
+		for i, prod := range ng.Productions {
+			if prod.LHS < 0 || prod.LHS >= len(ng.Symbols) || !wanted[ng.Symbols[prod.LHS].Name] {
+				continue
+			}
+			t.Logf("prod[%d] %s", i, diagFormatProd(ng, i, -1))
+		}
+	}
 
 	stageStart = time.Now()
 	tables, lrCtx, err := buildLRTablesWithProvenanceCtx(bgCtx, ng)
@@ -104,6 +135,51 @@ func TestDiagGenerateStages(t *testing.T) {
 		mergedStates,
 		diagGenerateMemSnapshot(),
 	)
+	if raw := strings.TrimSpace(os.Getenv("DIAG_ITEM_STATES")); raw != "" {
+		itemFilter := strings.TrimSpace(os.Getenv("DIAG_ITEM_FILTER"))
+		itemLimit := 0
+		if rawLimit := strings.TrimSpace(os.Getenv("DIAG_ITEM_LIMIT")); rawLimit != "" {
+			n, err := strconv.Atoi(rawLimit)
+			if err != nil {
+				t.Fatalf("parse DIAG_ITEM_LIMIT=%q: %v", rawLimit, err)
+			}
+			itemLimit = n
+		}
+		for _, rawState := range strings.Split(raw, ",") {
+			rawState = strings.TrimSpace(rawState)
+			if rawState == "" {
+				continue
+			}
+			state, err := strconv.Atoi(rawState)
+			if err != nil {
+				t.Fatalf("parse DIAG_ITEM_STATES state %q: %v", rawState, err)
+			}
+			if state < 0 || state >= len(lrCtx.itemSets) {
+				t.Logf("state[%d] out of range", state)
+				continue
+			}
+			t.Logf("state[%d] items:", state)
+			loggedItems := 0
+			for _, ce := range lrCtx.itemSets[state].cores {
+				lookaheads := diagFormatLookaheads(ng, &ce.lookaheads)
+				formatted := diagFormatProd(ng, int(ce.prodIdx), int(ce.dot))
+				if itemFilter != "" && !strings.Contains(formatted, itemFilter) {
+					continue
+				}
+				if itemLimit > 0 && loggedItems >= itemLimit {
+					break
+				}
+				t.Logf("  item%s %s", lookaheads, formatted)
+				loggedItems++
+			}
+			if state < len(lrCtx.transitions) {
+				row := lrCtx.transitions[state]
+				for _, edge := range row {
+					t.Logf("  goto %s -> %d", diagSymbolName(ng, int(edge.sym)), edge.target)
+				}
+			}
+		}
+	}
 	defer lrCtx.releaseScratch()
 
 	stageStart = time.Now()
@@ -123,6 +199,37 @@ func TestDiagGenerateStages(t *testing.T) {
 		glrConflicts,
 		diagGenerateMemSnapshot(),
 	)
+	if raw := strings.TrimSpace(os.Getenv("DIAG_CONFLICT_LOOKAHEADS")); raw != "" {
+		wanted := map[string]bool{}
+		for _, part := range strings.Split(raw, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				wanted[part] = true
+			}
+		}
+		stateFilter := map[int]bool{}
+		if rawStates := strings.TrimSpace(os.Getenv("DIAG_CONFLICT_STATES")); rawStates != "" {
+			for _, part := range strings.Split(rawStates, ",") {
+				part = strings.TrimSpace(part)
+				if part == "" {
+					continue
+				}
+				state, err := strconv.Atoi(part)
+				if err != nil {
+					t.Fatalf("parse DIAG_CONFLICT_STATES state %q: %v", part, err)
+				}
+				stateFilter[state] = true
+			}
+		}
+		for _, d := range diags {
+			if len(stateFilter) > 0 && !stateFilter[d.State] {
+				continue
+			}
+			if d.LookaheadSym < 0 || d.LookaheadSym >= len(ng.Symbols) || !wanted[ng.Symbols[d.LookaheadSym].Name] {
+				continue
+			}
+			t.Logf("conflict[%s]: %s", ng.Symbols[d.LookaheadSym].Name, strings.ReplaceAll(d.String(ng), "\n", " | "))
+		}
+	}
 
 	stageStart = time.Now()
 	splitCandidates := newSplitOracle(diags, lrCtx.provenance, tables, ng).candidates()

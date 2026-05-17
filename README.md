@@ -531,7 +531,11 @@ Other focused correctness/parity commands:
 ```sh
 # Top-50 smoke correctness for the grammars package only
 bash cgo_harness/docker/run_parity_in_docker.sh \
-  -- "cd /workspace && go test ./grammars -run '^TestTop50ParseSmokeNoErrors$' -count=1 -v"
+  -- "cd /workspace && go test ./grammars -run '^TestTop50(ParseSmokeNoErrors|CorrectnessListMatchesLockFile)$' -count=1 -v"
+
+# Top-50 grammargen import/parity registry coverage
+bash cgo_harness/docker/run_parity_in_docker.sh \
+  -- "cd /workspace && go test ./grammargen -run '^TestTop50GrammarImportParityCoverage$' -count=1 -v"
 
 # C-oracle parity suites inside the cgo harness
 bash cgo_harness/docker/run_parity_in_docker.sh \

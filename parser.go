@@ -51,6 +51,7 @@ type Parser struct {
 	aliasTargetSymbol                   []bool
 	singleTokenWrapperSymbol            []bool
 	reduceHasFields                     []bool
+	fieldIDScratch                      []FieldID
 	fieldInheritedScratch               []bool
 	fieldConflictedScratch              []bool
 	reduceScratch                       *reduceBuildScratch
@@ -423,17 +424,14 @@ func (p *Parser) preferRootSymbol(candidate, current Symbol) bool {
 // layout fallback lex state (state 0's DFA), which includes ALL terminal
 // symbols. If it produces a different token that has valid actions in the
 // current parser state, return it. This handles cases where the per-state
-// lex mode's IMMTOKEN catch-all consumed input meant for a keyword.
+// lex mode's catch-all consumed input meant for a keyword/comment after
+// reductions changed the parser state.
 func (p *Parser) tryRelexBroadDFA(tok Token, parserState StateID, ts TokenSource) (Token, bool) {
 	if p == nil || p.language == nil || ts == nil {
 		return Token{}, false
 	}
 	dts, ok := ts.(*dfaTokenSource)
 	if !ok || dts == nil || dts.lexer == nil {
-		return Token{}, false
-	}
-	// Only try if the token is an immediate token
-	if int(tok.Symbol) >= len(p.language.ImmediateTokens) || !p.language.ImmediateTokens[tok.Symbol] {
 		return Token{}, false
 	}
 	// Get the broad lex state (state 0's lex mode)
@@ -445,28 +443,120 @@ func (p *Parser) tryRelexBroadDFA(tok Token, parserState StateID, ts TokenSource
 	// Save lexer state
 	savedPos, savedRow, savedCol := dts.lexer.pos, dts.lexer.row, dts.lexer.col
 
-	// Re-lex from token start with broad DFA
-	dts.lexer.pos = int(tok.StartByte)
-	tok2 := dts.lexer.Next(broadLS)
+	type broadRelexCandidate struct {
+		token      Token
+		extraShift bool
+	}
 
-	if tok2.Symbol > 0 && tok2.Symbol != tok.Symbol {
-		// Check if the new token has actions in the current parser state
+	tryAt := func(pos int, row, col uint32) (broadRelexCandidate, bool) {
+		dts.lexer.pos, dts.lexer.row, dts.lexer.col = pos, row, col
+		tok2 := dts.lexer.Next(broadLS)
+		if tok2.Symbol == 0 {
+			return broadRelexCandidate{}, false
+		}
+		// The broad lexer can skip extras before returning a token. Relexing is
+		// only safe when any intentional layout skip is explicit at the call site.
+		if int(tok2.StartByte) != pos {
+			return broadRelexCandidate{}, false
+		}
 		actionIdx := p.lookupActionIndex(parserState, tok2.Symbol)
-		if actionIdx != 0 && int(actionIdx) < len(p.language.ParseActions) &&
-			len(p.language.ParseActions[actionIdx].Actions) > 0 {
-			if p.glrTrace {
-				fmt.Printf("  RELEX: %s(%d) → %s(%d) in state=%d\n",
-					p.language.SymbolNames[tok.Symbol], tok.Symbol,
-					p.language.SymbolNames[tok2.Symbol], tok2.Symbol,
-					parserState)
+		if actionIdx == 0 || int(actionIdx) >= len(p.language.ParseActions) ||
+			len(p.language.ParseActions[actionIdx].Actions) == 0 {
+			return broadRelexCandidate{}, false
+		}
+		extraShift := false
+		for _, action := range p.language.ParseActions[actionIdx].Actions {
+			if action.Type == ParseActionShift && action.Extra {
+				extraShift = true
+				break
 			}
-			return tok2, true
+		}
+		if p.glrTrace {
+			fmt.Printf("  RELEX: %s(%d) → %s(%d) in state=%d\n",
+				p.language.SymbolNames[tok.Symbol], tok.Symbol,
+				p.language.SymbolNames[tok2.Symbol], tok2.Symbol,
+				parserState)
+		}
+		return broadRelexCandidate{token: tok2, extraShift: extraShift}, true
+	}
+
+	isImmediate := int(tok.Symbol) < len(p.language.ImmediateTokens) && p.language.ImmediateTokens[tok.Symbol]
+	if isImmediate {
+		if cand, ok := tryAt(int(tok.StartByte), tok.StartPoint.Row, tok.StartPoint.Column); ok {
+			return cand.token, true
+		}
+	} else {
+		if cand, ok := tryAt(int(tok.StartByte), tok.StartPoint.Row, tok.StartPoint.Column); ok && cand.extraShift {
+			return cand.token, true
+		}
+	}
+
+	skipPos, skipCol := int(tok.StartByte), tok.StartPoint.Column
+	for skipPos < len(dts.lexer.source) &&
+		(dts.lexer.source[skipPos] == ' ' || dts.lexer.source[skipPos] == '\t') {
+		skipPos++
+		skipCol++
+	}
+	if skipPos > int(tok.StartByte) {
+		if cand, ok := tryAt(skipPos, tok.StartPoint.Row, skipCol); ok && (isImmediate || cand.extraShift) {
+			return cand.token, true
+		}
+	}
+
+	isStringContent := int(tok.Symbol) < len(p.language.SymbolNames) && p.language.SymbolNames[tok.Symbol] == "string_content"
+	if isStringContent {
+		skipPos, skipRow, skipCol := int(tok.StartByte), tok.StartPoint.Row, tok.StartPoint.Column
+		for skipPos < len(dts.lexer.source) {
+			b := dts.lexer.source[skipPos]
+			if b == ' ' || b == '\t' {
+				skipPos++
+				skipCol++
+				continue
+			}
+			if b == '\n' {
+				skipPos++
+				skipRow++
+				skipCol = 0
+				continue
+			}
+			if b == '\r' {
+				skipPos++
+				skipCol = 0
+				continue
+			}
+			break
+		}
+		if skipPos > int(tok.StartByte) {
+			if cand, ok := tryAt(skipPos, skipRow, skipCol); ok &&
+				p.allowStringContentWhitespaceBroadRelex(cand.token.Symbol) {
+				return cand.token, true
+			}
 		}
 	}
 
 	// Restore lexer state
 	dts.lexer.pos, dts.lexer.row, dts.lexer.col = savedPos, savedRow, savedCol
 	return Token{}, false
+}
+
+func (p *Parser) allowStringContentWhitespaceBroadRelex(candidate Symbol) bool {
+	if p == nil || p.language == nil || int(candidate) >= len(p.language.SymbolNames) {
+		return false
+	}
+	candidateName := p.language.SymbolNames[candidate]
+	if candidateName != "b" && candidateName != "x" {
+		return false
+	}
+	hasEscBlob, hasHexBlob := false, false
+	for _, name := range p.language.SymbolNames {
+		switch name {
+		case "esc_blob":
+			hasEscBlob = true
+		case "hex_blob":
+			hasHexBlob = true
+		}
+	}
+	return hasEscBlob && hasHexBlob
 }
 
 // tryRelexCurrentStateDFA re-lexes from the current token start using the
@@ -1855,7 +1945,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 				// produced a token that's not valid in this state (e.g.,
 				// an IMMTOKEN catch-all consumed a keyword), the broad
 				// DFA may produce the correct token.
-				if len(stacks) <= 1 {
+				if sameState {
 					if reTok, ok := p.tryRelexBroadDFA(tok, currentState, ts); ok {
 						tok = reTok
 						needToken = false

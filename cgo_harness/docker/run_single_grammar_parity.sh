@@ -382,7 +382,14 @@ make_clone_block() {
     [tsx]="typescript"
   )
 
+  # Map runner names to languages.lock names.
+  declare -A LOCK_NAMES=(
+    [c_lang]="c"
+    [go_lang]="go"
+  )
+
   local repo_name="${REPO_NAMES[$grammar]:-$grammar}"
+  local lock_name="${LOCK_NAMES[$grammar]:-$grammar}"
   local url="${REPO_URLS[$grammar]:-}"
 
   if [[ -z "$url" ]]; then
@@ -391,7 +398,22 @@ make_clone_block() {
   fi
 
   cat <<CLONE_EOF
-if [[ ! -d "/tmp/grammar_parity/$repo_name" ]]; then
+lock_file="/workspace/grammars/languages.lock"
+lock_url=\$(awk -v target="$lock_name" '\$1 == target && \$1 !~ /^#/ { print \$2; exit }' "\$lock_file")
+lock_commit=\$(awk -v target="$lock_name" '\$1 == target && \$1 !~ /^#/ { print \$3; exit }' "\$lock_file")
+if [[ -n "\$lock_url" && -n "\$lock_commit" ]]; then
+  if [[ -d "/tmp/grammar_parity/$repo_name/.git" ]]; then
+    git -C "/tmp/grammar_parity/$repo_name" remote set-url origin "\$lock_url" >/dev/null 2>&1 || true
+  else
+    rm -rf "/tmp/grammar_parity/$repo_name"
+    git clone --depth=1 "\$lock_url" "/tmp/grammar_parity/$repo_name" || echo "WARN: clone failed for $grammar"
+  fi
+  if [[ -d "/tmp/grammar_parity/$repo_name/.git" ]]; then
+    git config --global --add safe.directory "/tmp/grammar_parity/$repo_name" >/dev/null 2>&1 || true
+    git -C "/tmp/grammar_parity/$repo_name" fetch --depth=1 origin "\$lock_commit" >/dev/null 2>&1 || true
+    git -C "/tmp/grammar_parity/$repo_name" checkout --detach "\$lock_commit" >/dev/null 2>&1 || echo "WARN: checkout failed for $grammar @ \$lock_commit"
+  fi
+elif [[ ! -d "/tmp/grammar_parity/$repo_name" ]]; then
   git clone --depth=1 "$url" "/tmp/grammar_parity/$repo_name" || echo "WARN: clone failed for $grammar"
 fi
 CLONE_EOF

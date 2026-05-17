@@ -74,6 +74,7 @@ func (ctx *lrContext) buildLR0() {
 	debugLALR := os.Getenv("GOT_DEBUG_LALR") == "1"
 	ctx.ensureLR0SymbolSeenCapacity(len(ng.Symbols))
 	ctx.ensureLR0SymbolBucketCapacity(len(ng.Symbols))
+	ctx.ensureLR0Dot0ClosureSeeds()
 	contextTagsEnabled := os.Getenv("GOT_LR_DISABLE_CONTEXT_TAGS") != "1" && len(ng.Productions) >= 2000
 	if contextTagsEnabled {
 		ctx.ensureRepeatWrapperLHS()
@@ -340,11 +341,50 @@ func (ctx *lrContext) buildLR0() {
 	}
 }
 
+func (ctx *lrContext) ensureLR0Dot0ClosureSeeds() {
+	if len(ctx.lr0Dot0ClosureSeeds) == len(ctx.ng.Symbols) {
+		return
+	}
+	ng := ctx.ng
+	tokenCount := ctx.tokenCount
+	seeds := make([][]int, len(ng.Symbols))
+	for sym := tokenCount; sym < len(ng.Symbols); sym++ {
+		seenSym := make([]bool, len(ng.Symbols))
+		seenProd := make([]bool, len(ng.Productions))
+		queue := []int{sym}
+		var prods []int
+		for len(queue) > 0 {
+			cur := queue[len(queue)-1]
+			queue = queue[:len(queue)-1]
+			if cur < tokenCount || cur < 0 || cur >= len(ng.Symbols) || seenSym[cur] {
+				continue
+			}
+			seenSym[cur] = true
+			for _, prodIdx := range ctx.prodsByLHS[cur] {
+				if !seenProd[prodIdx] {
+					seenProd[prodIdx] = true
+					prods = append(prods, prodIdx)
+				}
+				rhs := ng.Productions[prodIdx].RHS
+				if len(rhs) > 0 && rhs[0] >= tokenCount {
+					queue = append(queue, rhs[0])
+				}
+			}
+		}
+		if len(prods) > 1 {
+			sort.Ints(prods)
+		}
+		seeds[sym] = prods
+	}
+	ctx.lr0Dot0ClosureSeeds = seeds
+}
+
 // lr0Closure computes the LR(0) closure of a set of kernel items.
 // No lookaheads are involved — just expands nonterminals to their productions.
 func (ctx *lrContext) lr0Closure(kernel []coreItem) lr0ItemSet {
 	ng := ctx.ng
 	tokenCount := ctx.tokenCount
+	ctx.ensureLR0Dot0ClosureSeeds()
 
 	for _, prodIdx := range ctx.dot0Dirty {
 		ctx.dot0Index[prodIdx] = -1
@@ -352,8 +392,24 @@ func (ctx *lrContext) lr0Closure(kernel []coreItem) lr0ItemSet {
 	ctx.dot0Dirty = ctx.dot0Dirty[:0]
 
 	cores := ctx.lr0ClosureScratch[:0]
-	if cap(cores) < len(kernel)*2 {
-		cores = make([]lr0CoreEntry, 0, len(kernel)*2)
+	capHint := len(kernel)
+	ctx.ensureLR0SymbolSeenCapacity(len(ng.Symbols))
+	seedSeenEpoch := ctx.nextLR0SymbolSeenEpoch()
+	for _, ki := range kernel {
+		prod := &ng.Productions[ki.prodIdx]
+		if ki.dot >= len(prod.RHS) {
+			continue
+		}
+		nextSym := prod.RHS[ki.dot]
+		if nextSym < tokenCount || nextSym < 0 || nextSym >= len(ctx.lr0Dot0ClosureSeeds) ||
+			ctx.lr0SymbolSeenGen[nextSym] == seedSeenEpoch {
+			continue
+		}
+		ctx.lr0SymbolSeenGen[nextSym] = seedSeenEpoch
+		capHint += len(ctx.lr0Dot0ClosureSeeds[nextSym])
+	}
+	if cap(cores) < capHint {
+		cores = make([]lr0CoreEntry, 0, capHint)
 	}
 
 	// Add kernel items.
@@ -366,24 +422,20 @@ func (ctx *lrContext) lr0Closure(kernel []coreItem) lr0ItemSet {
 		}
 	}
 
-	// Expand: for each item [A → α.Bβ], add [B → .γ] for all B-productions.
-	// Use a worklist but only process each core item once (no re-processing needed
-	// since LR(0) closure doesn't change — there are no lookaheads to propagate).
-	for i := 0; i < len(cores); i++ {
-		ce := &cores[i]
-		prodIdx := int(ce.prodIdx())
-		dot := int(ce.dot())
-		prod := &ng.Productions[prodIdx]
-		if dot >= len(prod.RHS) {
+	// Expand: for each item [A -> alpha . B beta], add the precomputed
+	// recursive dot-0 closure for B. LR(0) closure has no lookahead-dependent
+	// state, so this avoids re-walking the same nonterminal graph for every
+	// successor state in large grammars.
+	for _, ki := range kernel {
+		prod := &ng.Productions[ki.prodIdx]
+		if ki.dot >= len(prod.RHS) {
 			continue
 		}
-
-		nextSym := prod.RHS[dot]
+		nextSym := prod.RHS[ki.dot]
 		if nextSym < tokenCount {
 			continue
 		}
-
-		for _, prodIdx := range ctx.prodsByLHS[nextSym] {
+		for _, prodIdx := range ctx.lr0Dot0ClosureSeeds[nextSym] {
 			if ctx.dot0Index[prodIdx] >= 0 {
 				continue
 			}

@@ -538,6 +538,14 @@ func (a *nodeArena) ensureNodeCapacity(min int) {
 }
 
 func (a *nodeArena) allocNodeSlice(n int) []*Node {
+	return a.allocNodeSliceInternal(n, true)
+}
+
+func (a *nodeArena) allocNodeSliceNoClear(n int) []*Node {
+	return a.allocNodeSliceInternal(n, false)
+}
+
+func (a *nodeArena) allocNodeSliceInternal(n int, clearOut bool) []*Node {
 	if n <= 0 {
 		return nil
 	}
@@ -571,7 +579,9 @@ func (a *nodeArena) allocNodeSlice(n int) []*Node {
 		// Full-parse arena reset can skip bulk child-slab clearing to avoid
 		// large memclr work on release. Zero the slice on allocation so reused
 		// child slabs never leak stale child pointers into later parses.
-		clear(out)
+		if clearOut {
+			clear(out)
+		}
 		return out
 	}
 }

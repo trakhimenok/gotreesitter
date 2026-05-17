@@ -71,11 +71,43 @@ func TestTop50ParseSmokeNoErrors(t *testing.T) {
 	testParseSmokeNoErrors(t, top50CorrectnessLanguages, top50SmokeKnownErrorNodes)
 }
 
+func TestTop50CorrectnessListMatchesLockFile(t *testing.T) {
+	locked, err := loadTop50CorrectnessLockFile()
+	if err != nil {
+		t.Fatalf("load top50 lock file: %v", err)
+	}
+	if len(locked) != len(top50CorrectnessLanguages) {
+		t.Fatalf("top50 list length mismatch: test has %d, lock file has %d", len(top50CorrectnessLanguages), len(locked))
+	}
+	for i, name := range locked {
+		if top50CorrectnessLanguages[i] != name {
+			t.Fatalf("top50 list mismatch at index %d: test has %q, lock file has %q", i, top50CorrectnessLanguages[i], name)
+		}
+	}
+}
+
 func TestCore100ParseSmokeNoErrors(t *testing.T) {
 	if !includeCore100StrictSmoke() {
 		t.Skip("set GTS_CORE100_STRICT_SMOKE=1 to run strict no-error smoke on Core100")
 	}
 	testParseSmokeNoErrors(t, Core100LanguageNames(), nil)
+}
+
+func loadTop50CorrectnessLockFile() ([]string, error) {
+	source, err := os.ReadFile("update_tier1_top50.txt")
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(source), "\n")
+	names := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		names = append(names, line)
+	}
+	return names, nil
 }
 
 func includeCore100StrictSmoke() bool {

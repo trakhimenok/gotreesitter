@@ -278,6 +278,8 @@ func TestArenaNodeSlabClearsWrittenSlotsOnReset(t *testing.T) {
 	if len(arena.nodeSlabs) == 0 {
 		t.Fatal("expected at least one overflow slab after allocating past primary capacity")
 	}
+	primaryPtr := unsafe.Pointer(&arena.nodes[0])
+	primaryUsedBeforeReset := len(arena.nodes)
 
 	// Capture a raw pointer to the first element of the first overflow slab.
 	// We will check after reset() that the written slot is zeroed.
@@ -286,6 +288,7 @@ func TestArenaNodeSlabClearsWrittenSlotsOnReset(t *testing.T) {
 		t.Fatal("expected overflow slab to have used > 0")
 	}
 	firstSlabDataPtr := unsafe.Pointer(&firstSlab.data[0])
+	slabUsedBeforeReset := firstSlab.used
 
 	arena.reset()
 
@@ -293,12 +296,22 @@ func TestArenaNodeSlabClearsWrittenSlotsOnReset(t *testing.T) {
 	if firstSlab.used != 0 {
 		t.Fatalf("slab.used after reset = %d, want 0", firstSlab.used)
 	}
-	// After reset(), every written slot in the retained slab must be zeroed.
-	got := (*Node)(firstSlabDataPtr)
-	if got.parent != nil {
-		t.Fatalf("slab.data[0].parent after reset is %p, want nil; written slot not cleared", got.parent)
+	for i := 0; i < primaryUsedBeforeReset; i++ {
+		got := (*Node)(unsafe.Add(primaryPtr, uintptr(i)*unsafe.Sizeof(Node{})))
+		if got.parent != nil {
+			t.Fatalf("primary node[%d].parent after reset is %p, want nil", i, got.parent)
+		}
+		if got.ownerArena != nil {
+			t.Fatalf("primary node[%d].ownerArena after reset is %p, want nil", i, got.ownerArena)
+		}
 	}
-	if got.ownerArena != nil {
-		t.Fatalf("slab.data[0].ownerArena after reset is %p, want nil; written slot not cleared", got.ownerArena)
+	for i := 0; i < slabUsedBeforeReset; i++ {
+		got := (*Node)(unsafe.Add(firstSlabDataPtr, uintptr(i)*unsafe.Sizeof(Node{})))
+		if got.parent != nil {
+			t.Fatalf("slab.data[%d].parent after reset is %p, want nil", i, got.parent)
+		}
+		if got.ownerArena != nil {
+			t.Fatalf("slab.data[%d].ownerArena after reset is %p, want nil", i, got.ownerArena)
+		}
 	}
 }

@@ -75,6 +75,102 @@ func TestNextExternalTokenPrefersCandidateUsableByPrimaryState(t *testing.T) {
 	}
 }
 
+func TestBashGeneratedShellOperatorsDoNotRequireArithmeticContext(t *testing.T) {
+	shellOps := []string{"|", "|&", "||", "&&", "<", ">", "<<", "<<-", ">>", "<<<", "&>", "&>>", "<&", ">&", "<&-", ">&-", ">|", ";", ";;"}
+	for _, op := range shellOps {
+		if bashGeneratedOperatorRequiresArithmeticContext(op) {
+			t.Fatalf("operator %q requires arithmetic context, want shell context allowed", op)
+		}
+	}
+	arithmeticOps := []string{"+", "-", "*", "/", "%", "**", "++", "--", "+=", "<<=", ">>=", "?", ":", ","}
+	for _, op := range arithmeticOps {
+		if !bashGeneratedOperatorRequiresArithmeticContext(op) {
+			t.Fatalf("operator %q does not require arithmetic context", op)
+		}
+	}
+}
+
+func TestBashGeneratedSyntheticExternalLiteralDoesNotConsumeHereStringPrefix(t *testing.T) {
+	lang := &Language{
+		Name:                  "bash",
+		GeneratedByGrammargen: true,
+		SymbolNames:           []string{"end", "<<"},
+		ExternalSymbols:       []Symbol{1},
+	}
+	ts := &dfaTokenSource{
+		lexer:           NewLexer(nil, []byte("<<< word")),
+		language:        lang,
+		isBash:          true,
+		isBashGenerated: true,
+	}
+	if tok, ok := ts.bashGeneratedSyntheticExternalLiteral([]bool{true}); ok {
+		t.Fatalf("synthetic token = %+v, want DFA to handle here-string prefix", tok)
+	}
+}
+
+func TestNormalizeBashNewlineTokenSplitsBySymbolName(t *testing.T) {
+	lang := &Language{
+		Name:                  "bash",
+		GeneratedByGrammargen: true,
+		SymbolNames:           []string{"end", "\\n"},
+	}
+	ts := &dfaTokenSource{
+		lexer:           NewLexer(nil, []byte("\n\nsed")),
+		language:        lang,
+		isBash:          true,
+		isBashGenerated: true,
+	}
+	tok := Token{
+		Symbol:     1,
+		StartByte:  0,
+		EndByte:    2,
+		StartPoint: Point{},
+		EndPoint:   Point{Row: 2, Column: 0},
+		Text:       "\n\n",
+	}
+	got, endPos, endRow, endCol := ts.normalizeDFAToken(tok, 2, 2, 0)
+	if got.EndByte != 1 || endPos != 1 || endRow != 1 || endCol != 0 || got.Text != "\n" {
+		t.Fatalf("split newline token = %+v end=(%d,%d,%d), want single newline", got, endPos, endRow, endCol)
+	}
+}
+
+func TestNormalizeBashGeneratedDFAOnlyNewlineToken(t *testing.T) {
+	lang := &Language{
+		Name:                  "bash",
+		GeneratedByGrammargen: true,
+		SymbolNames:           []string{"end", "\\n", "regex"},
+		ParseActions: []ParseActionEntry{
+			{},
+			{Actions: []ParseAction{{Type: ParseActionShift, State: 1}}},
+		},
+	}
+	lookup := func(state StateID, sym Symbol) uint16 {
+		if sym == 1 {
+			return 1
+		}
+		return 0
+	}
+	ts := &dfaTokenSource{
+		lexer:             NewLexer(nil, []byte("\n\nsed")),
+		language:          lang,
+		lookupActionIndex: lookup,
+		isBash:            true,
+		isBashGenerated:   true,
+	}
+	tok := Token{
+		Symbol:     2,
+		StartByte:  0,
+		EndByte:    2,
+		StartPoint: Point{},
+		EndPoint:   Point{Row: 2, Column: 0},
+		Text:       "\n\n",
+	}
+	got, endPos, endRow, endCol := ts.normalizeDFAToken(tok, 2, 2, 0)
+	if got.Symbol != 1 || got.EndByte != 1 || endPos != 1 || endRow != 1 || endCol != 0 || got.Text != "\n" {
+		t.Fatalf("normalized DFA newline = %+v end=(%d,%d,%d), want active newline", got, endPos, endRow, endCol)
+	}
+}
+
 func TestAppendExternalLexStateForStateKeepsUniqueValidOrder(t *testing.T) {
 	lang := &Language{
 		ExternalLexStates: [][]bool{
@@ -476,5 +572,140 @@ func TestNextDFATokenAfterWhitespacePrefersEarlierBaseLexStateToken(t *testing.T
 	}
 	if got, want := tok.Text, "from"; got != want {
 		t.Fatalf("token text after whitespace = %q, want %q", got, want)
+	}
+}
+
+func TestNextDFATokenPrefersParserValidZeroWidthBaseToken(t *testing.T) {
+	lang := &Language{
+		SymbolNames: []string{"end", "text", "newline"},
+		ZeroWidthTokens: []bool{
+			false,
+			true,
+			false,
+		},
+		LexStates: []LexState{
+			{
+				AcceptToken: 1,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{{Lo: ' ', Hi: ' ', NextState: 1}},
+			},
+			{
+				AcceptToken: 1,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{{Lo: ' ', Hi: ' ', NextState: 1}},
+			},
+			{
+				Default: -1,
+				EOF:     -1,
+				Transitions: []LexTransition{
+					{Lo: '\n', Hi: '\n', NextState: 3},
+				},
+			},
+			{
+				AcceptToken: 2,
+				Default:     -1,
+				EOF:         -1,
+			},
+		},
+		LexModes: []LexMode{
+			{LexState: 0},
+			{LexState: 0, AfterWhitespaceLexState: 2},
+		},
+		ParseActions: []ParseActionEntry{
+			{},
+			{Actions: []ParseAction{{Type: ParseActionShift}}},
+		},
+	}
+
+	d := &dfaTokenSource{
+		lexer:                   NewLexer(lang.LexStates, []byte(";\n")),
+		language:                lang,
+		state:                   1,
+		hasZeroWidthTokens:      true,
+		hasZeroWidthStartAccept: true,
+		lookupActionIndex: func(_ StateID, sym Symbol) uint16 {
+			if sym == 1 || sym == 2 {
+				return 1
+			}
+			return 0
+		},
+	}
+	d.lexer.zeroWidthTokens = lang.ZeroWidthTokens
+	d.lexer.pos = 1
+
+	tok := d.nextDFAToken()
+	if got, want := tok.Symbol, Symbol(1); got != want {
+		t.Fatalf("token symbol at whitespace boundary = %d (%q), want %d (%q)", got, lang.SymbolNames[got], want, lang.SymbolNames[want])
+	}
+	if got, want := tok.StartByte, uint32(1); got != want {
+		t.Fatalf("token start = %d, want %d", got, want)
+	}
+	if got, want := tok.EndByte, uint32(1); got != want {
+		t.Fatalf("token end = %d, want %d", got, want)
+	}
+}
+
+func TestNextDFATokenPrefersParserValidZeroWidthStartAccept(t *testing.T) {
+	lang := &Language{
+		SymbolNames: []string{"end", "text", "newline"},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "end"},
+			{Name: "text", Visible: true, Named: true},
+			{Name: "newline"},
+		},
+		ZeroWidthTokens: []bool{
+			false,
+			true,
+			false,
+		},
+		LexStates: []LexState{
+			{
+				AcceptToken: 1,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{{Lo: '\n', Hi: '\n', NextState: 1}},
+			},
+			{
+				AcceptToken: 2,
+				Default:     -1,
+				EOF:         -1,
+			},
+		},
+		LexModes: []LexMode{
+			{LexState: 0},
+			{LexState: 0},
+		},
+		ParseActions: []ParseActionEntry{
+			{},
+			{Actions: []ParseAction{{Type: ParseActionShift}}},
+		},
+	}
+
+	d := &dfaTokenSource{
+		lexer:                   NewLexer(lang.LexStates, []byte("\n")),
+		language:                lang,
+		state:                   1,
+		hasZeroWidthTokens:      true,
+		hasZeroWidthStartAccept: true,
+		lookupActionIndex: func(_ StateID, sym Symbol) uint16 {
+			if sym == 1 || sym == 2 {
+				return 1
+			}
+			return 0
+		},
+	}
+	d.lexer.zeroWidthTokens = lang.ZeroWidthTokens
+
+	tok := d.nextDFAToken()
+	if got, want := tok.Symbol, Symbol(1); got != want {
+		t.Fatalf("token symbol at zero-width start accept = %d (%q), want %d (%q)", got, lang.SymbolNames[got], want, lang.SymbolNames[want])
+	}
+	if got, want := tok.StartByte, uint32(0); got != want {
+		t.Fatalf("token start = %d, want %d", got, want)
+	}
+	if got, want := tok.EndByte, uint32(0); got != want {
+		t.Fatalf("token end = %d, want %d", got, want)
 	}
 }

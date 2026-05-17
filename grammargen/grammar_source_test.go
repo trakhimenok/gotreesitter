@@ -27,6 +27,7 @@ func TestExtendGrammarCopiesImportMetadata(t *testing.T) {
 	base.FlattenGeneratedRepeatAux = true
 	base.ReuseRepeatAuxForParents = []string{"program", "statement_list"}
 	base.ChoiceLiftThreshold = 16
+	base.ExactPrefixStates = 2048
 	base.Test("identifier", "abc", "")
 
 	extended := ExtendGrammar("extended", base, func(g *Grammar) {
@@ -51,6 +52,9 @@ func TestExtendGrammarCopiesImportMetadata(t *testing.T) {
 	}
 	if extended.ChoiceLiftThreshold != 16 {
 		t.Fatalf("ChoiceLiftThreshold = %d, want 16", extended.ChoiceLiftThreshold)
+	}
+	if extended.ExactPrefixStates != 2048 {
+		t.Fatalf("ExactPrefixStates = %d, want 2048", extended.ExactPrefixStates)
 	}
 	if got := extended.Word; got != "identifier" {
 		t.Fatalf("Word = %q, want identifier", got)
@@ -97,6 +101,7 @@ func TestEmitGrammarGoIncludesImportMetadata(t *testing.T) {
 	g.FlattenGeneratedRepeatAux = true
 	g.ReuseRepeatAuxForParents = []string{"program"}
 	g.ChoiceLiftThreshold = 8
+	g.ExactPrefixStates = 2048
 	g.Test("valid identifier", "abc", "(program (identifier))")
 	g.TestError("invalid identifier", "123")
 
@@ -115,6 +120,7 @@ func TestEmitGrammarGoIncludesImportMetadata(t *testing.T) {
 		"g.ReuseRepeatAuxForParents = []string{",
 		"\"program\"",
 		"g.ChoiceLiftThreshold = 8",
+		"g.ExactPrefixStates = 2048",
 		"g.Test(\"valid identifier\", \"abc\", \"(program (identifier))\")",
 		"g.TestError(\"invalid identifier\", \"123\")",
 	} {

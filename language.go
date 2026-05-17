@@ -187,6 +187,9 @@ type IncrementalReuseExternalScanner interface {
 // idiomatic Go types with slice-based tables instead of raw pointers.
 type Language struct {
 	Name string
+	// GeneratedByGrammargen is true for languages assembled by grammargen at
+	// runtime rather than decoded from a checked-in ts2go blob.
+	GeneratedByGrammargen bool
 
 	// LanguageVersion is the tree-sitter language ABI version.
 	// A value of 0 means "unknown/unspecified" and is treated as compatible.

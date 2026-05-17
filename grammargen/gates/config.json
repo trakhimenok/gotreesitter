@@ -12,6 +12,7 @@
   "gate0_compiler_health": {
     "description": "The compiler still works: import, generate, emit, no panics/OOM.",
     "tests": [
+      "TestTop50GrammarImportParityCoverage",
       "TestMultiGrammarImportPipeline",
       "TestParityBuiltinNoErrors",
       "TestParityGenerationDeterministic",

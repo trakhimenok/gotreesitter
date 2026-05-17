@@ -7,10 +7,10 @@
   "max_cases": 25,
   "max_sample_bytes": 524288,
   "grammar_count": 53,
-  "total_eligible": 1019,
-  "total_no_error": 970,
-  "total_sexpr_parity": 745,
-  "total_deep_parity": 740,
+  "total_eligible": 1017,
+  "total_no_error": 980,
+  "total_sexpr_parity": 780,
+  "total_deep_parity": 775,
   "metrics": {
     "bash": {
       "eligible": 25,
@@ -27,12 +27,12 @@
     "comment": {
       "eligible": 3,
       "no_error": 3,
-      "sexpr_parity": 2,
-      "deep_parity": 2
+      "sexpr_parity": 3,
+      "deep_parity": 3
     },
     "cpon": {
-      "eligible": 12,
-      "no_error": 12,
+      "eligible": 11,
+      "no_error": 11,
       "sexpr_parity": 11,
       "deep_parity": 11
     },
@@ -69,8 +69,8 @@
     "dot": {
       "eligible": 11,
       "no_error": 11,
-      "sexpr_parity": 10,
-      "deep_parity": 10
+      "sexpr_parity": 11,
+      "deep_parity": 11
     },
     "eds": {
       "eligible": 2,
@@ -105,8 +105,8 @@
     "git_config": {
       "eligible": 13,
       "no_error": 13,
-      "sexpr_parity": 12,
-      "deep_parity": 12
+      "sexpr_parity": 13,
+      "deep_parity": 13
     },
     "git_rebase": {
       "eligible": 14,
@@ -135,8 +135,8 @@
     "gomod": {
       "eligible": 20,
       "no_error": 20,
-      "sexpr_parity": 19,
-      "deep_parity": 19
+      "sexpr_parity": 20,
+      "deep_parity": 20
     },
     "graphql": {
       "eligible": 6,
@@ -163,16 +163,16 @@
       "deep_parity": 20
     },
     "ini": {
-      "eligible": 11,
-      "no_error": 11,
-      "sexpr_parity": 9,
-      "deep_parity": 9
+      "eligible": 10,
+      "no_error": 10,
+      "sexpr_parity": 10,
+      "deep_parity": 10
     },
     "javascript": {
       "eligible": 25,
-      "no_error": 24,
-      "sexpr_parity": 24,
-      "deep_parity": 24
+      "no_error": 25,
+      "sexpr_parity": 25,
+      "deep_parity": 25
     },
     "jsdoc": {
       "eligible": 16,
@@ -255,8 +255,8 @@
     "python": {
       "eligible": 25,
       "no_error": 25,
-      "sexpr_parity": 9,
-      "deep_parity": 9
+      "sexpr_parity": 25,
+      "deep_parity": 25
     },
     "regex": {
       "eligible": 25,
@@ -308,9 +308,9 @@
     },
     "swift": {
       "eligible": 25,
-      "no_error": 14,
-      "sexpr_parity": 12,
-      "deep_parity": 12
+      "no_error": 25,
+      "sexpr_parity": 25,
+      "deep_parity": 25
     },
     "todotxt": {
       "eligible": 19,

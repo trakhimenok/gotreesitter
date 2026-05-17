@@ -11,6 +11,23 @@ func applyImportGrammarShapeHints(g *Grammar) {
 		return
 	}
 	switch g.Name {
+	case "bash":
+		// Bash's external extglob token is intentionally broad. In merged LALR
+		// states, reduce-only lookaheads can otherwise ask the scanner for
+		// extglob_pattern at command-substitution delimiters and overconsume.
+		g.SuppressEquivalentExternalReduceLookaheads = true
+		// Bash's scanner also classifies whitespace-sensitive command
+		// arguments. Some of those tokens only become valid after reducing the
+		// preceding word, so expose this narrow set to the scanner through the
+		// external lex-state rows without broadening extglob_pattern.
+		g.ExternalReduceFollowLookaheads = []string{"file_descriptor", "test_operator", "$", "{", "(", "<<", "<<-"}
+		// Bash's number literals are anonymous regex leaves inside the visible
+		// number rule. They overlap the broad word token on strings like "-9";
+		// tree-sitter's lexer prefers the number pattern on equal length.
+		g.PriorityInlinePatterns = []string{
+			"-?(0x)?[0-9]+(#[0-9A-Za-z@_]+)?",
+			"-?(0x)?[0-9]+#",
+		}
 	case "fortran":
 		// Fortran has no reserved words. Its grammar routes keyword-shaped
 		// tokens back through identifier and declares conflicts to let parser
@@ -18,7 +35,20 @@ func applyImportGrammarShapeHints(g *Grammar) {
 		// a callable identifier.
 		g.BinaryRepeatMode = true
 		g.PreserveKeywordIdentifierConflicts = true
-	case "javascript", "typescript", "tsx", "sql":
+	case "python":
+		// Python benefits from tree-sitter's binary repeat helper shape for
+		// broad corpus parity, but its soft `type` alias syntax needs the early
+		// LR(1) conflict context preserved. Otherwise large-grammar merge
+		// compaction can deterministically choose the primary-expression path.
+		g.BinaryRepeatMode = true
+		g.ExactPrefixStates = 999999
+	case "gomod":
+		// Go module's bracketed retract intervals need the `retract_spec`
+		// reduce lookahead kept distinct through the closing `)` of grouped
+		// retract directives. LALR merge compaction otherwise gives the DFA a
+		// state that skips the close delimiter and truncates the parse.
+		g.ExactPrefixStates = 999999
+	case "javascript", "typescript", "tsx", "sql", "d", "objc", "perl":
 		// These grammars rely heavily on tree-sitter's binary repeat helper
 		// shape. Keeping the upstream lowering avoids large state blowups and
 		// preserves upstream ambiguity handling for imported grammars.
@@ -26,6 +56,35 @@ func applyImportGrammarShapeHints(g *Grammar) {
 		if g.Name == "javascript" {
 			g.FlattenGeneratedRepeatAux = true
 			g.ReuseRepeatAuxForParents = []string{"jsx_opening_element", "jsx_self_closing_element"}
+		}
+	case "powershell":
+		// PowerShell's string/command repeat helpers carry broad content-token
+		// lookaheads. The upstream binary repeat shape keeps those lookaheads
+		// from leaking into plain variable assignment lex modes.
+		g.BinaryRepeatMode = true
+	}
+}
+
+func applyImportGrammarPostShapeHints(g *Grammar) {
+	if g == nil {
+		return
+	}
+	switch g.Name {
+	case "perl":
+		if _, ok := g.Rules["heredoc_content"]; ok {
+			// Perl models heredoc bodies as grammar extras that start and end in
+			// the external scanner. Importing the full interpolation grammar into
+			// a nonterminal-extra chain makes table generation unbounded for this
+			// shape; keep the scanner-delimited body path and leave richer heredoc
+			// interpolation structure to a scanner-aware follow-up.
+			g.Rules["heredoc_content"] = Seq(
+				Sym("_heredoc_start"),
+				Repeat(Choice(
+					Sym("_heredoc_middle"),
+					Sym("escape_sequence"),
+				)),
+				Sym("heredoc_end"),
+			)
 		}
 	}
 }
@@ -136,6 +195,8 @@ func ImportGrammarJSON(data []byte) (*Grammar, error) {
 	if !conv.sawReservedNode {
 		g.ReservedWordSets = nil
 	}
+
+	applyImportGrammarPostShapeHints(g)
 
 	return g, nil
 }

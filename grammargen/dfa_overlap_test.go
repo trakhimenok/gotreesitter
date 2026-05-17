@@ -37,6 +37,62 @@ func TestBuildLexDFAPrefersLongerStringOverSingleCharPattern(t *testing.T) {
 	}
 }
 
+func TestBuildLexDFAPrefersExtractionOrderForSameLengthTie(t *testing.T) {
+	integer, err := expandPatternRule(`\d+`)
+	if err != nil {
+		t.Fatalf("expand integer: %v", err)
+	}
+	unquoted, err := expandPatternRule(`[^\r\n \t]+`)
+	if err != nil {
+		t.Fatalf("expand unquoted: %v", err)
+	}
+	lexStates, modeOffsets, err := buildLexDFA(
+		context.Background(),
+		[]TerminalPattern{
+			{SymbolID: 2, Rule: integer, Priority: 0},
+			{SymbolID: 1, Rule: unquoted, Priority: 0},
+		},
+		nil,
+		nil,
+		[]lexModeSpec{{
+			validSymbols: map[int]bool{1: true, 2: true},
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildLexDFA: %v", err)
+	}
+	if len(modeOffsets) != 1 {
+		t.Fatalf("len(modeOffsets) = %d, want 1", len(modeOffsets))
+	}
+
+	lexer := gotreesitter.NewLexer(lexStates, []byte("0"))
+	tok := lexer.Next(uint32(modeOffsets[0]))
+	if got, want := tok.Symbol, gotreesitter.Symbol(2); got != want {
+		t.Fatalf("same-length token symbol = %d, want %d", got, want)
+	}
+	if got, want := tok.EndByte, uint32(1); got != want {
+		t.Fatalf("same-length token end = %d, want %d", got, want)
+	}
+
+	lexer = gotreesitter.NewLexer(lexStates, []byte("3rdparty"))
+	tok = lexer.Next(uint32(modeOffsets[0]))
+	if got, want := tok.Symbol, gotreesitter.Symbol(1); got != want {
+		t.Fatalf("longer token symbol = %d, want %d", got, want)
+	}
+	if got, want := tok.EndByte, uint32(8); got != want {
+		t.Fatalf("longer token end = %d, want %d", got, want)
+	}
+}
+
+func TestKeywordLikeInlinePatternClassification(t *testing.T) {
+	if !isKeywordLikeInlinePattern(`[sS][uU][bB][gG][rR][aA][pP][hH]`) {
+		t.Fatalf("case-insensitive keyword pattern should be keyword-like")
+	}
+	if isKeywordLikeInlinePattern(`[^\r\n \t]+`) {
+		t.Fatalf("broad catch-all pattern should not be keyword-like")
+	}
+}
+
 func TestBuildLexDFAPreservesStringOperatorBeforeLineComment(t *testing.T) {
 	lineComment, err := expandPatternRule(`\/\/.*`)
 	if err != nil {

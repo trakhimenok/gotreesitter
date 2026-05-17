@@ -61,24 +61,28 @@ type ReservedWordSet struct {
 
 // Grammar is the top-level grammar definition.
 type Grammar struct {
-	Name                               string
-	Rules                              map[string]*Rule
-	RuleOrder                          []string // order rules were defined (first = start rule)
-	Extras                             []*Rule
-	Conflicts                          [][]string
-	Externals                          []*Rule
-	Inline                             []string
-	Word                               string
-	ReservedWordSets                   []ReservedWordSet
-	Supertypes                         []string
-	Tests                              []TestCase    // embedded test cases
-	EnableLRSplitting                  bool          // opt-in: attempt LR(1) state splitting for merge pathology
-	BinaryRepeatMode                   bool          // use tree-sitter's binary repeat helper shape (aux→seq(aux,aux)|inner)
-	FlattenGeneratedRepeatAux          bool          // allow generated repeat helpers to participate in hidden-choice flattening
-	ReuseRepeatAuxForParents           []string      // parent rule names whose repeat helpers may be shared by canonical body
-	PreserveKeywordIdentifierConflicts bool          // keep keyword-as-identifier S/R ambiguity for grammars like Fortran
-	Precedences                        [][]PrecEntry // ordered precedence levels (each level: earlier = higher prec)
-	ChoiceLiftThreshold                int           // if >0, lift inline CHOICE nodes with more alternatives than this into auxiliary nonterminals to prevent production explosion
+	Name                                       string
+	Rules                                      map[string]*Rule
+	RuleOrder                                  []string // order rules were defined (first = start rule)
+	Extras                                     []*Rule
+	Conflicts                                  [][]string
+	Externals                                  []*Rule
+	Inline                                     []string
+	Word                                       string
+	ReservedWordSets                           []ReservedWordSet
+	Supertypes                                 []string
+	Tests                                      []TestCase    // embedded test cases
+	EnableLRSplitting                          bool          // opt-in: attempt LR(1) state splitting for merge pathology
+	BinaryRepeatMode                           bool          // use tree-sitter's binary repeat helper shape (aux→seq(aux,aux)|inner)
+	FlattenGeneratedRepeatAux                  bool          // allow generated repeat helpers to participate in hidden-choice flattening
+	ReuseRepeatAuxForParents                   []string      // parent rule names whose repeat helpers may be shared by canonical body
+	PreserveKeywordIdentifierConflicts         bool          // keep keyword-as-identifier S/R ambiguity for grammars like Fortran
+	ExactPrefixStates                          int           // keep this many LR(1) states exact before merge compaction
+	Precedences                                [][]PrecEntry // ordered precedence levels (each level: earlier = higher prec)
+	ChoiceLiftThreshold                        int           // if >0, lift inline CHOICE nodes with more alternatives than this into auxiliary nonterminals to prevent production explosion
+	SuppressEquivalentExternalReduceLookaheads bool          // suppress external scanner validity for duplicate reduce-only lookaheads
+	ExternalReduceFollowLookaheads             []string      // external token names that may be valid after reducing in the current state
+	PriorityInlinePatterns                     []string      // anonymous pattern terminals that should win same-length ties against named tokens
 }
 
 // NewGrammar creates a new grammar with the given name.
@@ -326,8 +330,12 @@ func ExtendGrammar(name string, base *Grammar, customize func(g *Grammar)) *Gram
 		FlattenGeneratedRepeatAux:          base.FlattenGeneratedRepeatAux,
 		ReuseRepeatAuxForParents:           make([]string, len(base.ReuseRepeatAuxForParents)),
 		PreserveKeywordIdentifierConflicts: base.PreserveKeywordIdentifierConflicts,
+		ExactPrefixStates:                  base.ExactPrefixStates,
 		Precedences:                        clonePrecedenceLevels(base.Precedences),
 		ChoiceLiftThreshold:                base.ChoiceLiftThreshold,
+		SuppressEquivalentExternalReduceLookaheads: base.SuppressEquivalentExternalReduceLookaheads,
+		ExternalReduceFollowLookaheads:             append([]string(nil), base.ExternalReduceFollowLookaheads...),
+		PriorityInlinePatterns:                     append([]string(nil), base.PriorityInlinePatterns...),
 	}
 
 	// Deep copy rules.

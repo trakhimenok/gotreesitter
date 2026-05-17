@@ -689,6 +689,49 @@ func TestExtNormalize(t *testing.T) {
 	}
 }
 
+func TestNormalizeExternalStartSymbolDoesNotCollideWithAugmentedStart(t *testing.T) {
+	g := NewGrammar("external_start")
+	g.SetExternals(Sym("_start"))
+	g.Define("program", Seq(Sym("_start"), Sym("item")))
+	g.Define("item", Str("x"))
+
+	ng, err := Normalize(g)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	if len(ng.ExternalSymbols) != 1 {
+		t.Fatalf("len(ExternalSymbols) = %d, want 1", len(ng.ExternalSymbols))
+	}
+	externalStart := ng.ExternalSymbols[0]
+	if got := ng.Symbols[externalStart]; got.Name != "_start" || got.Kind != SymbolExternal {
+		t.Fatalf("external start symbol = %+v, want external _start", got)
+	}
+	if got := ng.Symbols[ng.StartSymbol]; got.Name == "_start" {
+		t.Fatalf("augmented start symbol reused external name: %+v", got)
+	}
+
+	programSym := -1
+	for i, sym := range ng.Symbols {
+		if sym.Name == "program" && sym.Kind == SymbolNonterminal {
+			programSym = i
+			break
+		}
+	}
+	if programSym == -1 {
+		t.Fatal("program symbol not found")
+	}
+	for _, prod := range ng.Productions {
+		if prod.LHS != programSym || len(prod.RHS) == 0 {
+			continue
+		}
+		if prod.RHS[0] != externalStart {
+			t.Fatalf("program first RHS symbol = %d (%+v), want external _start %d", prod.RHS[0], ng.Symbols[prod.RHS[0]], externalStart)
+		}
+		return
+	}
+	t.Fatal("program production not found")
+}
+
 func TestNormalizeCanonicalizesConsistentlyAliasedExternalSymbol(t *testing.T) {
 	g := NewGrammar("ext_alias")
 	g.SetExternals(Sym("_layout_start_explicit"))
@@ -1326,6 +1369,7 @@ func TestRegexParser(t *testing.T) {
 		{`[\pL\p{Mn}\pN_']*`, false},          // haskell: \pL shorthand
 		{`\p{White_Space}|\\\\\\r?\n`, false}, // perl: White_Space property
 		{`[\p{L}\p{M}\p{N}\p{Emoji}]`, false}, // kdl: Emoji property
+		{`[\U00010400-\U00010427]`, false},    // elm: astral Unicode ranges
 	}
 
 	for _, tt := range tests {

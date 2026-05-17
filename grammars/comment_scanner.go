@@ -35,7 +35,9 @@ func (CommentExternalScanner) Serialize(payload any, buf []byte) int { return 0 
 func (CommentExternalScanner) Deserialize(payload any, buf []byte)   {}
 
 func (CommentExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
-	// invalid_token: always decline; let the parser handle error recovery.
+	// Upstream treats invalid_token as correction mode. The Go-generated
+	// external valid set can conservatively include invalid_token beside name,
+	// so only decline when name is not also explicitly valid.
 	if len(validSymbols) > commentTokInvalidToken && validSymbols[commentTokInvalidToken] &&
 		!(len(validSymbols) > commentTokName && validSymbols[commentTokName]) {
 		return false
@@ -49,49 +51,96 @@ func (CommentExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexe
 	return false
 }
 
-// scanCommentName scans a name token (tag keyword). A name consists of
-// alphanumeric characters, dots, hyphens, and underscores. To avoid
-// conflicting with the DFA's _text_token1 production, the scanner only
-// returns a name when it is immediately followed by ':' or '(', which
-// indicates the word is a tag keyword rather than free text.
+// scanCommentName scans a name token (tag keyword), mirroring
+// tree-sitter-comment's scanner:
+//   - the name starts with an uppercase ASCII letter,
+//   - continues with uppercase ASCII, digits, '-' or '_',
+//   - cannot end with '-' or '_',
+//   - may be followed by optional non-newline space plus a non-empty user
+//     component in parentheses,
+//   - and must end with ':' followed by whitespace.
 func scanCommentName(lexer *gotreesitter.ExternalLexer) bool {
-	count := 0
-	for {
-		ch := lexer.Lookahead()
-		if isCommentNameChar(ch) {
-			lexer.Advance(false)
-			count++
-		} else {
-			break
-		}
-	}
-	if count == 0 {
+	if !isCommentUpper(lexer.Lookahead()) {
 		return false
 	}
 
-	// Only produce a name token when the next character indicates
-	// this word is part of a tag construct, not free text.
-	next := lexer.Lookahead()
-	if next != ':' && next != '(' {
-		return false
+	previous := lexer.Lookahead()
+	lexer.Advance(false)
+	for isCommentUpper(lexer.Lookahead()) ||
+		isCommentDigit(lexer.Lookahead()) ||
+		isCommentInternal(lexer.Lookahead()) {
+		previous = lexer.Lookahead()
+		lexer.Advance(false)
 	}
-
 	lexer.MarkEnd()
+
+	if isCommentInternal(previous) {
+		return false
+	}
+
+	if (isCommentSpace(lexer.Lookahead()) && !isCommentNewline(lexer.Lookahead())) ||
+		lexer.Lookahead() == '(' {
+		for isCommentSpace(lexer.Lookahead()) && !isCommentNewline(lexer.Lookahead()) {
+			lexer.Advance(false)
+		}
+		if lexer.Lookahead() != '(' {
+			return false
+		}
+		lexer.Advance(false)
+
+		userLength := 0
+		for lexer.Lookahead() != ')' {
+			if isCommentNewline(lexer.Lookahead()) {
+				return false
+			}
+			lexer.Advance(false)
+			userLength++
+		}
+		if userLength <= 0 {
+			return false
+		}
+		lexer.Advance(false)
+	}
+
+	if lexer.Lookahead() != ':' {
+		return false
+	}
+	lexer.Advance(false)
+	if !isCommentSpace(lexer.Lookahead()) {
+		return false
+	}
+
 	lexer.SetResultSymbol(commentSymName)
 	return true
 }
 
-// isCommentNameChar returns true for characters valid in a tag name:
-// letters, digits, dot, hyphen, underscore.
-func isCommentNameChar(ch rune) bool {
-	if ch >= 'a' && ch <= 'z' {
-		return true
-	}
+func isCommentUpper(ch rune) bool {
 	if ch >= 'A' && ch <= 'Z' {
 		return true
 	}
+	return false
+}
+
+func isCommentDigit(ch rune) bool {
 	if ch >= '0' && ch <= '9' {
 		return true
 	}
-	return ch == '.' || ch == '-' || ch == '_'
+	return false
+}
+
+func isCommentInternal(ch rune) bool {
+	return ch == '-' || ch == '_'
+}
+
+func isCommentNewline(ch rune) bool {
+	return ch == 0 || ch == '\n' || ch == '\r'
+}
+
+func isCommentSpace(ch rune) bool {
+	switch ch {
+	case ' ', '\f', '\t', '\v':
+		return true
+	default:
+		return isCommentNewline(ch)
+	}
 }

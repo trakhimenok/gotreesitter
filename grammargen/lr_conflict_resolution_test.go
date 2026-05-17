@@ -55,6 +55,64 @@ func TestResolveReduceReduceKeepsTypeValueSingleTokenAmbiguity(t *testing.T) {
 	}
 }
 
+func TestResolveReduceReduceKeepsBashStatementBoundaryReduces(t *testing.T) {
+	ng := &NormalizedGrammar{
+		Symbols: []SymbolInfo{
+			{Name: "end", Kind: SymbolTerminal},
+			{Name: "|", Kind: SymbolTerminal},
+			{Name: ">", Kind: SymbolTerminal},
+			{Name: "_statement_not_subshell", Kind: SymbolNonterminal},
+			{Name: "_statement_not_pipeline", Kind: SymbolNonterminal},
+			{Name: "command", Kind: SymbolNonterminal},
+		},
+		Productions: []Production{
+			{LHS: 3, RHS: []int{5}},
+			{LHS: 4, RHS: []int{5}},
+		},
+	}
+	reduces := []lrAction{
+		{kind: lrReduce, prodIdx: 0},
+		{kind: lrReduce, prodIdx: 1},
+	}
+
+	for _, lookahead := range []int{0, 2} {
+		got, err := resolveActionConflict(lookahead, reduces, ng)
+		if err != nil {
+			t.Fatalf("resolveActionConflict(%d): %v", lookahead, err)
+		}
+		if len(got) != 2 || got[0].prodIdx != 0 || got[1].prodIdx != 1 {
+			t.Fatalf("resolveActionConflict(%d) = %+v, want both Bash statement reductions", lookahead, got)
+		}
+	}
+}
+
+func TestResolveReduceReducePrefersBashPipelineContinuationReduce(t *testing.T) {
+	ng := &NormalizedGrammar{
+		Symbols: []SymbolInfo{
+			{Name: "end", Kind: SymbolTerminal},
+			{Name: "|", Kind: SymbolTerminal},
+			{Name: "_statement_not_subshell", Kind: SymbolNonterminal},
+			{Name: "_statement_not_pipeline", Kind: SymbolNonterminal},
+			{Name: "command", Kind: SymbolNonterminal},
+		},
+		Productions: []Production{
+			{LHS: 2, RHS: []int{4}},
+			{LHS: 3, RHS: []int{4}},
+		},
+	}
+
+	got, err := resolveActionConflict(1, []lrAction{
+		{kind: lrReduce, prodIdx: 0},
+		{kind: lrReduce, prodIdx: 1},
+	}, ng)
+	if err != nil {
+		t.Fatalf("resolveActionConflict: %v", err)
+	}
+	if len(got) != 1 || got[0].prodIdx != 1 {
+		t.Fatalf("resolved actions = %+v, want _statement_not_pipeline reduce", got)
+	}
+}
+
 func TestResolveShiftReduceCanPreserveKeywordIdentifierCallAmbiguity(t *testing.T) {
 	ng := &NormalizedGrammar{
 		Symbols: []SymbolInfo{
@@ -125,6 +183,116 @@ func TestResolveShiftReducePrefersSpecificKeywordContinuation(t *testing.T) {
 				t.Fatalf("resolved actions = %+v, want specific keyword shift", got)
 			}
 		})
+	}
+}
+
+func TestResolveShiftReducePrefersArithmeticCloseDelimiter(t *testing.T) {
+	ng := &NormalizedGrammar{
+		Symbols: []SymbolInfo{
+			{Name: "))", Kind: SymbolTerminal},
+			{Name: "_arithmetic_expression", Kind: SymbolNonterminal},
+			{Name: "postfix_expression", Kind: SymbolNonterminal},
+			{Name: "arithmetic_expansion", Kind: SymbolNonterminal},
+		},
+		Productions: []Production{
+			{LHS: 1, RHS: []int{2}, Prec: 1},
+		},
+	}
+
+	got, err := resolveActionConflict(0, []lrAction{
+		{kind: lrShift, state: 12, prec: 1, lhsSym: 3},
+		{kind: lrReduce, prodIdx: 0, lhsSym: 1},
+	}, ng)
+	if err != nil {
+		t.Fatalf("resolveActionConflict: %v", err)
+	}
+	if len(got) != 1 || got[0].kind != lrShift {
+		t.Fatalf("resolved actions = %+v, want close-delimiter shift", got)
+	}
+}
+
+func TestResolveShiftReduceUsesArithmeticExpressionReducePrecedence(t *testing.T) {
+	ng := &NormalizedGrammar{
+		Symbols: []SymbolInfo{
+			{Name: "+", Kind: SymbolTerminal},
+			{Name: "*", Kind: SymbolTerminal},
+			{Name: "||", Kind: SymbolTerminal},
+			{Name: "_arithmetic_expression", Kind: SymbolNonterminal},
+			{Name: "_arithmetic_literal", Kind: SymbolNonterminal},
+			{Name: "binary_expression", Kind: SymbolNonterminal},
+			{Name: "unary_expression", Kind: SymbolNonterminal},
+		},
+		Productions: []Production{
+			{LHS: 3, RHS: []int{4}, Prec: 1},
+			{LHS: 4, RHS: []int{4}, Prec: 1},
+			{LHS: 5, RHS: []int{4, 0, 4}, Prec: 13, Assoc: AssocLeft, HasExplicitPrec: true},
+			{LHS: 6, RHS: []int{0, 4}, Prec: 11, HasExplicitPrec: true},
+		},
+	}
+
+	got, err := resolveActionConflict(0, []lrAction{
+		{kind: lrReduce, prodIdx: 0, lhsSym: 3},
+		{kind: lrReduce, prodIdx: 1, lhsSym: 4},
+		{kind: lrReduce, prodIdx: 2, lhsSym: 5},
+		{kind: lrShift, state: 12, prec: 13, lhsSym: 5},
+	}, ng)
+	if err != nil {
+		t.Fatalf("resolveActionConflict same-precedence: %v", err)
+	}
+	if len(got) != 1 || got[0].kind != lrReduce || got[0].prodIdx != 2 {
+		t.Fatalf("same-precedence actions = %+v, want left-associative binary reduce", got)
+	}
+
+	got, err = resolveActionConflict(1, []lrAction{
+		{kind: lrReduce, prodIdx: 0, lhsSym: 3},
+		{kind: lrReduce, prodIdx: 1, lhsSym: 4},
+		{kind: lrReduce, prodIdx: 2, lhsSym: 5},
+		{kind: lrShift, state: 13, prec: 14, lhsSym: 5},
+	}, ng)
+	if err != nil {
+		t.Fatalf("resolveActionConflict higher-shift: %v", err)
+	}
+	if len(got) != 1 || got[0].kind != lrShift {
+		t.Fatalf("higher-shift actions = %+v, want higher-precedence shift", got)
+	}
+
+	got, err = resolveActionConflict(2, []lrAction{
+		{kind: lrReduce, prodIdx: 0, lhsSym: 3},
+		{kind: lrReduce, prodIdx: 3, lhsSym: 6},
+		{kind: lrShift, state: 14, prec: 3, lhsSym: 5},
+	}, ng)
+	if err != nil {
+		t.Fatalf("resolveActionConflict unary: %v", err)
+	}
+	if len(got) != 1 || got[0].kind != lrReduce || got[0].prodIdx != 3 {
+		t.Fatalf("unary actions = %+v, want high-precedence unary reduce", got)
+	}
+}
+
+func TestResolveShiftReduceShiftsArithmeticAssignmentFromWrapper(t *testing.T) {
+	ng := &NormalizedGrammar{
+		Symbols: []SymbolInfo{
+			{Name: "=", Kind: SymbolTerminal},
+			{Name: "_arithmetic_expression", Kind: SymbolNonterminal},
+			{Name: "_arithmetic_literal", Kind: SymbolNonterminal},
+			{Name: "binary_expression", Kind: SymbolNonterminal},
+		},
+		Productions: []Production{
+			{LHS: 1, RHS: []int{2}, Prec: 1},
+			{LHS: 2, RHS: []int{2}, Prec: 1},
+		},
+	}
+
+	got, err := resolveActionConflict(0, []lrAction{
+		{kind: lrReduce, prodIdx: 0, lhsSym: 1},
+		{kind: lrReduce, prodIdx: 1, lhsSym: 2},
+		{kind: lrShift, state: 9, prec: 1, lhsSym: 3},
+	}, ng)
+	if err != nil {
+		t.Fatalf("resolveActionConflict: %v", err)
+	}
+	if len(got) != 1 || got[0].kind != lrShift {
+		t.Fatalf("resolved actions = %+v, want arithmetic assignment shift", got)
 	}
 }
 

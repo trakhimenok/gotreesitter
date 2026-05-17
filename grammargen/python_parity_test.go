@@ -74,6 +74,31 @@ func TestPython2PrintChevronParity(t *testing.T) {
 	assertPythonParity(t, genLang, refLang, sample)
 }
 
+func TestPythonTypeAliasStatementParity(t *testing.T) {
+	genLang := loadGeneratedPythonLanguageForParity(t)
+	refLang := grammars.PythonLanguage()
+	adaptExternalScanner(refLang, genLang)
+
+	samples := []string{
+		"type Point = tuple[float, float]\n",
+		"type Point[T] = tuple[T, T]\n",
+		"type IntFunc[**P] = Callable[P, int]\n",
+		"type LabeledTuple[*Ts] = tuple[str, *Ts]\n",
+		"type HashableSequence[T: Hashable] = Sequence[T]\n",
+		"type IntOrStrSequence[T: (int, str)] = Sequence[T]\n",
+		"type Point = tuple[float, float]\n" +
+			"type Point[T] = tuple[T, T]\n" +
+			"type IntFunc[**P] = Callable[P, int]  # ParamSpec\n" +
+			"type LabeledTuple[*Ts] = tuple[str, *Ts]  # TypeVarTuple\n" +
+			"type HashableSequence[T: Hashable] = Sequence[T]  # TypeVar with bound\n" +
+			"type IntOrStrSequence[T: (int, str)] = Sequence[T]  # TypeVar with constraints\n",
+	}
+
+	for _, sample := range samples {
+		assertPythonParity(t, genLang, refLang, sample)
+	}
+}
+
 func loadGeneratedPythonLanguageForParity(t *testing.T) *gotreesitter.Language {
 	t.Helper()
 

@@ -155,8 +155,32 @@ func EmitGrammarGo(g *Grammar, pkgName, funcName string) ([]byte, error) {
 		fmt.Fprintf(&buf, "\tg.PreserveKeywordIdentifierConflicts = true\n\n")
 	}
 
+	if g.ExactPrefixStates != 0 {
+		fmt.Fprintf(&buf, "\tg.ExactPrefixStates = %d\n\n", g.ExactPrefixStates)
+	}
+
 	if g.ChoiceLiftThreshold != 0 {
 		fmt.Fprintf(&buf, "\tg.ChoiceLiftThreshold = %d\n\n", g.ChoiceLiftThreshold)
+	}
+
+	if g.SuppressEquivalentExternalReduceLookaheads {
+		fmt.Fprintf(&buf, "\tg.SuppressEquivalentExternalReduceLookaheads = true\n\n")
+	}
+
+	if len(g.ExternalReduceFollowLookaheads) > 0 {
+		fmt.Fprintf(&buf, "\tg.ExternalReduceFollowLookaheads = []string{\n")
+		for _, name := range g.ExternalReduceFollowLookaheads {
+			fmt.Fprintf(&buf, "\t\t%s,\n", goString(name))
+		}
+		fmt.Fprintf(&buf, "\t}\n\n")
+	}
+
+	if len(g.PriorityInlinePatterns) > 0 {
+		fmt.Fprintf(&buf, "\tg.PriorityInlinePatterns = []string{\n")
+		for _, pattern := range g.PriorityInlinePatterns {
+			fmt.Fprintf(&buf, "\t\t%s,\n", goString(pattern))
+		}
+		fmt.Fprintf(&buf, "\t}\n\n")
 	}
 
 	if len(g.Tests) > 0 {

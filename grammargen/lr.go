@@ -873,6 +873,7 @@ type lrContext struct {
 	gotoAdvancedScratch    []coreEntry
 	lr0KernelScratch       []coreItem
 	lr0ClosureScratch      []lr0CoreEntry
+	lr0Dot0ClosureSeeds    [][]int
 	lr0RetainedChunks      [][]lr0CoreEntry
 	lr0RetainedChunkUsed   int
 	lr0SymbolBucketIdx     []int
@@ -1018,6 +1019,7 @@ func (ctx *lrContext) releaseScratch() {
 	ctx.gotoAdvancedScratch = nil
 	ctx.lr0KernelScratch = nil
 	ctx.lr0ClosureScratch = nil
+	ctx.lr0Dot0ClosureSeeds = nil
 	ctx.lr0RetainedChunks = nil
 	ctx.lr0RetainedChunkUsed = 0
 	ctx.lr0SymbolBucketIdx = nil
@@ -1610,15 +1612,26 @@ func addNonterminalExtraChains(tables *LRTables, ng *NormalizedGrammar, ctx *lrC
 			terminalExtras = append(terminalExtras, e)
 		}
 	}
+	externalSymbolSet := make(map[int]struct{}, len(ng.ExternalSymbols))
+	for _, sym := range ng.ExternalSymbols {
+		externalSymbolSet[sym] = struct{}{}
+	}
 
 	extraStartsByFirstSym := make(map[int][]int)
 	var extraFirstSyms []int
+	hasExternalExtraStart := false
+	hasNonExternalExtraStart := false
 	for _, prodIdx := range extraProds {
 		prod := &ng.Productions[prodIdx]
 		if len(prod.RHS) > 0 && prod.RHS[0] < tokenCount {
 			firstSym := prod.RHS[0]
 			if _, ok := extraStartsByFirstSym[firstSym]; !ok {
 				extraFirstSyms = append(extraFirstSyms, firstSym)
+				if _, ok := externalSymbolSet[firstSym]; ok {
+					hasExternalExtraStart = true
+				} else {
+					hasNonExternalExtraStart = true
+				}
 			}
 			extraStartsByFirstSym[firstSym] = append(extraStartsByFirstSym[firstSym], prodIdx)
 		}
@@ -1643,6 +1656,16 @@ func addNonterminalExtraChains(tables *LRTables, ng *NormalizedGrammar, ctx *lrC
 			follow.add(firstSym)
 		}
 		return follow
+	}
+	var externalExtraFollow bitset
+	if hasExternalExtraStart {
+		externalExtraFollow = newBitset(tokenCount)
+		for state := 0; state < mainStateCount; state++ {
+			follow := stateFollowSet(state)
+			follow.forEach(func(sym int) {
+				externalExtraFollow.add(sym)
+			})
+		}
 	}
 	stateHasContinuation := func(state int) bool {
 		if acts, ok := tables.ActionTable[state]; ok {
@@ -1689,6 +1712,14 @@ func addNonterminalExtraChains(tables *LRTables, ng *NormalizedGrammar, ctx *lrC
 		if state < mainStateCount {
 			return true
 		}
+		if _, ok := externalSymbolSet[firstSym]; ok {
+			// External-scanner extras are context sensitive. Recursively
+			// injecting their starts into synthetic extra-chain states can make
+			// scanner-driven extras such as Perl POD/heredocs expand without a
+			// structural bound, while main LR states still receive the extra
+			// entry actions they need.
+			return false
+		}
 		extraMatcher, ok := startMatchers[firstSym]
 		if !ok {
 			return true
@@ -1733,7 +1764,10 @@ func addNonterminalExtraChains(tables *LRTables, ng *NormalizedGrammar, ctx *lrC
 		if state >= mainStateCount && stateOnlyReducesCompletedExtra(state) {
 			continue
 		}
-		follow := stateFollowSet(state)
+		var follow bitset
+		if hasNonExternalExtraStart {
+			follow = stateFollowSet(state)
+		}
 		for _, firstSym := range extraFirstSyms {
 			if !syntheticStateMayInjectExtraStart(state, firstSym) {
 				continue
@@ -1748,8 +1782,14 @@ func addNonterminalExtraChains(tables *LRTables, ng *NormalizedGrammar, ctx *lrC
 			if hasNonExtraAction {
 				continue
 			}
+			entryFollow := follow
+			if _, ok := externalSymbolSet[firstSym]; ok {
+				entryFollow = externalExtraFollow
+			} else if len(entryFollow.words) == 0 {
+				entryFollow = stateFollowSet(state)
+			}
 			prodIdxs := extraStartsByFirstSym[firstSym]
-			entryState := builder.buildEntryState(firstSym, prodIdxs, follow)
+			entryState := builder.buildEntryState(firstSym, prodIdxs, entryFollow)
 			tables.addAction(state, firstSym, lrAction{
 				kind:    lrShift,
 				state:   entryState,
@@ -2631,12 +2671,14 @@ func (ctx *lrContext) buildItemSets() []lrItemSet {
 		(len(ctx.ng.ExternalSymbols) > 0 && len(ctx.ng.Productions) <= 2000)
 	useBoundaryMerging := len(ctx.ng.ExternalSymbols) > 0 && len(ctx.ng.Productions) > 2000
 	exactPrefixStates := 0
-	if len(ctx.ng.ExternalSymbols) > 0 {
+	if ctx.ng.ExactPrefixStates > 0 {
+		exactPrefixStates = ctx.ng.ExactPrefixStates
+	} else if len(ctx.ng.ExternalSymbols) > 0 {
 		exactPrefixStates = 1024
-		if v := os.Getenv("GOT_LR_EXACT_PREFIX_STATES"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-				exactPrefixStates = n
-			}
+	}
+	if v := os.Getenv("GOT_LR_EXACT_PREFIX_STATES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			exactPrefixStates = n
 		}
 	}
 	preciseStateBudget := 0
@@ -3014,6 +3056,15 @@ func resolveActionConflict(lookaheadSym int, actions []lrAction, ng *NormalizedG
 		if shouldPreferAssignmentExpressionShift(lookaheadSym, shifts, reduces, ng) {
 			return []lrAction{shift}, nil
 		}
+		if preferred, ok := preferredArithmeticExpressionContinuation(lookaheadSym, shifts, reduces, ng); ok {
+			return []lrAction{preferred}, nil
+		}
+		if preferred, ok := preferredArithmeticWrapperShift(lookaheadSym, shifts, reduces, ng); ok {
+			return []lrAction{preferred}, nil
+		}
+		if preferred, ok := preferredArithmeticDelimiterShift(lookaheadSym, shifts, reduces, ng); ok {
+			return []lrAction{preferred}, nil
+		}
 		if preferred, ok := preferredKeywordContinuationShift(lookaheadSym, shifts, reduces, ng); ok {
 			return []lrAction{preferred}, nil
 		}
@@ -3244,13 +3295,15 @@ func shouldPreferAssignmentExpressionShift(lookaheadSym int, shifts, reduces []l
 	if shift.lhsSym < 0 || shift.lhsSym >= len(ng.Symbols) {
 		return false
 	}
-	if ng.Symbols[shift.lhsSym].Name != "assignment_expression" {
+	shiftLHSName := ng.Symbols[shift.lhsSym].Name
+	if !isAssignmentShiftLHS(shiftLHSName) {
 		return false
 	}
 	if lookaheadSym < 0 || lookaheadSym >= len(ng.Symbols) {
 		return false
 	}
-	if !isAssignmentOperatorLookahead(ng.Symbols[lookaheadSym].Name) {
+	lookaheadName := ng.Symbols[lookaheadSym].Name
+	if !isAssignmentOperatorLookahead(lookaheadName) && !(lookaheadName == "operator" && isAssignmentShiftLHS(shiftLHSName)) {
 		return false
 	}
 	for _, reduce := range reduces {
@@ -3266,6 +3319,163 @@ func shouldPreferAssignmentExpressionShift(lookaheadSym int, shifts, reduces []l
 		}
 	}
 	return true
+}
+
+func preferredArithmeticWrapperShift(lookaheadSym int, shifts, reduces []lrAction, ng *NormalizedGrammar) (lrAction, bool) {
+	if ng == nil || len(shifts) != 1 || len(reduces) == 0 ||
+		lookaheadSym < 0 || lookaheadSym >= len(ng.Symbols) {
+		return lrAction{}, false
+	}
+	if !isArithmeticOperatorLookaheadName(ng.Symbols[lookaheadSym].Name) {
+		return lrAction{}, false
+	}
+	shift := shifts[0]
+	if shift.lhsSym < 0 || shift.lhsSym >= len(ng.Symbols) ||
+		ng.Symbols[shift.lhsSym].Name != "binary_expression" {
+		return lrAction{}, false
+	}
+	for _, reduce := range reduces {
+		if reduce.kind != lrReduce || reduce.prodIdx < 0 || reduce.prodIdx >= len(ng.Productions) {
+			return lrAction{}, false
+		}
+		prod := &ng.Productions[reduce.prodIdx]
+		if len(prod.RHS) != 1 || prod.LHS < 0 || prod.LHS >= len(ng.Symbols) {
+			return lrAction{}, false
+		}
+		lhsName := ng.Symbols[prod.LHS].Name
+		if lhsName != "_arithmetic_expression" && lhsName != "_arithmetic_literal" {
+			return lrAction{}, false
+		}
+	}
+	return shift, true
+}
+
+func preferredArithmeticExpressionContinuation(lookaheadSym int, shifts, reduces []lrAction, ng *NormalizedGrammar) (lrAction, bool) {
+	if ng == nil || len(shifts) != 1 || len(reduces) == 0 ||
+		lookaheadSym < 0 || lookaheadSym >= len(ng.Symbols) {
+		return lrAction{}, false
+	}
+	if !isArithmeticOperatorLookaheadName(ng.Symbols[lookaheadSym].Name) {
+		return lrAction{}, false
+	}
+	var expressionReduces []lrAction
+	for _, reduce := range reduces {
+		if reduce.kind != lrReduce || reduce.prodIdx < 0 || reduce.prodIdx >= len(ng.Productions) {
+			return lrAction{}, false
+		}
+		prod := &ng.Productions[reduce.prodIdx]
+		if prod.LHS < 0 || prod.LHS >= len(ng.Symbols) {
+			return lrAction{}, false
+		}
+		lhsName := ng.Symbols[prod.LHS].Name
+		switch lhsName {
+		case "_arithmetic_expression", "_arithmetic_literal":
+			continue
+		case "binary_expression", "unary_expression", "ternary_expression", "postfix_expression", "parenthesized_expression":
+			expressionReduces = append(expressionReduces, reduce)
+		default:
+			return lrAction{}, false
+		}
+	}
+	if len(expressionReduces) == 0 {
+		return lrAction{}, false
+	}
+	best := rrPickBest(expressionReduces, ng)[0]
+	bestProd := &ng.Productions[best.prodIdx]
+	shift := shifts[0]
+	if bestProd.Prec > shift.prec {
+		return best, true
+	}
+	if shift.prec > bestProd.Prec {
+		return shift, true
+	}
+	switch bestProd.Assoc {
+	case AssocLeft:
+		return best, true
+	case AssocRight:
+		return shift, true
+	default:
+		return lrAction{}, false
+	}
+}
+
+func isArithmeticOperatorLookaheadName(name string) bool {
+	switch name {
+	case "++", "--",
+		"+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", "&=", "^=", "|=",
+		"=", "=~",
+		"||", "&&", "|", "^", "&",
+		"==", "!=", "<", ">", "<=", ">=",
+		"<<", ">>", "+", "-", "*", "/", "%", "**":
+		return true
+	default:
+		return false
+	}
+}
+
+func preferredArithmeticDelimiterShift(lookaheadSym int, shifts, reduces []lrAction, ng *NormalizedGrammar) (lrAction, bool) {
+	if ng == nil || len(shifts) != 1 || len(reduces) == 0 ||
+		lookaheadSym < 0 || lookaheadSym >= len(ng.Symbols) {
+		return lrAction{}, false
+	}
+	lookaheadName := ng.Symbols[lookaheadSym].Name
+	if !isArithmeticDelimiterLookaheadName(lookaheadName) {
+		return lrAction{}, false
+	}
+	shift := shifts[0]
+	if shift.lhsSym < 0 || shift.lhsSym >= len(ng.Symbols) {
+		return lrAction{}, false
+	}
+	shiftLHSName := ng.Symbols[shift.lhsSym].Name
+	if !isArithmeticDelimiterShiftLHS(shiftLHSName, lookaheadName) {
+		return lrAction{}, false
+	}
+	for _, reduce := range reduces {
+		if reduce.kind != lrReduce || reduce.prodIdx < 0 || reduce.prodIdx >= len(ng.Productions) {
+			return lrAction{}, false
+		}
+		prod := &ng.Productions[reduce.prodIdx]
+		if len(prod.RHS) != 1 || prod.LHS < 0 || prod.LHS >= len(ng.Symbols) {
+			return lrAction{}, false
+		}
+		lhsName := ng.Symbols[prod.LHS].Name
+		if lhsName != "_arithmetic_expression" && lhsName != "_arithmetic_literal" {
+			return lrAction{}, false
+		}
+		if prod.Assoc != AssocNone || prod.Prec != shift.prec {
+			return lrAction{}, false
+		}
+	}
+	return shift, true
+}
+
+func isArithmeticDelimiterLookaheadName(name string) bool {
+	switch name {
+	case "))", "]", ",", ")":
+		return true
+	default:
+		return false
+	}
+}
+
+func isArithmeticDelimiterShiftLHS(lhsName, lookaheadName string) bool {
+	switch lookaheadName {
+	case "))", "]", ",":
+		return lhsName == "arithmetic_expansion"
+	case ")":
+		return lhsName == "parenthesized_expression"
+	default:
+		return false
+	}
+}
+
+func isAssignmentShiftLHS(name string) bool {
+	switch name {
+	case "assignment_expression", "assignment", "_closed_assignment":
+		return true
+	default:
+		return false
+	}
 }
 
 func shouldPreserveKeywordIdentifierShiftReduce(lookaheadSym int, reduces []lrAction, ng *NormalizedGrammar) bool {
@@ -3410,6 +3620,12 @@ func isRepeatHelperReduce(action lrAction, ng *NormalizedGrammar) bool {
 }
 
 func resolveReduceReduceLegacy(lookaheadSym int, reduces []lrAction, ng *NormalizedGrammar, cache *conflictResolutionCache) ([]lrAction, error) {
+	if kept, ok := keepBashStatementBoundaryReduces(lookaheadSym, reduces, ng); ok {
+		return kept, nil
+	}
+	if preferred, ok := preferredBashStatementReduce(lookaheadSym, reduces, ng); ok {
+		return []lrAction{preferred}, nil
+	}
 	if allInDeclaredConflict(reduces, ng, cache) {
 		return reduces, nil
 	}
@@ -3445,6 +3661,83 @@ func resolveReduceReduceLegacy(lookaheadSym int, reduces []lrAction, ng *Normali
 	}
 
 	return rrPickBest(reduces, ng), nil
+}
+
+func keepBashStatementBoundaryReduces(lookaheadSym int, reduces []lrAction, ng *NormalizedGrammar) ([]lrAction, bool) {
+	if !bashStatementBoundaryLookahead(lookaheadSym, ng) {
+		return nil, false
+	}
+	notSubshell, notPipeline, ok := bashStatementReducePair(reduces, ng)
+	if !ok {
+		return nil, false
+	}
+	return []lrAction{notSubshell, notPipeline}, true
+}
+
+func preferredBashStatementReduce(lookaheadSym int, reduces []lrAction, ng *NormalizedGrammar) (lrAction, bool) {
+	notSubshell, notPipeline, ok := bashStatementReducePair(reduces, ng)
+	if !ok {
+		return lrAction{}, false
+	}
+	if lookaheadSym >= 0 && lookaheadSym < len(ng.Symbols) {
+		switch ng.Symbols[lookaheadSym].Name {
+		case "|", "|&":
+			return notPipeline, true
+		}
+	}
+	return notSubshell, true
+}
+
+func bashStatementReducePair(reduces []lrAction, ng *NormalizedGrammar) (lrAction, lrAction, bool) {
+	if len(reduces) < 2 || ng == nil {
+		return lrAction{}, lrAction{}, false
+	}
+	var notSubshell, notPipeline lrAction
+	hasNotSubshell := false
+	hasNotPipeline := false
+	relevant := 0
+	for _, reduce := range reduces {
+		if reduce.kind != lrReduce || reduce.prodIdx < 0 || reduce.prodIdx >= len(ng.Productions) {
+			continue
+		}
+		prod := &ng.Productions[reduce.prodIdx]
+		if prod.LHS < 0 || prod.LHS >= len(ng.Symbols) {
+			continue
+		}
+		switch ng.Symbols[prod.LHS].Name {
+		case "_statement_not_subshell":
+			notSubshell = reduce
+			hasNotSubshell = true
+			relevant++
+		case "_statement_not_pipeline":
+			notPipeline = reduce
+			hasNotPipeline = true
+			relevant++
+		}
+	}
+	return notSubshell, notPipeline, hasNotSubshell && hasNotPipeline && relevant == len(reduces)
+}
+
+func bashStatementBoundaryLookahead(lookaheadSym int, ng *NormalizedGrammar) bool {
+	if ng == nil {
+		return false
+	}
+	if lookaheadSym <= 0 {
+		return true
+	}
+	if lookaheadSym >= len(ng.Symbols) {
+		return false
+	}
+	switch ng.Symbols[lookaheadSym].Name {
+	case "end", "$end", "\x00",
+		"\\n", ";", ";;", "&", "&&", "||",
+		"<", ">", "<<", "<<-", ">>", "<<<", "&>", "&>>", "<&", ">&", "<&-", ">&-", ">|",
+		")", "}", "]",
+		"then", "do", "else", "elif", "fi", "done", "esac":
+		return true
+	default:
+		return false
+	}
 }
 
 func shouldKeepTypeValueTokenReduces(lookaheadSym int, reduces []lrAction, ng *NormalizedGrammar) bool {

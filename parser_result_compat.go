@@ -163,6 +163,8 @@ func normalizeResultCompatibility(root *Node, source []byte, p *Parser) {
 
 func normalizeBashResultStrut(ctx resultCompatibilityContext) {
 	normalizeBashProgramVariableAssignments(ctx.root, ctx.lang)
+	normalizeBashGeneratedCommandAssignments(ctx.root, ctx.source, ctx.lang)
+	normalizeBashCommandNameArguments(ctx.root, ctx.lang)
 }
 
 func normalizeCResultStrut(ctx resultCompatibilityContext) {

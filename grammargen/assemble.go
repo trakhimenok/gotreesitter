@@ -20,13 +20,14 @@ func assemble(
 	symbolCount := len(ng.Symbols)
 
 	lang := &gotreesitter.Language{
-		SymbolCount:        uint32(symbolCount),
-		TokenCount:         uint32(tokenCount),
-		ExternalTokenCount: uint32(len(ng.ExternalSymbols)),
-		StateCount:         uint32(tables.StateCount),
-		InitialState:       1,
-		LexStates:          lexStates,
-		LanguageVersion:    14,
+		SymbolCount:           uint32(symbolCount),
+		TokenCount:            uint32(tokenCount),
+		ExternalTokenCount:    uint32(len(ng.ExternalSymbols)),
+		StateCount:            uint32(tables.StateCount),
+		InitialState:          1,
+		LexStates:             lexStates,
+		LanguageVersion:       14,
+		GeneratedByGrammargen: true,
 	}
 	if len(lexModeOffsets) > 0 {
 		lang.LayoutFallbackLexState = uint16(lexModeOffsets[0])
@@ -707,6 +708,7 @@ func buildExternalLexStates(lang *gotreesitter.Language, tables *LRTables, ng *N
 	rows := [][]bool{make([]bool, extCount)}
 	rowMap := make(map[string]int) // serialized row → row index
 	rowMap[serializeBoolRow(rows[0])] = 0
+	followTokens := buildFollowTokensFunc(tables, tokenCount)
 
 	// For each parser state (after remapping), compute which external tokens
 	// are valid based on the action table.
@@ -726,6 +728,19 @@ func buildExternalLexStates(lang *gotreesitter.Language, tables *LRTables, ng *N
 		// States 1..N map to LR states 0..N-1.
 		lrState := state - 1
 		if lrState >= 0 {
+			if len(ng.ExternalReduceFollowLookaheads) > 0 && followTokens != nil {
+				for _, symID := range followTokens(lrState) {
+					extIdx, isExt := extSymSet[symID]
+					if !isExt || symID < 0 || symID >= len(ng.Symbols) {
+						continue
+					}
+					if !ng.ExternalReduceFollowLookaheads[ng.Symbols[symID].Name] {
+						continue
+					}
+					row[extIdx] = true
+					anyValid = true
+				}
+			}
 			if acts, ok := tables.ActionTable[lrState]; ok {
 				for symID, extIdx := range extSymSet {
 					actionList, ok := acts[symID]
@@ -750,6 +765,12 @@ func buildExternalLexStates(lang *gotreesitter.Language, tables *LRTables, ng *N
 									break
 								}
 							}
+						}
+					}
+					if !suppressed && shouldSuppressEquivalentExternalReduceLookahead(ng, symID, actionList, acts, extSymSet) {
+						if actionsAreReduceOnly(actionList) &&
+							hasEquivalentNonExternalReduceAction(acts, actionList, extSymSet, tokenCount) {
+							suppressed = true
 						}
 					}
 					if !suppressed {
@@ -806,6 +827,91 @@ func actionsAreReduceOnly(acts []lrAction) bool {
 		}
 	}
 	return true
+}
+
+func hasEquivalentNonExternalReduceAction(
+	acts map[int][]lrAction,
+	actionList []lrAction,
+	extSymSet map[int]int,
+	tokenCount int,
+) bool {
+	for sym := 1; sym < tokenCount; sym++ {
+		if _, isExt := extSymSet[sym]; isExt {
+			continue
+		}
+		cpActs, ok := acts[sym]
+		if !ok || len(cpActs) == 0 || !actionsAreReduceOnly(cpActs) {
+			continue
+		}
+		if actListsEqual(actionList, cpActs) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldSuppressEquivalentExternalReduceLookahead(
+	ng *NormalizedGrammar,
+	symID int,
+	actionList []lrAction,
+	acts map[int][]lrAction,
+	extSymSet map[int]int,
+) bool {
+	if ng == nil || !ng.SuppressEquivalentExternalReduceLookaheads ||
+		symID < 0 || symID >= len(ng.Symbols) || !ng.Symbols[symID].Visible {
+		return false
+	}
+	switch ng.Symbols[symID].Name {
+	case "extglob_pattern", "regex", "variable_name":
+		return true
+	case "]":
+		// Bash's scanner uses this delimiter external to decide when a
+		// zero-width _concat is not valid. Dropping it turns a close bracket
+		// into another word-like concatenation segment.
+		return false
+	case "}":
+		// The analogous "}" token has an extra whitespace-sensitive concat rule
+		// in Bash's scanner. Keep it for normal brace contexts and for
+		// simple_expansion reductions that rely on it to avoid string-content
+		// bleed, but suppress duplicate string-reduction exposure when the same
+		// state also exposes "]". Number reductions need the same treatment:
+		// exposing "}" after a numeric command argument makes Bash's scanner
+		// emit whitespace _concat before the next flag.
+		return hasExternalActionNamed(ng, acts, extSymSet, "]") &&
+			(reduceActionListHasLHSName(ng, actionList, "string") ||
+				reduceActionListHasLHSName(ng, actionList, "number"))
+	default:
+		return false
+	}
+}
+
+func reduceActionListHasLHSName(ng *NormalizedGrammar, actions []lrAction, name string) bool {
+	if ng == nil || name == "" {
+		return false
+	}
+	for _, action := range actions {
+		if action.kind != lrReduce || action.prodIdx < 0 || action.prodIdx >= len(ng.Productions) {
+			continue
+		}
+		lhs := ng.Productions[action.prodIdx].LHS
+		if lhs >= 0 && lhs < len(ng.Symbols) && ng.Symbols[lhs].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasExternalActionNamed(ng *NormalizedGrammar, acts map[int][]lrAction, extSymSet map[int]int, name string) bool {
+	if ng == nil || len(acts) == 0 || len(extSymSet) == 0 {
+		return false
+	}
+	for symID := range extSymSet {
+		if symID < 0 || symID >= len(ng.Symbols) || ng.Symbols[symID].Name != name {
+			continue
+		}
+		return len(acts[symID]) > 0
+	}
+	return false
 }
 
 // actListsEqual checks if two LR action lists are structurally identical.

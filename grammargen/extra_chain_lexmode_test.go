@@ -6,6 +6,14 @@ import (
 	"github.com/odvcencio/gotreesitter"
 )
 
+func singleExtraShiftTarget(t *testing.T, ng *NormalizedGrammar, acts []lrAction) int {
+	t.Helper()
+	if len(acts) != 1 || acts[0].kind != lrShift || !acts[0].isExtra {
+		t.Fatalf("expected single synthetic extra-chain shift, got %s", diagFormatActions(ng, acts))
+	}
+	return acts[0].state
+}
+
 func TestNonterminalExtraChainLexModesDoNotInheritTerminalExtras(t *testing.T) {
 	g := NewGrammar("extra_chain_lexmode")
 	g.Define("source_file", Repeat1(Sym("item")))
@@ -321,6 +329,102 @@ func TestNonterminalExtraChainSyntheticStatesSkipNestedStartsWithoutStarterOverl
 		if act.kind == lrShift && act.isExtra {
 			t.Fatalf("synthetic state %d should not inject nested #region extra starts: %s", outerState, diagFormatActions(ng, tables.ActionTable[outerState][startSyms[0]]))
 		}
+	}
+}
+
+func TestNonterminalExtraChainSyntheticStatesSkipNestedExternalStarts(t *testing.T) {
+	g := NewGrammar("extra_chain_external_no_nested")
+	g.SetExternals(Sym("_external_extra_start"))
+	g.Define("source_file", Repeat1(Sym("item")))
+	g.Define("item", Pat(`[a-z]+`))
+	g.Define("external_extra", Seq(
+		Sym("_external_extra_start"),
+		Token(Pat(`[a-z]+`)),
+	))
+	g.SetExtras(Pat(`\s`), Sym("external_extra"))
+
+	ng, err := Normalize(g)
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	tables, ctx, err := buildLRTablesWithProvenance(ng)
+	if err != nil {
+		t.Fatalf("build LR tables: %v", err)
+	}
+	addNonterminalExtraChains(tables, ng, ctx)
+
+	if len(ng.ExternalSymbols) != 1 {
+		t.Fatalf("expected one external symbol, got %v", ng.ExternalSymbols)
+	}
+	startSym := ng.ExternalSymbols[0]
+
+	rootActs := tables.ActionTable[0][startSym]
+	if len(rootActs) != 1 || rootActs[0].kind != lrShift || !rootActs[0].isExtra {
+		t.Fatalf("expected synthetic extra-chain shift on external start from state 0, got %s", diagFormatActions(ng, rootActs))
+	}
+	outerState := rootActs[0].state
+	if outerState < tables.ExtraChainStateStart {
+		t.Fatalf("expected synthetic target >= %d, got %d", tables.ExtraChainStateStart, outerState)
+	}
+
+	for _, act := range tables.ActionTable[outerState][startSym] {
+		if act.kind == lrShift && act.isExtra {
+			t.Fatalf("synthetic state %d should not inject nested external extra starts: %s", outerState, diagFormatActions(ng, tables.ActionTable[outerState][startSym]))
+		}
+	}
+}
+
+func TestNonterminalExtraChainExternalStartsShareEntryChain(t *testing.T) {
+	g := NewGrammar("extra_chain_external_shared")
+	g.SetExternals(Sym("_external_extra_start"))
+	g.Define("source_file", Seq(Sym("first"), Sym("second")))
+	g.Define("first", Str("a"))
+	g.Define("second", Str("b"))
+	g.Define("external_extra", Seq(
+		Sym("_external_extra_start"),
+		Token(Pat(`[a-z]+`)),
+	))
+	g.SetExtras(Pat(`\s`), Sym("external_extra"))
+
+	ng, err := Normalize(g)
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	tables, ctx, err := buildLRTablesWithProvenance(ng)
+	if err != nil {
+		t.Fatalf("build LR tables: %v", err)
+	}
+	addNonterminalExtraChains(tables, ng, ctx)
+
+	if len(ng.ExternalSymbols) != 1 {
+		t.Fatalf("expected one external symbol, got %v", ng.ExternalSymbols)
+	}
+	startSym := ng.ExternalSymbols[0]
+	bSyms := diagFindAllSymbols(ng, "b")
+	if len(bSyms) != 1 {
+		t.Fatalf("expected one b symbol, got %v", bSyms)
+	}
+
+	bState := -1
+	for state := 0; state < tables.ExtraChainStateStart; state++ {
+		for _, act := range tables.ActionTable[state][bSyms[0]] {
+			if act.kind == lrShift && !act.isExtra {
+				bState = state
+				break
+			}
+		}
+		if bState >= 0 {
+			break
+		}
+	}
+	if bState < 0 {
+		t.Fatal("state with structural b shift not found")
+	}
+
+	rootTarget := singleExtraShiftTarget(t, ng, tables.ActionTable[0][startSym])
+	bTarget := singleExtraShiftTarget(t, ng, tables.ActionTable[bState][startSym])
+	if rootTarget != bTarget {
+		t.Fatalf("external-starting extras should share entry chain across main states, got state0=%d state%d=%d", rootTarget, bState, bTarget)
 	}
 }
 

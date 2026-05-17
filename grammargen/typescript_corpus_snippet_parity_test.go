@@ -335,14 +335,14 @@ func loadImportedParityLanguages(t *testing.T, grammarName string) (*gotreesitte
 		t.Fatalf("%s import parity grammar not found", grammarName)
 	}
 	if grammarSpec.jsonPath != "" {
-		if _, err := os.Stat(grammarSpec.jsonPath); err != nil && strings.HasPrefix(grammarSpec.jsonPath, "/tmp/grammar_parity/") {
-			relSeedPath := filepath.Join(".parity_seed", strings.TrimPrefix(grammarSpec.jsonPath, "/tmp/grammar_parity/"))
-			switch {
-			case fileExists(relSeedPath):
-				grammarSpec.jsonPath = relSeedPath
-			case fileExists(filepath.Join("..", relSeedPath)):
-				grammarSpec.jsonPath = filepath.Join("..", relSeedPath)
-			}
+		grammarSpec.jsonPath = fallbackParitySeedPath(grammarSpec.jsonPath)
+		if _, err := os.Stat(grammarSpec.jsonPath); err != nil {
+			t.Skipf("%s grammar.json not available: %v", grammarName, err)
+		}
+	} else if grammarSpec.path != "" {
+		grammarSpec.path = fallbackParitySeedPath(grammarSpec.path)
+		if _, err := os.Stat(grammarSpec.path); err != nil {
+			t.Skipf("%s grammar.js not available: %v", grammarName, err)
 		}
 	}
 
