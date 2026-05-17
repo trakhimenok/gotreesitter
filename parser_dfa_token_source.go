@@ -52,6 +52,15 @@ type dfaTokenSource struct {
 	zeroWidthPos   int
 	zeroWidthCount int
 
+	// Cached Bash arithmetic-expansion context. Generated Bash token repair
+	// asks this repeatedly while probing operator candidates at nearby byte
+	// offsets, so retain the last prefix scan state instead of rescanning from
+	// the start of the file each time.
+	bashArithmeticCachePos       int
+	bashArithmeticCacheDepth     int
+	bashArithmeticCacheSkipUntil int
+	bashArithmeticCacheResult    bool
+
 	// noPool skips pool return on Close; set for token sources whose lifetime
 	// is nested inside an active parse (e.g. recovery reparsing).
 	noPool bool
@@ -66,8 +75,9 @@ const externalScannerSerializationBufferSize = 4096
 var dfaTokenSourcePool = sync.Pool{
 	New: func() any {
 		return &dfaTokenSource{
-			extZeroPos:   -1,
-			zeroWidthPos: -1,
+			extZeroPos:             -1,
+			zeroWidthPos:           -1,
+			bashArithmeticCachePos: -1,
 		}
 	},
 }
@@ -95,8 +105,9 @@ func acquireDFATokenSource(lexer *Lexer, language *Language, lookupActionIndex f
 	// be reused without reallocation on the next parse.
 	savedMasked := ts.maskedScratch
 	*ts = dfaTokenSource{
-		extZeroPos:   -1,
-		zeroWidthPos: -1,
+		extZeroPos:             -1,
+		zeroWidthPos:           -1,
+		bashArithmeticCachePos: -1,
 	}
 	ts.maskedScratch = savedMasked
 	initDFATokenSource(ts, lexer, language, lookupActionIndex, hasKeywordState)
@@ -105,9 +116,10 @@ func acquireDFATokenSource(lexer *Lexer, language *Language, lookupActionIndex f
 
 func newDFATokenSourceDirect(lexer *Lexer, language *Language, lookupActionIndex func(state StateID, sym Symbol) uint16, hasKeywordState []bool) *dfaTokenSource {
 	ts := &dfaTokenSource{
-		extZeroPos:   -1,
-		zeroWidthPos: -1,
-		noPool:       true,
+		extZeroPos:             -1,
+		zeroWidthPos:           -1,
+		bashArithmeticCachePos: -1,
+		noPool:                 true,
 	}
 	initDFATokenSource(ts, lexer, language, lookupActionIndex, hasKeywordState)
 	return ts
@@ -142,6 +154,10 @@ func (d *dfaTokenSource) Reset(source []byte) {
 	d.extZeroState = 0
 	d.zeroWidthPos = -1
 	d.zeroWidthCount = 0
+	d.bashArithmeticCachePos = -1
+	d.bashArithmeticCacheDepth = 0
+	d.bashArithmeticCacheSkipUntil = 0
+	d.bashArithmeticCacheResult = false
 	d.lastExternalTokenStartByte = 0
 	d.lastExternalTokenEndByte = 0
 	d.lastExternalTokenValid = false
@@ -168,6 +184,10 @@ func (d *dfaTokenSource) Close() {
 	d.extZeroState = 0
 	d.zeroWidthPos = -1
 	d.zeroWidthCount = 0
+	d.bashArithmeticCachePos = -1
+	d.bashArithmeticCacheDepth = 0
+	d.bashArithmeticCacheSkipUntil = 0
+	d.bashArithmeticCacheResult = false
 	d.lastExternalTokenStartByte = 0
 	d.lastExternalTokenEndByte = 0
 	d.lastExternalTokenValid = false
@@ -868,27 +888,55 @@ func (d *dfaTokenSource) bashGeneratedInArithmeticExpansion(pos int) bool {
 	if d == nil || d.lexer == nil || pos <= 0 || pos > len(d.lexer.source) {
 		return false
 	}
+	if d.bashArithmeticCachePos == pos {
+		return d.bashArithmeticCacheResult
+	}
+
+	start := 0
 	depth := 0
-	src := d.lexer.source[:pos]
-	for i := 0; i < len(src); {
+	skipUntil := 0
+	if d.bashArithmeticCachePos >= 0 && pos >= d.bashArithmeticCachePos {
+		start = d.bashArithmeticCachePos
+		depth = d.bashArithmeticCacheDepth
+		skipUntil = d.bashArithmeticCacheSkipUntil
+	}
+	i := start
+	if skipUntil > i {
+		i = skipUntil
+	}
+	src := d.lexer.source
+	for i < pos {
 		switch {
-		case bytes.HasPrefix(src[i:], []byte("$((")):
+		case i+len("$((") <= pos && bytes.HasPrefix(src[i:], []byte("$((")):
 			depth++
 			i += len("$((")
-		case depth > 0 && bytes.HasPrefix(src[i:], []byte("))")):
+			skipUntil = 0
+		case depth > 0 && i+len("))") <= pos && bytes.HasPrefix(src[i:], []byte("))")):
 			depth--
 			i += len("))")
+			skipUntil = 0
 		case src[i] == '\\':
 			i += 2
+			if i > pos {
+				skipUntil = i
+			} else {
+				skipUntil = 0
+			}
 		default:
-			_, size := utf8.DecodeRune(src[i:])
+			_, size := utf8.DecodeRune(src[i:pos])
 			if size <= 0 {
 				size = 1
 			}
 			i += size
+			skipUntil = 0
 		}
 	}
-	return depth > 0
+	result := depth > 0
+	d.bashArithmeticCachePos = pos
+	d.bashArithmeticCacheDepth = depth
+	d.bashArithmeticCacheSkipUntil = skipUntil
+	d.bashArithmeticCacheResult = result
+	return result
 }
 
 type bashGeneratedConcatOperatorLookahead struct {

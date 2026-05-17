@@ -862,12 +862,7 @@ func (ts *JavaTokenSource) activeActionSpecificity(sym gotreesitter.Symbol) int 
 		supporting int
 	}
 	stats := actionStats{}
-	seen := map[gotreesitter.StateID]struct{}{}
 	visit := func(state gotreesitter.StateID) {
-		if _, ok := seen[state]; ok {
-			return
-		}
-		seen[state] = struct{}{}
 		idx := ts.lookupActionIndex(state, sym)
 		if idx == 0 || ts.lang == nil || int(idx) >= len(ts.lang.ParseActions) {
 			return
@@ -890,10 +885,22 @@ func (ts *JavaTokenSource) activeActionSpecificity(sym gotreesitter.Symbol) int 
 		}
 	}
 	visit(ts.state)
-	for _, state := range ts.glrStates {
+	for i, state := range ts.glrStates {
+		if state == ts.state || ts.priorGLRState(i, state) {
+			continue
+		}
 		visit(state)
 	}
 	return (((stats.maxDyn*1024)+stats.totalDyn)*1024 + stats.maxActions*64 + stats.totalActs*4 + stats.supporting)
+}
+
+func (ts *JavaTokenSource) priorGLRState(limit int, state gotreesitter.StateID) bool {
+	for i := 0; i < limit && i < len(ts.glrStates); i++ {
+		if ts.glrStates[i] == state {
+			return true
+		}
+	}
+	return false
 }
 
 func (ts *JavaTokenSource) nextNonSpaceByte(pos int) byte {
