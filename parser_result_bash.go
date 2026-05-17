@@ -55,6 +55,81 @@ func normalizeBashGeneratedCommandAssignments(root *Node, source []byte, lang *L
 	normalizeBashGeneratedCommandAssignmentsInNode(root, source, lang, ctx)
 }
 
+func normalizeBashCommandNameArguments(root *Node, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "bash" {
+		return
+	}
+	commandSym, ok := symbolByName(lang, "command")
+	if !ok {
+		return
+	}
+	commandNameSym, ok := symbolByName(lang, "command_name")
+	if !ok {
+		return
+	}
+	concatenationSym, ok := symbolByName(lang, "concatenation")
+	if !ok {
+		return
+	}
+	normalizeBashCommandNameArgumentsInNode(root, commandSym, commandNameSym, concatenationSym)
+}
+
+func normalizeBashCommandNameArgumentsInNode(node *Node, commandSym, commandNameSym, concatenationSym Symbol) {
+	if node == nil {
+		return
+	}
+	for _, child := range node.children {
+		normalizeBashCommandNameArgumentsInNode(child, commandSym, commandNameSym, concatenationSym)
+	}
+	splitBashCommandNameArguments(node, commandSym, commandNameSym, concatenationSym)
+}
+
+func splitBashCommandNameArguments(node *Node, commandSym, commandNameSym, concatenationSym Symbol) bool {
+	if node == nil || node.symbol != commandSym || len(node.children) != 1 {
+		return false
+	}
+	commandName := node.children[0]
+	if commandName == nil || commandName.symbol != commandNameSym || len(commandName.children) != 1 {
+		return false
+	}
+	concat := commandName.children[0]
+	if concat == nil || concat.symbol != concatenationSym || len(concat.children) < 2 {
+		return false
+	}
+
+	arena := node.ownerArena
+	parts := concat.children
+	commandWord := parts[0]
+	if commandWord == nil {
+		return false
+	}
+
+	nameChildren := []*Node{commandWord}
+	if arena != nil {
+		nameChildren = cloneNodeSliceInArena(arena, nameChildren)
+	}
+	commandName.children = nameChildren
+	commandName.fieldIDs = nil
+	commandName.fieldSources = nil
+	commandName.startByte = commandWord.startByte
+	commandName.endByte = commandWord.endByte
+	commandName.startPoint = commandWord.startPoint
+	commandName.endPoint = commandWord.endPoint
+	populateParentNode(commandName, nameChildren)
+
+	commandChildren := make([]*Node, 0, len(parts))
+	commandChildren = append(commandChildren, commandName)
+	commandChildren = append(commandChildren, parts[1:]...)
+	if arena != nil {
+		commandChildren = cloneNodeSliceInArena(arena, commandChildren)
+	}
+	node.children = commandChildren
+	node.fieldIDs = nil
+	node.fieldSources = nil
+	populateParentNode(node, commandChildren)
+	return true
+}
+
 type bashGeneratedAssignmentContext struct {
 	commandSym            Symbol
 	commandNameSym        Symbol

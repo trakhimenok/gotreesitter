@@ -7,9 +7,10 @@ func TestPromoteDefaultAlias(t *testing.T) {
 		Name: "test_default_alias",
 		Rules: map[string]*Rule{
 			"source_file": Seq(Alias(Sym("_doc"), "document", true)),
-			"_doc":        Choice(Str("a"), Str("b")),
+			"_doc":        Sym("doc_item"),
+			"doc_item":    Choice(Str("a"), Str("b")),
 		},
-		RuleOrder: []string{"source_file", "_doc"},
+		RuleOrder: []string{"source_file", "_doc", "doc_item"},
 	}
 
 	ng, err := Normalize(g)
@@ -69,9 +70,10 @@ func TestDefaultAliasRequiresAllUsesAliased(t *testing.T) {
 				Sym("_doc"),
 				Alias(Sym("_doc"), "document", true),
 			),
-			"_doc": Choice(Str("a"), Str("b")),
+			"_doc":     Sym("doc_item"),
+			"doc_item": Choice(Str("a"), Str("b")),
 		},
-		RuleOrder: []string{"source_file", "_doc"},
+		RuleOrder: []string{"source_file", "_doc", "doc_item"},
 	}
 
 	ng, err := Normalize(g)

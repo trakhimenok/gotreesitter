@@ -227,7 +227,10 @@ func (d *dfaTokenSource) Next() Token {
 				d.lexer.pos = int(tok.EndByte)
 				d.lexer.row = tok.EndPoint.Row
 				d.lexer.col = tok.EndPoint.Column
-			} else {
+			} else if d.language.Name == "comment" {
+				// tree-sitter-comment's DFA text token can skip to a later tag.
+				// Only that grammar should retry the external scanner at the
+				// DFA token start; broader retries perturb structural scanners.
 				dfaEndPos := d.lexer.pos
 				dfaEndRow := d.lexer.row
 				dfaEndCol := d.lexer.col
