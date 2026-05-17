@@ -320,15 +320,11 @@ func TestParseIncrementalReleaseKeepsBorrowedNodesAlive(t *testing.T) {
 	if oldArena.refs.Load() < 2 {
 		t.Fatalf("expected borrowed arena to be retained by new tree, refs=%d", oldArena.refs.Load())
 	}
-	foundBorrowed := false
-	for _, a := range newTree.borrowedArena {
-		if a == oldArena {
-			foundBorrowed = true
-			break
-		}
+	if newTree.arena != oldArena {
+		t.Fatalf("expected new tree to retain reused node arena as primary arena, got %p want %p", newTree.arena, oldArena)
 	}
-	if !foundBorrowed {
-		t.Fatal("expected new tree to track reused node arena in borrowedArena")
+	if len(newTree.borrowedArena) != 0 {
+		t.Fatalf("new tree borrowed arenas = %d, want 0 for primary arena reuse", len(newTree.borrowedArena))
 	}
 
 	oldTree.Release()
