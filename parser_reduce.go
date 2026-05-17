@@ -434,6 +434,9 @@ func (p *Parser) tryFastVisibleReduceActionFromGSS(s *glrStack, act ParseAction,
 	}
 
 	children := arena.allocNodeSliceNoClear(childCount)
+	if perfCountersEnabled {
+		perfRecordReduceChildrenFastGSS(childCount)
+	}
 	copy(children, childBuf[:childCount])
 	named := p.isNamedSymbol(act.Symbol)
 	var parent *Node
@@ -1141,6 +1144,9 @@ func materializeReduceChildrenFromScratch(scratch *reduceBuildScratch, arena *no
 		return nil, nil, nil
 	}
 	children := arena.allocNodeSliceNoClear(len(scratch.nodes))
+	if perfCountersEnabled {
+		perfRecordReduceChildrenScratch(len(scratch.nodes))
+	}
 	copy(children, scratch.nodes)
 	if !scratch.trackFields {
 		return children, nil, nil
@@ -1183,6 +1189,9 @@ func (p *Parser) buildReduceChildrenAllVisible(entries []stackEntry, start, end,
 	}
 
 	children := arena.allocNodeSliceNoClear(visibleCount)
+	if perfCountersEnabled {
+		perfRecordReduceChildrenAllVisible(visibleCount)
+	}
 	var fieldIDs []FieldID
 	var fieldSources []uint8
 	if rawFieldIDs != nil {
@@ -1440,6 +1449,9 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 			return nil, nil, nil
 		}
 		children := arena.allocNodeSliceNoClear(visibleCount)
+		if perfCountersEnabled {
+			perfRecordReduceChildrenNoAlias(visibleCount)
+		}
 		out := 0
 		for i := start; i < end; i++ {
 			n := entries[i].node

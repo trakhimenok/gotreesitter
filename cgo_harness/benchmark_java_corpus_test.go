@@ -661,8 +661,12 @@ func formatJavaPerfStats(p gotreesitter.PerfCounters) string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"parent_child_ptrs=%d extra_nodes=%d error_nodes=%d merge_calls=%d merge_overflow=%d merge_replacements=%d stackeq_calls=%d stackeq_true=%d stackeq_hash_miss_skips=%d stackcmp_calls=%d conflicts_rr=%d conflicts_rs=%d conflicts_other=%d reduce_chain_steps=%d reduce_chain_max_len=%d reduce_chain_break_multi=%d reduce_chain_break_shift=%d reduce_chain_break_accept=%d forks=%d max_stacks=%d lex_bytes=%d lex_tokens=%d",
+		"parent_child_ptrs=%d reduce_fast_gss=%d reduce_all_visible=%d reduce_no_alias=%d reduce_scratch=%d extra_nodes=%d error_nodes=%d merge_calls=%d merge_overflow=%d merge_replacements=%d stackeq_calls=%d stackeq_true=%d stackeq_hash_miss_skips=%d stackcmp_calls=%d conflicts_rr=%d conflicts_rs=%d conflicts_other=%d reduce_chain_steps=%d reduce_chain_max_len=%d reduce_chain_break_multi=%d reduce_chain_break_shift=%d reduce_chain_break_accept=%d forks=%d max_stacks=%d lex_bytes=%d lex_tokens=%d",
 		p.ParentChildPointers,
+		p.ReduceChildrenFastGSS,
+		p.ReduceChildrenAllVis,
+		p.ReduceChildrenNoAlias,
+		p.ReduceChildrenScratch,
 		p.ExtraNodes,
 		p.ErrorNodes,
 		p.MergeCalls,

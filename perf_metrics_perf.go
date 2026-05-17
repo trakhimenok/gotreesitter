@@ -50,6 +50,10 @@ type perfCountersData struct {
 	reduceChainBreakShift  atomic.Uint64
 	reduceChainBreakAccept atomic.Uint64
 	parentChildPointers    atomic.Uint64
+	reduceChildrenFastGSS  atomic.Uint64
+	reduceChildrenAllVis   atomic.Uint64
+	reduceChildrenNoAlias  atomic.Uint64
+	reduceChildrenScratch  atomic.Uint64
 	extraNodes             atomic.Uint64
 	errorNodes             atomic.Uint64
 	mergeStacksInHist      [perfMergeHistBins]atomic.Uint64
@@ -100,6 +104,10 @@ type PerfCounters struct {
 	ReduceChainBreakShift  uint64
 	ReduceChainBreakAccept uint64
 	ParentChildPointers    uint64
+	ReduceChildrenFastGSS  uint64
+	ReduceChildrenAllVis   uint64
+	ReduceChildrenNoAlias  uint64
+	ReduceChildrenScratch  uint64
 	ExtraNodes             uint64
 	ErrorNodes             uint64
 	MergeStacksInHist      [perfMergeHistBins]uint64
@@ -140,6 +148,10 @@ func ResetPerfCounters() {
 	perfCounters.reuseNonLeafStateMiss.Store(0)
 	perfCounters.reuseNonLeafStateZero.Store(0)
 	perfCounters.parentChildPointers.Store(0)
+	perfCounters.reduceChildrenFastGSS.Store(0)
+	perfCounters.reduceChildrenAllVis.Store(0)
+	perfCounters.reduceChildrenNoAlias.Store(0)
+	perfCounters.reduceChildrenScratch.Store(0)
 	perfCounters.extraNodes.Store(0)
 	perfCounters.errorNodes.Store(0)
 	for i := range perfCounters.mergeStacksInHist {
@@ -211,6 +223,10 @@ func PerfCountersSnapshot() PerfCounters {
 	out.ReduceChainBreakShift = perfCounters.reduceChainBreakShift.Load()
 	out.ReduceChainBreakAccept = perfCounters.reduceChainBreakAccept.Load()
 	out.ParentChildPointers = perfCounters.parentChildPointers.Load()
+	out.ReduceChildrenFastGSS = perfCounters.reduceChildrenFastGSS.Load()
+	out.ReduceChildrenAllVis = perfCounters.reduceChildrenAllVis.Load()
+	out.ReduceChildrenNoAlias = perfCounters.reduceChildrenNoAlias.Load()
+	out.ReduceChildrenScratch = perfCounters.reduceChildrenScratch.Load()
 	out.ExtraNodes = perfCounters.extraNodes.Load()
 	out.ErrorNodes = perfCounters.errorNodes.Load()
 	for i := range out.MergeOutHist {
@@ -410,6 +426,30 @@ func perfRecordReduceChainBreakAccept() {
 func perfRecordParentChildren(count int) {
 	if count > 0 {
 		perfCounters.parentChildPointers.Add(uint64(count))
+	}
+}
+
+func perfRecordReduceChildrenFastGSS(count int) {
+	if count > 0 {
+		perfCounters.reduceChildrenFastGSS.Add(uint64(count))
+	}
+}
+
+func perfRecordReduceChildrenAllVisible(count int) {
+	if count > 0 {
+		perfCounters.reduceChildrenAllVis.Add(uint64(count))
+	}
+}
+
+func perfRecordReduceChildrenNoAlias(count int) {
+	if count > 0 {
+		perfCounters.reduceChildrenNoAlias.Add(uint64(count))
+	}
+}
+
+func perfRecordReduceChildrenScratch(count int) {
+	if count > 0 {
+		perfCounters.reduceChildrenScratch.Add(uint64(count))
 	}
 }
 
