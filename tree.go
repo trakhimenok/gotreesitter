@@ -20,26 +20,26 @@ type Range struct {
 
 // Node is a syntax tree node.
 type Node struct {
-	symbol       Symbol
+	children     []*Node
+	fieldIDs     []FieldID // parallel to children, 0 = no field
+	fieldSources []uint8   // parallel to children, 0 = none, 1 = direct, 2 = inherited
+	parent       *Node
+	ownerArena   *nodeArena
+	childIndex   int
+	startPoint   Point
+	endPoint     Point
 	parseState   StateID // parser state after this node was pushed
 	preGotoState StateID // parser state before goto (state exposed after popping children)
 	startByte    uint32
 	endByte      uint32
-	startPoint   Point
-	endPoint     Point
-	children     []*Node
-	fieldIDs     []FieldID // parallel to children, 0 = no field
-	fieldSources []uint8   // parallel to children, 0 = none, 1 = direct, 2 = inherited
+	equivVersion uint32
+	symbol       Symbol
+	productionID uint16
 	isNamed      bool
 	isExtra      bool
 	isMissing    bool
 	hasError     bool
 	dirty        bool // set by Tree.Edit for nodes touched by edits
-	productionID uint16
-	equivVersion uint32
-	parent       *Node
-	childIndex   int
-	ownerArena   *nodeArena
 }
 
 func nodeInitEquivVersion(n *Node) {
