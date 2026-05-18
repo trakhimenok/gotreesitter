@@ -142,6 +142,9 @@ type ParseRuntime struct {
 	ExternalScannerCheckpointSlotsAllocated uint64
 	ExternalScannerCheckpointBytesAllocated int64
 	ExternalScannerSnapshotBytesAllocated   uint64
+	LeafNodesConstructed                    uint64
+	ParentNodesConstructed                  uint64
+	NoTreeReduceNodesConstructed            uint64
 }
 
 // Summary returns a stable one-line diagnostic string for parse-runtime stats.
@@ -775,6 +778,7 @@ func newLeafNodeInArena(arena *nodeArena, sym Symbol, named bool, startByte, end
 	n.endPoint = endPoint
 	n.childIndex = -1
 	n.ownerArena = arena
+	arena.leafNodesConstructed++
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {
 		arena.audit.recordNodeAlloc(n, runtimeAuditNodeKindLeaf)
@@ -806,6 +810,7 @@ func newParentNodeInArenaWithFieldSources(arena *nodeArena, sym Symbol, named bo
 	}
 	n.productionID = productionID
 	n.childIndex = -1
+	arena.parentNodesConstructed++
 	populateParentNode(n, children)
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {
@@ -834,6 +839,7 @@ func newParentNodeInArenaNoLinksWithFieldSources(arena *nodeArena, sym Symbol, n
 	}
 	n.productionID = productionID
 	n.childIndex = -1
+	arena.parentNodesConstructed++
 	populateParentNodeNoLinks(n, children, trackChildErrors)
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {

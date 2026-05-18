@@ -36,6 +36,37 @@ func TestParseRuntimeReportsAcceptedOnCompleteParse(t *testing.T) {
 	if rt.Iterations <= 0 {
 		t.Fatalf("Iterations = %d, want > 0", rt.Iterations)
 	}
+	if rt.LeafNodesConstructed == 0 {
+		t.Fatal("LeafNodesConstructed = 0, want > 0")
+	}
+	if rt.ParentNodesConstructed == 0 {
+		t.Fatal("ParentNodesConstructed = 0, want > 0")
+	}
+	if rt.NoTreeReduceNodesConstructed != 0 {
+		t.Fatalf("NoTreeReduceNodesConstructed = %d, want 0", rt.NoTreeReduceNodesConstructed)
+	}
+}
+
+func TestParseRuntimeReportsNoTreeNodeVolume(t *testing.T) {
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+
+	tree, err := parser.ParseNoTreeBenchmarkOnly([]byte("1+2"))
+	if err != nil {
+		t.Fatalf("ParseNoTreeBenchmarkOnly() error = %v", err)
+	}
+	defer tree.Release()
+	rt := tree.ParseRuntime()
+
+	if rt.LeafNodesConstructed == 0 {
+		t.Fatal("LeafNodesConstructed = 0, want > 0")
+	}
+	if rt.ParentNodesConstructed != 0 {
+		t.Fatalf("ParentNodesConstructed = %d, want 0", rt.ParentNodesConstructed)
+	}
+	if rt.NoTreeReduceNodesConstructed == 0 {
+		t.Fatal("NoTreeReduceNodesConstructed = 0, want > 0")
+	}
 }
 
 type eofAtZeroTokenSource struct{}

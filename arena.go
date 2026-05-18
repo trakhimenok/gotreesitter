@@ -89,6 +89,9 @@ type nodeArena struct {
 
 	externalScannerCheckpointRecords    uint64
 	externalScannerSnapshotPayloadBytes uint64
+	leafNodesConstructed                uint64
+	parentNodesConstructed              uint64
+	noTreeReduceNodesConstructed        uint64
 }
 
 type nodeSlab struct {
@@ -403,6 +406,9 @@ func (a *nodeArena) reset() {
 	a.audit = nil
 	a.externalScannerCheckpointRecords = 0
 	a.externalScannerSnapshotPayloadBytes = 0
+	a.leafNodesConstructed = 0
+	a.parentNodesConstructed = 0
+	a.noTreeReduceNodesConstructed = 0
 	if len(a.fieldSlabs) > 0 {
 		retained := 0
 		keep := 0

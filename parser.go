@@ -1402,6 +1402,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		parseRuntime.ExternalScannerCheckpointSlotsAllocated = arena.externalScannerCheckpointSlotsAllocated()
 		parseRuntime.ExternalScannerCheckpointBytesAllocated = arena.externalScannerCheckpointBytesAllocated()
 		parseRuntime.ExternalScannerSnapshotBytesAllocated = arena.externalScannerSnapshotPayloadBytes
+		parseRuntime.LeafNodesConstructed = arena.leafNodesConstructed
+		parseRuntime.ParentNodesConstructed = arena.parentNodesConstructed
+		parseRuntime.NoTreeReduceNodesConstructed = arena.noTreeReduceNodesConstructed
 		arenaStatsCaptured = true
 	}
 	scratchStatsCaptured := false

@@ -46,6 +46,9 @@ type pythonRuntimeBenchStats struct {
 	externalCheckpointSlots         uint64
 	externalCheckpointBytes         int64
 	externalCheckpointSnapshotBytes uint64
+	leafNodesConstructed            uint64
+	parentNodesConstructed          uint64
+	noTreeReduceNodesConstructed    uint64
 	maxStacksSeen                   int
 }
 
@@ -67,6 +70,9 @@ func (s *pythonRuntimeBenchStats) add(rt gotreesitter.ParseRuntime) {
 	s.externalCheckpointSlots += rt.ExternalScannerCheckpointSlotsAllocated
 	s.externalCheckpointBytes += rt.ExternalScannerCheckpointBytesAllocated
 	s.externalCheckpointSnapshotBytes += rt.ExternalScannerSnapshotBytesAllocated
+	s.leafNodesConstructed += rt.LeafNodesConstructed
+	s.parentNodesConstructed += rt.ParentNodesConstructed
+	s.noTreeReduceNodesConstructed += rt.NoTreeReduceNodesConstructed
 	if rt.MaxStacksSeen > s.maxStacksSeen {
 		s.maxStacksSeen = rt.MaxStacksSeen
 	}
@@ -88,9 +94,12 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 	}
 	b.ReportMetric(float64(s.iterations)/tokens, "iters/token")
 	b.ReportMetric(float64(s.nodesAllocated)/tokens, "nodes/token")
+	b.ReportMetric(float64(s.leafNodesConstructed)/tokens, "leaf_nodes/token")
+	b.ReportMetric(float64(s.parentNodesConstructed)/tokens, "parent_nodes/token")
+	b.ReportMetric(float64(s.noTreeReduceNodesConstructed)/tokens, "notree_nodes/token")
 	if s.parentNodesAllocated != 0 || s.leafNodesAllocated != 0 {
-		b.ReportMetric(float64(s.parentNodesAllocated)/tokens, "parent_nodes/token")
-		b.ReportMetric(float64(s.leafNodesAllocated)/tokens, "leaf_nodes/token")
+		b.ReportMetric(float64(s.parentNodesAllocated)/tokens, "surv_parent_nodes/token")
+		b.ReportMetric(float64(s.leafNodesAllocated)/tokens, "surv_leaf_nodes/token")
 	}
 	b.ReportMetric(float64(gssNodes)/tokens, "gss_nodes/token")
 	b.ReportMetric(float64(s.singleStackGSSNodes)/tokens, "single_gss/token")

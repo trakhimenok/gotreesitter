@@ -2006,6 +2006,7 @@ func newNoTreeReduceNodeInArena(arena *nodeArena, sym Symbol, named bool, produc
 	} else {
 		n = arena.allocNodeFast()
 		n.ownerArena = arena
+		arena.noTreeReduceNodesConstructed++
 	}
 	n.symbol = sym
 	n.isNamed = named
