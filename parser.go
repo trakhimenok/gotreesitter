@@ -1101,6 +1101,9 @@ func (p *Parser) parseIncrementalInternal(source []byte, oldTree *Tree, ts Token
 		}
 		return tree
 	}
+	if oldTree != nil {
+		oldTree.ensureExternalScannerCheckpoints()
+	}
 
 	p.reuseMu.Lock()
 	defer p.reuseMu.Unlock()

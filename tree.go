@@ -713,6 +713,14 @@ func (t *Tree) ensureParentLinks() {
 	t.root.ensureParentLinks()
 }
 
+func (t *Tree) ensureExternalScannerCheckpoints() {
+	if t == nil || !t.externalScannerCheckpointsDeferred {
+		return
+	}
+	t.externalScannerCheckpointsDeferred = false
+	rebuildExternalScannerCheckpoints(t.root, t.language)
+}
+
 func newParentNode(arena *nodeArena, sym Symbol, named bool, children []*Node, fieldIDs []FieldID, productionID uint16) *Node {
 	var n *Node
 	if arena == nil {
@@ -833,18 +841,19 @@ func newParentNodeInArenaNoLinksWithFieldSources(arena *nodeArena, sym Symbol, n
 // Tree is safe for concurrent reads after construction. Edit and Release are
 // not safe for concurrent use.
 type Tree struct {
-	root           *Node
-	source         []byte
-	sourceEncoding InputEncoding
-	sourceUTF16    []uint16
-	utf16Map       *utf16SourceMap
-	language       *Language
-	edits          []InputEdit  // pending edits applied to this tree
-	lastEditedLeaf *Node        // deepest leaf overlapped by the most recent edit, when tracked
-	arena          *nodeArena   // primary arena that owns newly-built nodes
-	borrowedArena  []*nodeArena // arenas borrowed via subtree reuse
-	parseRuntime   ParseRuntime
-	released       bool
+	root                               *Node
+	source                             []byte
+	sourceEncoding                     InputEncoding
+	sourceUTF16                        []uint16
+	utf16Map                           *utf16SourceMap
+	language                           *Language
+	edits                              []InputEdit  // pending edits applied to this tree
+	lastEditedLeaf                     *Node        // deepest leaf overlapped by the most recent edit, when tracked
+	arena                              *nodeArena   // primary arena that owns newly-built nodes
+	borrowedArena                      []*nodeArena // arenas borrowed via subtree reuse
+	parseRuntime                       ParseRuntime
+	externalScannerCheckpointsDeferred bool
+	released                           bool
 }
 
 const maxRetainedTreeEditCap = 8
@@ -872,16 +881,20 @@ func newTreeWithArenas(root *Node, source []byte, lang *Language, arena *nodeAre
 func newTreeWithUniqueArenas(root *Node, source []byte, lang *Language, arena *nodeArena, borrowed []*nodeArena) *Tree {
 	tree := treePool.Get().(*Tree)
 	edits := reusableTreeEditScratch(tree.edits)
+	deferExternalCheckpoints := root != nil && languageUsesExternalScannerCheckpoints(lang)
 	*tree = Tree{
-		root:           root,
-		source:         source,
-		sourceEncoding: InputEncodingUTF8,
-		language:       lang,
-		edits:          edits,
-		arena:          arena,
-		borrowedArena:  borrowed,
+		root:                               root,
+		source:                             source,
+		sourceEncoding:                     InputEncodingUTF8,
+		language:                           lang,
+		edits:                              edits,
+		arena:                              arena,
+		borrowedArena:                      borrowed,
+		externalScannerCheckpointsDeferred: deferExternalCheckpoints,
 	}
-	rebuildExternalScannerCheckpoints(root, lang)
+	if !deferExternalCheckpoints {
+		rebuildExternalScannerCheckpoints(root, lang)
+	}
 	return tree
 }
 
