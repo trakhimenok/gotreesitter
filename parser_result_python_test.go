@@ -4,6 +4,29 @@ import (
 	"testing"
 )
 
+func TestPythonSourceMayContainFString(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{name: "plain", src: `{"key": "value"}`, want: false},
+		{name: "f single", src: `f'{x}'`, want: true},
+		{name: "f double", src: `f"{x}"`, want: true},
+		{name: "raw f", src: `rf"{x}"`, want: true},
+		{name: "f raw", src: `Fr"{x}"`, want: true},
+		{name: "ordinary raw", src: `r"{x}"`, want: false},
+		{name: "identifier suffix", src: `self"{x}"`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pythonSourceMayContainFString([]byte(tt.src)); got != tt.want {
+				t.Fatalf("pythonSourceMayContainFString(%q) = %v, want %v", tt.src, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildResultFromNodesCollapsesPythonTerminalIfSuffix(t *testing.T) {
 	lang := &Language{
 		Name:       "python",

@@ -12,7 +12,7 @@ func normalizePythonCompatibility(root *Node, source []byte, lang *Language) {
 	if bytes.Contains(source, []byte("print")) && bytes.Contains(source, []byte(">>")) {
 		normalizePythonPrintStatements(root, source, lang)
 	}
-	if bytes.IndexByte(source, '{') >= 0 {
+	if bytes.IndexByte(source, '{') >= 0 && pythonSourceMayContainFString(source) {
 		normalizePythonInterpolationPatterns(root, lang)
 	}
 	if bytes.Contains(source, []byte("pass")) {
@@ -21,6 +21,43 @@ func normalizePythonCompatibility(root *Node, source []byte, lang *Language) {
 	if bytes.Contains(source, []byte("\\\n")) || bytes.Contains(source, []byte("\\\r\n")) {
 		normalizePythonStringContinuationEscapes(root, source, lang)
 	}
+}
+
+func pythonSourceMayContainFString(source []byte) bool {
+	for i, c := range source {
+		if c != '"' && c != '\'' {
+			continue
+		}
+		start := i
+		for start > 0 && i-start < 3 && pythonStringPrefixByte(source[start-1]) {
+			start--
+		}
+		if start == i {
+			continue
+		}
+		if start > 0 && pythonIdentifierByte(source[start-1]) {
+			continue
+		}
+		for _, p := range source[start:i] {
+			if p == 'f' || p == 'F' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func pythonStringPrefixByte(c byte) bool {
+	switch c {
+	case 'b', 'B', 'f', 'F', 'r', 'R', 'u', 'U':
+		return true
+	default:
+		return false
+	}
+}
+
+func pythonIdentifierByte(c byte) bool {
+	return c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9')
 }
 
 func normalizePythonInterpolationPatterns(root *Node, lang *Language) {
