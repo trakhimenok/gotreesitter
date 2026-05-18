@@ -8,8 +8,10 @@ const (
 )
 
 type runtimeAuditNodeInfo struct {
-	gen  uint32
-	kind runtimeAuditNodeKind
+	gen                 uint32
+	kind                runtimeAuditNodeKind
+	reduceChildPath     reduceChildPath
+	reduceChildPointers uint32
 }
 
 type runtimeAudit struct {
@@ -22,22 +24,42 @@ type runtimeAudit struct {
 	seenGSS  map[*gssNode]struct{}
 	seenNode map[*Node]struct{}
 
-	currentGSSAllocated    uint64
-	currentGSSRetained     uint64
-	currentParentAllocated uint64
-	currentParentRetained  uint64
-	currentLeafAllocated   uint64
-	currentLeafRetained    uint64
+	currentGSSAllocated                 uint64
+	currentGSSRetained                  uint64
+	currentParentAllocated              uint64
+	currentParentRetained               uint64
+	currentLeafAllocated                uint64
+	currentLeafRetained                 uint64
+	currentChildSlicesAllocated         uint64
+	currentChildSlicesRetained          uint64
+	currentChildPointersAllocated       uint64
+	currentChildPointersRetained        uint64
+	currentReduceChildSlicesAllocated   [reduceChildPathCount]uint64
+	currentReduceChildSlicesRetained    [reduceChildPathCount]uint64
+	currentReduceChildPointersAllocated [reduceChildPathCount]uint64
+	currentReduceChildPointersRetained  [reduceChildPathCount]uint64
 
-	totalGSSAllocated    uint64
-	totalGSSRetained     uint64
-	totalGSSDropped      uint64
-	totalParentAllocated uint64
-	totalParentRetained  uint64
-	totalParentDropped   uint64
-	totalLeafAllocated   uint64
-	totalLeafRetained    uint64
-	totalLeafDropped     uint64
+	totalGSSAllocated                 uint64
+	totalGSSRetained                  uint64
+	totalGSSDropped                   uint64
+	totalParentAllocated              uint64
+	totalParentRetained               uint64
+	totalParentDropped                uint64
+	totalLeafAllocated                uint64
+	totalLeafRetained                 uint64
+	totalLeafDropped                  uint64
+	totalChildSlicesAllocated         uint64
+	totalChildSlicesRetained          uint64
+	totalChildSlicesDropped           uint64
+	totalChildPointersAllocated       uint64
+	totalChildPointersRetained        uint64
+	totalChildPointersDropped         uint64
+	totalReduceChildSlicesAllocated   [reduceChildPathCount]uint64
+	totalReduceChildSlicesRetained    [reduceChildPathCount]uint64
+	totalReduceChildSlicesDropped     [reduceChildPathCount]uint64
+	totalReduceChildPointersAllocated [reduceChildPathCount]uint64
+	totalReduceChildPointersRetained  [reduceChildPathCount]uint64
+	totalReduceChildPointersDropped   [reduceChildPathCount]uint64
 
 	mergeStacksIn       uint64
 	mergeStacksOut      uint64
@@ -68,6 +90,14 @@ func (a *runtimeAudit) beginParse() {
 	a.currentParentRetained = 0
 	a.currentLeafAllocated = 0
 	a.currentLeafRetained = 0
+	a.currentChildSlicesAllocated = 0
+	a.currentChildSlicesRetained = 0
+	a.currentChildPointersAllocated = 0
+	a.currentChildPointersRetained = 0
+	a.currentReduceChildSlicesAllocated = [reduceChildPathCount]uint64{}
+	a.currentReduceChildSlicesRetained = [reduceChildPathCount]uint64{}
+	a.currentReduceChildPointersAllocated = [reduceChildPathCount]uint64{}
+	a.currentReduceChildPointersRetained = [reduceChildPathCount]uint64{}
 	a.totalGSSAllocated = 0
 	a.totalGSSRetained = 0
 	a.totalGSSDropped = 0
@@ -77,6 +107,18 @@ func (a *runtimeAudit) beginParse() {
 	a.totalLeafAllocated = 0
 	a.totalLeafRetained = 0
 	a.totalLeafDropped = 0
+	a.totalChildSlicesAllocated = 0
+	a.totalChildSlicesRetained = 0
+	a.totalChildSlicesDropped = 0
+	a.totalChildPointersAllocated = 0
+	a.totalChildPointersRetained = 0
+	a.totalChildPointersDropped = 0
+	a.totalReduceChildSlicesAllocated = [reduceChildPathCount]uint64{}
+	a.totalReduceChildSlicesRetained = [reduceChildPathCount]uint64{}
+	a.totalReduceChildSlicesDropped = [reduceChildPathCount]uint64{}
+	a.totalReduceChildPointersAllocated = [reduceChildPathCount]uint64{}
+	a.totalReduceChildPointersRetained = [reduceChildPathCount]uint64{}
+	a.totalReduceChildPointersDropped = [reduceChildPathCount]uint64{}
 	a.mergeStacksIn = 0
 	a.mergeStacksOut = 0
 	a.mergeSlotsUsed = 0
@@ -114,6 +156,14 @@ func (a *runtimeAudit) reset() {
 	a.currentParentRetained = 0
 	a.currentLeafAllocated = 0
 	a.currentLeafRetained = 0
+	a.currentChildSlicesAllocated = 0
+	a.currentChildSlicesRetained = 0
+	a.currentChildPointersAllocated = 0
+	a.currentChildPointersRetained = 0
+	a.currentReduceChildSlicesAllocated = [reduceChildPathCount]uint64{}
+	a.currentReduceChildSlicesRetained = [reduceChildPathCount]uint64{}
+	a.currentReduceChildPointersAllocated = [reduceChildPathCount]uint64{}
+	a.currentReduceChildPointersRetained = [reduceChildPathCount]uint64{}
 	a.totalGSSAllocated = 0
 	a.totalGSSRetained = 0
 	a.totalGSSDropped = 0
@@ -123,6 +173,18 @@ func (a *runtimeAudit) reset() {
 	a.totalLeafAllocated = 0
 	a.totalLeafRetained = 0
 	a.totalLeafDropped = 0
+	a.totalChildSlicesAllocated = 0
+	a.totalChildSlicesRetained = 0
+	a.totalChildSlicesDropped = 0
+	a.totalChildPointersAllocated = 0
+	a.totalChildPointersRetained = 0
+	a.totalChildPointersDropped = 0
+	a.totalReduceChildSlicesAllocated = [reduceChildPathCount]uint64{}
+	a.totalReduceChildSlicesRetained = [reduceChildPathCount]uint64{}
+	a.totalReduceChildSlicesDropped = [reduceChildPathCount]uint64{}
+	a.totalReduceChildPointersAllocated = [reduceChildPathCount]uint64{}
+	a.totalReduceChildPointersRetained = [reduceChildPathCount]uint64{}
+	a.totalReduceChildPointersDropped = [reduceChildPathCount]uint64{}
 	a.mergeStacksIn = 0
 	a.mergeStacksOut = 0
 	a.mergeSlotsUsed = 0
@@ -158,6 +220,14 @@ func (a *runtimeAudit) startToken(stacks []glrStack) {
 	a.currentParentRetained = 0
 	a.currentLeafAllocated = 0
 	a.currentLeafRetained = 0
+	a.currentChildSlicesAllocated = 0
+	a.currentChildSlicesRetained = 0
+	a.currentChildPointersAllocated = 0
+	a.currentChildPointersRetained = 0
+	a.currentReduceChildSlicesAllocated = [reduceChildPathCount]uint64{}
+	a.currentReduceChildSlicesRetained = [reduceChildPathCount]uint64{}
+	a.currentReduceChildPointersAllocated = [reduceChildPathCount]uint64{}
+	a.currentReduceChildPointersRetained = [reduceChildPathCount]uint64{}
 }
 
 func (a *runtimeAudit) finishParse(stacks []glrStack) {
@@ -187,6 +257,28 @@ func (a *runtimeAudit) finishToken() {
 	if a.currentLeafAllocated > a.currentLeafRetained {
 		a.totalLeafDropped += a.currentLeafAllocated - a.currentLeafRetained
 	}
+	a.totalChildSlicesAllocated += a.currentChildSlicesAllocated
+	a.totalChildSlicesRetained += a.currentChildSlicesRetained
+	if a.currentChildSlicesAllocated > a.currentChildSlicesRetained {
+		a.totalChildSlicesDropped += a.currentChildSlicesAllocated - a.currentChildSlicesRetained
+	}
+	a.totalChildPointersAllocated += a.currentChildPointersAllocated
+	a.totalChildPointersRetained += a.currentChildPointersRetained
+	if a.currentChildPointersAllocated > a.currentChildPointersRetained {
+		a.totalChildPointersDropped += a.currentChildPointersAllocated - a.currentChildPointersRetained
+	}
+	for path := reduceChildPath(1); path < reduceChildPathCount; path++ {
+		a.totalReduceChildSlicesAllocated[path] += a.currentReduceChildSlicesAllocated[path]
+		a.totalReduceChildSlicesRetained[path] += a.currentReduceChildSlicesRetained[path]
+		if a.currentReduceChildSlicesAllocated[path] > a.currentReduceChildSlicesRetained[path] {
+			a.totalReduceChildSlicesDropped[path] += a.currentReduceChildSlicesAllocated[path] - a.currentReduceChildSlicesRetained[path]
+		}
+		a.totalReduceChildPointersAllocated[path] += a.currentReduceChildPointersAllocated[path]
+		a.totalReduceChildPointersRetained[path] += a.currentReduceChildPointersRetained[path]
+		if a.currentReduceChildPointersAllocated[path] > a.currentReduceChildPointersRetained[path] {
+			a.totalReduceChildPointersDropped[path] += a.currentReduceChildPointersAllocated[path] - a.currentReduceChildPointersRetained[path]
+		}
+	}
 	a.tokenActive = false
 }
 
@@ -205,12 +297,31 @@ func (a *runtimeAudit) recordNodeAlloc(n *Node, kind runtimeAuditNodeKind) {
 	switch kind {
 	case runtimeAuditNodeKindParent:
 		a.currentParentAllocated++
+		if childCount := len(n.children); childCount > 0 {
+			a.currentChildSlicesAllocated++
+			a.currentChildPointersAllocated += uint64(childCount)
+		}
 	case runtimeAuditNodeKindLeaf:
 		a.currentLeafAllocated++
 	default:
 		return
 	}
 	a.nodeInfo[n] = runtimeAuditNodeInfo{gen: a.currentTokenGen, kind: kind}
+}
+
+func (a *runtimeAudit) recordReduceParentChildPath(n *Node, path reduceChildPath, childCount int) {
+	if a == nil || !a.enabled || !a.tokenActive || n == nil || !path.valid() || childCount <= 0 {
+		return
+	}
+	info, ok := a.nodeInfo[n]
+	if !ok || info.gen != a.currentTokenGen || info.kind != runtimeAuditNodeKindParent {
+		return
+	}
+	info.reduceChildPath = path
+	info.reduceChildPointers = uint32(childCount)
+	a.nodeInfo[n] = info
+	a.currentReduceChildSlicesAllocated[path]++
+	a.currentReduceChildPointersAllocated[path] += uint64(childCount)
 }
 
 func (a *runtimeAudit) recordMerge(in, out, slots int) {
@@ -239,22 +350,26 @@ func (a *runtimeAudit) observeFrontier(stacks []glrStack) {
 	var gssRetained uint64
 	var parentRetained uint64
 	var leafRetained uint64
+	var childSlicesRetained uint64
+	var childPointersRetained uint64
 	for i := range stacks {
 		if stacks[i].dead {
 			continue
 		}
 		if stacks[i].gss.head != nil {
-			a.observeGSSChain(stacks[i].gss.head, &gssRetained, &parentRetained, &leafRetained)
+			a.observeGSSChain(stacks[i].gss.head, &gssRetained, &parentRetained, &leafRetained, &childSlicesRetained, &childPointersRetained)
 			continue
 		}
-		a.observeEntries(stacks[i].entries, &parentRetained, &leafRetained)
+		a.observeEntries(stacks[i].entries, &parentRetained, &leafRetained, &childSlicesRetained, &childPointersRetained)
 	}
 	a.currentGSSRetained = gssRetained
 	a.currentParentRetained = parentRetained
 	a.currentLeafRetained = leafRetained
+	a.currentChildSlicesRetained = childSlicesRetained
+	a.currentChildPointersRetained = childPointersRetained
 }
 
-func (a *runtimeAudit) observeGSSChain(head *gssNode, gssRetained, parentRetained, leafRetained *uint64) {
+func (a *runtimeAudit) observeGSSChain(head *gssNode, gssRetained, parentRetained, leafRetained, childSlicesRetained, childPointersRetained *uint64) {
 	if a == nil || head == nil {
 		return
 	}
@@ -267,11 +382,11 @@ func (a *runtimeAudit) observeGSSChain(head *gssNode, gssRetained, parentRetaine
 			a.seenGSS[n] = struct{}{}
 			*gssRetained = *gssRetained + 1
 		}
-		a.observeNode(stackEntryNode(n.entry), parentRetained, leafRetained)
+		a.observeNode(stackEntryNode(n.entry), parentRetained, leafRetained, childSlicesRetained, childPointersRetained)
 	}
 }
 
-func (a *runtimeAudit) observeEntries(entries []stackEntry, parentRetained, leafRetained *uint64) {
+func (a *runtimeAudit) observeEntries(entries []stackEntry, parentRetained, leafRetained, childSlicesRetained, childPointersRetained *uint64) {
 	if a == nil || len(entries) == 0 {
 		return
 	}
@@ -284,11 +399,11 @@ func (a *runtimeAudit) observeEntries(entries []stackEntry, parentRetained, leaf
 		if !ok || info.gen != a.currentTokenGen {
 			break
 		}
-		a.observeNode(node, parentRetained, leafRetained)
+		a.observeNode(node, parentRetained, leafRetained, childSlicesRetained, childPointersRetained)
 	}
 }
 
-func (a *runtimeAudit) observeNode(node *Node, parentRetained, leafRetained *uint64) {
+func (a *runtimeAudit) observeNode(node *Node, parentRetained, leafRetained, childSlicesRetained, childPointersRetained *uint64) {
 	if a == nil || node == nil {
 		return
 	}
@@ -303,8 +418,30 @@ func (a *runtimeAudit) observeNode(node *Node, parentRetained, leafRetained *uin
 	switch info.kind {
 	case runtimeAuditNodeKindParent:
 		*parentRetained = *parentRetained + 1
+		if childCount := len(node.children); childCount > 0 {
+			*childSlicesRetained = *childSlicesRetained + 1
+			*childPointersRetained = *childPointersRetained + uint64(childCount)
+		}
+		if info.reduceChildPath.valid() && info.reduceChildPointers > 0 {
+			a.currentReduceChildSlicesRetained[info.reduceChildPath]++
+			a.currentReduceChildPointersRetained[info.reduceChildPath] += uint64(info.reduceChildPointers)
+		}
 	case runtimeAuditNodeKindLeaf:
 		*leafRetained = *leafRetained + 1
+	}
+}
+
+func (a *runtimeAudit) reduceChildPathRuntime(path reduceChildPath) ReduceChildPathRuntime {
+	if a == nil || !path.valid() {
+		return ReduceChildPathRuntime{}
+	}
+	return ReduceChildPathRuntime{
+		SlicesAllocated:   a.totalReduceChildSlicesAllocated[path],
+		SlicesRetained:    a.totalReduceChildSlicesRetained[path],
+		SlicesDropped:     a.totalReduceChildSlicesDropped[path],
+		PointersAllocated: a.totalReduceChildPointersAllocated[path],
+		PointersRetained:  a.totalReduceChildPointersRetained[path],
+		PointersDropped:   a.totalReduceChildPointersDropped[path],
 	}
 }
 

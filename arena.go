@@ -95,6 +95,45 @@ type nodeArena struct {
 	externalScannerLastSnapshotRef      externalScannerSnapshotRef
 	leafNodesConstructed                uint64
 	parentNodesConstructed              uint64
+	fieldedParentNodesConstructed       uint64
+	unfieldedParentNodesConstructed     uint64
+	parentConstructedChildLen0          uint64
+	parentConstructedChildLen1          uint64
+	parentConstructedChildLen2          uint64
+	parentConstructedChildLen3          uint64
+	parentConstructedChildLen4Plus      uint64
+	parentConstructedNoLinks            uint64
+	parentConstructedWithLinks          uint64
+	parentConstructedTrackErrors        uint64
+	parentConstructedFieldSources       uint64
+	parentReductionVisible              uint64
+	parentReductionInvisible            uint64
+	parentReductionVisibleFielded       uint64
+	parentReductionVisibleUnfielded     uint64
+	parentReductionInvisibleFielded     uint64
+	parentReductionInvisibleUnfielded   uint64
+	parentReductionVisibleChildPointers uint64
+	parentReductionInvisibleChildPtrs   uint64
+	parentReductionVisibleChildLen0     uint64
+	parentReductionVisibleChildLen1     uint64
+	parentReductionVisibleChildLen2     uint64
+	parentReductionVisibleChildLen3     uint64
+	parentReductionVisibleChildLen4Plus uint64
+	parentReductionInvisibleChildLen0   uint64
+	parentReductionInvisibleChildLen1   uint64
+	parentReductionInvisibleChildLen2   uint64
+	parentReductionInvisibleChildLen3   uint64
+	parentReductionInvisibleChildLen4P  uint64
+	reduceChildSlicesFastGSS            uint64
+	reduceChildPointersFastGSS          uint64
+	reduceChildSlicesAllVisible         uint64
+	reduceChildPointersAllVisible       uint64
+	reduceChildSlicesNoAlias            uint64
+	reduceChildPointersNoAlias          uint64
+	reduceChildSlicesScratchGeneral     uint64
+	reduceChildPointersScratchGeneral   uint64
+	reduceChildSlicesScratchNoAlias     uint64
+	reduceChildPointersScratchNoAlias   uint64
 	noTreeReduceNodesConstructed        uint64
 	noTreeLeafNodesConstructed          uint64
 	noTreePlaceholderNodesConstructed   uint64
@@ -444,6 +483,45 @@ func (a *nodeArena) reset() {
 	a.externalScannerLastSnapshotRef = externalScannerSnapshotRef{}
 	a.leafNodesConstructed = 0
 	a.parentNodesConstructed = 0
+	a.fieldedParentNodesConstructed = 0
+	a.unfieldedParentNodesConstructed = 0
+	a.parentConstructedChildLen0 = 0
+	a.parentConstructedChildLen1 = 0
+	a.parentConstructedChildLen2 = 0
+	a.parentConstructedChildLen3 = 0
+	a.parentConstructedChildLen4Plus = 0
+	a.parentConstructedNoLinks = 0
+	a.parentConstructedWithLinks = 0
+	a.parentConstructedTrackErrors = 0
+	a.parentConstructedFieldSources = 0
+	a.parentReductionVisible = 0
+	a.parentReductionInvisible = 0
+	a.parentReductionVisibleFielded = 0
+	a.parentReductionVisibleUnfielded = 0
+	a.parentReductionInvisibleFielded = 0
+	a.parentReductionInvisibleUnfielded = 0
+	a.parentReductionVisibleChildPointers = 0
+	a.parentReductionInvisibleChildPtrs = 0
+	a.parentReductionVisibleChildLen0 = 0
+	a.parentReductionVisibleChildLen1 = 0
+	a.parentReductionVisibleChildLen2 = 0
+	a.parentReductionVisibleChildLen3 = 0
+	a.parentReductionVisibleChildLen4Plus = 0
+	a.parentReductionInvisibleChildLen0 = 0
+	a.parentReductionInvisibleChildLen1 = 0
+	a.parentReductionInvisibleChildLen2 = 0
+	a.parentReductionInvisibleChildLen3 = 0
+	a.parentReductionInvisibleChildLen4P = 0
+	a.reduceChildSlicesFastGSS = 0
+	a.reduceChildPointersFastGSS = 0
+	a.reduceChildSlicesAllVisible = 0
+	a.reduceChildPointersAllVisible = 0
+	a.reduceChildSlicesNoAlias = 0
+	a.reduceChildPointersNoAlias = 0
+	a.reduceChildSlicesScratchGeneral = 0
+	a.reduceChildPointersScratchGeneral = 0
+	a.reduceChildSlicesScratchNoAlias = 0
+	a.reduceChildPointersScratchNoAlias = 0
 	a.noTreeReduceNodesConstructed = 0
 	a.noTreeLeafNodesConstructed = 0
 	a.noTreePlaceholderNodesConstructed = 0
@@ -935,6 +1013,45 @@ func (a *nodeArena) collectArenaBreakdown() *ArenaBreakdown {
 		LargestNodeSlabUsedFraction:       nodeUsage.largestSlabUsedFraction,
 		LeafNodesConstructed:              a.leafNodesConstructed,
 		ParentNodesConstructed:            a.parentNodesConstructed,
+		FieldedParentNodesConstructed:     a.fieldedParentNodesConstructed,
+		UnfieldedParentNodesConstructed:   a.unfieldedParentNodesConstructed,
+		ParentConstructedChildLen0:        a.parentConstructedChildLen0,
+		ParentConstructedChildLen1:        a.parentConstructedChildLen1,
+		ParentConstructedChildLen2:        a.parentConstructedChildLen2,
+		ParentConstructedChildLen3:        a.parentConstructedChildLen3,
+		ParentConstructedChildLen4Plus:    a.parentConstructedChildLen4Plus,
+		ParentConstructedNoLinks:          a.parentConstructedNoLinks,
+		ParentConstructedWithLinks:        a.parentConstructedWithLinks,
+		ParentConstructedTrackErrors:      a.parentConstructedTrackErrors,
+		ParentConstructedFieldSources:     a.parentConstructedFieldSources,
+		ParentReductionVisible:            a.parentReductionVisible,
+		ParentReductionInvisible:          a.parentReductionInvisible,
+		ParentReductionVisibleFielded:     a.parentReductionVisibleFielded,
+		ParentReductionVisibleUnfielded:   a.parentReductionVisibleUnfielded,
+		ParentReductionInvisibleFielded:   a.parentReductionInvisibleFielded,
+		ParentReductionInvisibleUnfielded: a.parentReductionInvisibleUnfielded,
+		ParentReductionVisibleChildPtrs:   a.parentReductionVisibleChildPointers,
+		ParentReductionInvisibleChildPtrs: a.parentReductionInvisibleChildPtrs,
+		ParentReductionVisibleLen0:        a.parentReductionVisibleChildLen0,
+		ParentReductionVisibleLen1:        a.parentReductionVisibleChildLen1,
+		ParentReductionVisibleLen2:        a.parentReductionVisibleChildLen2,
+		ParentReductionVisibleLen3:        a.parentReductionVisibleChildLen3,
+		ParentReductionVisibleLen4Plus:    a.parentReductionVisibleChildLen4Plus,
+		ParentReductionInvisibleLen0:      a.parentReductionInvisibleChildLen0,
+		ParentReductionInvisibleLen1:      a.parentReductionInvisibleChildLen1,
+		ParentReductionInvisibleLen2:      a.parentReductionInvisibleChildLen2,
+		ParentReductionInvisibleLen3:      a.parentReductionInvisibleChildLen3,
+		ParentReductionInvisibleLen4Plus:  a.parentReductionInvisibleChildLen4P,
+		ReduceChildSlicesFastGSS:          a.reduceChildSlicesFastGSS,
+		ReduceChildPointersFastGSS:        a.reduceChildPointersFastGSS,
+		ReduceChildSlicesAllVisible:       a.reduceChildSlicesAllVisible,
+		ReduceChildPointersAllVisible:     a.reduceChildPointersAllVisible,
+		ReduceChildSlicesNoAlias:          a.reduceChildSlicesNoAlias,
+		ReduceChildPointersNoAlias:        a.reduceChildPointersNoAlias,
+		ReduceChildSlicesScratchGeneral:   a.reduceChildSlicesScratchGeneral,
+		ReduceChildPointersScratchGeneral: a.reduceChildPointersScratchGeneral,
+		ReduceChildSlicesScratchNoAlias:   a.reduceChildSlicesScratchNoAlias,
+		ReduceChildPointersScratchNoAlias: a.reduceChildPointersScratchNoAlias,
 		NoTreeReduceNodesConstructed:      a.noTreeReduceNodesConstructed,
 		NoTreeLeafNodesConstructed:        a.noTreeLeafNodesConstructed,
 		NoTreePlaceholderNodesConstructed: a.noTreePlaceholderNodesConstructed,

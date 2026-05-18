@@ -467,6 +467,7 @@ func (p *Parser) tryFastVisibleReduceActionFromGSS(s *glrStack, act ParseAction,
 	}
 
 	children := arena.allocNodeSliceNoClear(childCount)
+	arena.recordReduceChildSliceFastGSS(childCount)
 	if perfCountersEnabled {
 		perfRecordReduceChildrenFastGSS(childCount)
 	}
@@ -478,6 +479,7 @@ func (p *Parser) tryFastVisibleReduceActionFromGSS(s *glrStack, act ParseAction,
 	} else {
 		parent = newParentNodeInArenaWithFieldSources(arena, act.Symbol, named, children, nil, nil, act.ProductionID)
 	}
+	p.recordReductionParentConstructed(arena, parent, act.Symbol, len(children), nil, nil, reduceChildPathFastGSS)
 	*nodeCount++
 
 	gotoState := p.lookupGoto(topState, act.Symbol)
@@ -581,7 +583,7 @@ func (p *Parser) applyReduceActionFromGSS(s *glrStack, act ParseAction, tok Toke
 		return
 	}
 
-	children, fieldIDs, fieldSources := p.buildReduceChildren(windowEntries, 0, reducedEnd, childCount, act.Symbol, act.ProductionID, arena)
+	children, fieldIDs, fieldSources, childPath := p.buildReduceChildrenWithPath(windowEntries, 0, reducedEnd, childCount, act.Symbol, act.ProductionID, arena)
 
 	targetDepth := s.depth() - actualEnd
 	if targetDepth < 0 || !s.truncate(targetDepth) {
@@ -609,6 +611,7 @@ func (p *Parser) applyReduceActionFromGSS(s *glrStack, act ParseAction, tok Toke
 	} else {
 		parent = newParentNodeInArenaWithFieldSources(arena, act.Symbol, named, children, fieldIDs, fieldSources, act.ProductionID)
 	}
+	p.recordReductionParentConstructed(arena, parent, act.Symbol, len(children), fieldIDs, fieldSources, childPath)
 	shouldUseRawSpan := shouldUseRawSpanForReduction(act.Symbol, children, p.language.SymbolMetadata, p.forceRawSpanAll, p.forceRawSpanTable)
 	if shouldUseRawSpan && reducedEnd > 0 {
 		span := computeReduceRawSpan(windowEntries, 0, reducedEnd)
@@ -1249,6 +1252,7 @@ func (p *Parser) buildReduceChildrenAllVisible(entries []stackEntry, start, end,
 	}
 
 	children := arena.allocNodeSliceNoClear(visibleCount)
+	arena.recordReduceChildSliceAllVisible(visibleCount)
 	if perfCountersEnabled {
 		perfRecordReduceChildrenAllVisible(visibleCount)
 	}
@@ -1298,6 +1302,11 @@ func (p *Parser) buildReduceChildrenAllVisible(entries []stackEntry, start, end,
 }
 
 func (p *Parser) buildReduceChildren(entries []stackEntry, start, end, childCount int, parentSymbol Symbol, productionID uint16, arena *nodeArena) ([]*Node, []FieldID, []uint8) {
+	children, fieldIDs, fieldSources, _ := p.buildReduceChildrenWithPath(entries, start, end, childCount, parentSymbol, productionID, arena)
+	return children, fieldIDs, fieldSources
+}
+
+func (p *Parser) buildReduceChildrenWithPath(entries []stackEntry, start, end, childCount int, parentSymbol Symbol, productionID uint16, arena *nodeArena) ([]*Node, []FieldID, []uint8, reduceChildPath) {
 	lang := p.language
 	symbolMeta := lang.SymbolMetadata
 
@@ -1305,7 +1314,11 @@ func (p *Parser) buildReduceChildren(entries []stackEntry, start, end, childCoun
 	productionHasFields := p.reduceProductionHasFields(productionID)
 	if len(aliasSeq) == 0 && !productionHasFields {
 		if children, _, _, ok := p.buildReduceChildrenAllVisible(entries, start, end, childCount, nil, nil, nil, symbolMeta, arena); ok {
-			return children, nil, nil
+			path := reduceChildPathNone
+			if len(children) > 0 {
+				path = reduceChildPathAllVisible
+			}
+			return children, nil, nil, path
 		}
 	}
 	parentVisible := true
@@ -1335,7 +1348,11 @@ func (p *Parser) buildReduceChildren(entries []stackEntry, start, end, childCoun
 
 	rawFieldIDs, rawInherited := p.buildFieldIDs(childCount, productionID, arena)
 	if children, fieldIDs, fieldSources, ok := p.buildReduceChildrenAllVisible(entries, start, end, childCount, aliasSeq, rawFieldIDs, rawInherited, symbolMeta, arena); ok {
-		return children, fieldIDs, fieldSources
+		path := reduceChildPathNone
+		if len(children) > 0 {
+			path = reduceChildPathAllVisible
+		}
+		return children, fieldIDs, fieldSources, path
 	}
 
 	var scratch *reduceBuildScratch
@@ -1492,10 +1509,16 @@ func (p *Parser) buildReduceChildren(entries []stackEntry, start, end, childCoun
 	if perfCountersEnabled {
 		perfRecordReduceScratchGeneral(len(scratch.nodes))
 	}
-	return materializeReduceChildrenFromScratch(scratch, arena)
+	arena.recordReduceChildSliceScratchGeneral(len(scratch.nodes))
+	children, fieldIDs, fieldSources := materializeReduceChildrenFromScratch(scratch, arena)
+	path := reduceChildPathNone
+	if len(children) > 0 {
+		path = reduceChildPathScratchGeneral
+	}
+	return children, fieldIDs, fieldSources, path
 }
 
-func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntry, start, end int, parentSymbol Symbol, symbolMeta []SymbolMetadata, arena *nodeArena) ([]*Node, []FieldID, []uint8) {
+func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntry, start, end int, parentSymbol Symbol, symbolMeta []SymbolMetadata, arena *nodeArena) ([]*Node, []FieldID, []uint8, reduceChildPath) {
 	visibleCount := 0
 	allVisible := true
 	for i := start; i < end; i++ {
@@ -1515,9 +1538,10 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 	}
 	if allVisible {
 		if visibleCount == 0 {
-			return nil, nil, nil
+			return nil, nil, nil, reduceChildPathNone
 		}
 		children := arena.allocNodeSliceNoClear(visibleCount)
+		arena.recordReduceChildSliceNoAlias(visibleCount)
 		if perfCountersEnabled {
 			perfRecordReduceChildrenNoAlias(visibleCount)
 		}
@@ -1530,7 +1554,7 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 			children[out] = n
 			out++
 		}
-		return children, nil, nil
+		return children, nil, nil, reduceChildPathNoAlias
 	}
 
 	var scratch *reduceBuildScratch
@@ -1570,8 +1594,13 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 	if perfCountersEnabled {
 		perfRecordReduceScratchNoAlias(len(scratch.nodes))
 	}
+	arena.recordReduceChildSliceScratchNoAlias(len(scratch.nodes))
 	children, _, _ := materializeReduceChildrenFromScratch(scratch, arena)
-	return children, nil, nil
+	path := reduceChildPathNone
+	if len(children) > 0 {
+		path = reduceChildPathScratchNoAlias
+	}
+	return children, nil, nil, path
 }
 
 func (p *Parser) shouldSuppressVisibleDirectField(n *Node, fid FieldID) bool {
@@ -1941,6 +1970,22 @@ func nodeHasAnyDirectField(n *Node) bool {
 	return false
 }
 
+func (p *Parser) recordReductionParentConstructed(arena *nodeArena, parent *Node, sym Symbol, childCount int, fieldIDs []FieldID, fieldSources []uint8, childPath reduceChildPath) {
+	if p == nil || p.language == nil || arena == nil {
+		return
+	}
+	if arena.breakdownEnabled {
+		visible := true
+		if idx := int(sym); idx >= 0 && idx < len(p.language.SymbolMetadata) {
+			visible = p.language.SymbolMetadata[sym].Visible
+		}
+		arena.recordReductionParentConstructed(visible, childCount, fieldIDs, fieldSources)
+	}
+	if arena.audit != nil {
+		arena.audit.recordReduceParentChildPath(parent, childPath, childCount)
+	}
+}
+
 func (p *Parser) applyReduceAction(s *glrStack, act ParseAction, tok Token, anyReduced *bool, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, entries []stackEntry, deferParentLinks bool, trackChildErrors bool) {
 	childCount := int(act.ChildCount)
 	var (
@@ -1980,7 +2025,7 @@ func (p *Parser) applyReduceAction(s *glrStack, act ParseAction, tok Token, anyR
 		return
 	}
 
-	children, fieldIDs, fieldSources := p.buildReduceChildren(entries, window.start, window.reducedEnd, childCount, act.Symbol, act.ProductionID, arena)
+	children, fieldIDs, fieldSources, childPath := p.buildReduceChildrenWithPath(entries, window.start, window.reducedEnd, childCount, act.Symbol, act.ProductionID, arena)
 
 	trailingStart := window.reducedEnd
 	trailingEnd := window.actualEnd
@@ -2005,6 +2050,7 @@ func (p *Parser) applyReduceAction(s *glrStack, act ParseAction, tok Token, anyR
 	} else {
 		parent = newParentNodeInArenaWithFieldSources(arena, act.Symbol, named, children, fieldIDs, fieldSources, act.ProductionID)
 	}
+	p.recordReductionParentConstructed(arena, parent, act.Symbol, len(children), fieldIDs, fieldSources, childPath)
 	shouldUseRawSpan := shouldUseRawSpanForReduction(act.Symbol, children, p.language.SymbolMetadata, p.forceRawSpanAll, p.forceRawSpanTable)
 	if shouldUseRawSpan && window.reducedEnd > window.start {
 		span := computeReduceRawSpan(entries, window.start, window.reducedEnd)
@@ -2198,6 +2244,9 @@ func (p *Parser) collapsibleUnarySelfReduction(act ParseAction, tok Token, arena
 
 func (p *Parser) collapseUnaryChildForReduction(act ParseAction, arena *nodeArena, child *Node) *Node {
 	if child.symbol != act.Symbol {
+		if p.canCollapseInvisibleUnaryWrapper(act.Symbol, child) {
+			return child
+		}
 		if child.ChildCount() != 0 || !p.canCollapseNamedLeafWrapper(act.Symbol, child.symbol) {
 			return nil
 		}
@@ -2207,6 +2256,21 @@ func (p *Parser) collapseUnaryChildForReduction(act ParseAction, arena *nodeAren
 		return aliasedNodeInArena(arena, p.language, child, act.Symbol)
 	}
 	return child
+}
+
+func (p *Parser) canCollapseInvisibleUnaryWrapper(parentSym Symbol, child *Node) bool {
+	if p == nil || p.language == nil || child == nil || child.isExtra() || child.isMissing() || child.IsError() {
+		return false
+	}
+	meta := p.language.SymbolMetadata
+	if int(parentSym) >= len(meta) {
+		return false
+	}
+	parent := meta[parentSym]
+	if parent.Visible {
+		return false
+	}
+	return true
 }
 
 func (p *Parser) isVisibleSymbol(sym Symbol) bool {

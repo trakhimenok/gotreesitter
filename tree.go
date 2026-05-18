@@ -126,48 +126,68 @@ const (
 
 // ParseRuntime captures parser-loop diagnostics for a completed tree.
 type ParseRuntime struct {
-	StopReason                  ParseStopReason
-	SourceLen                   uint32
-	ExpectedEOFByte             uint32
-	RootEndByte                 uint32
-	Truncated                   bool
-	TokenSourceEOFEarly         bool
-	TokensConsumed              uint64
-	LastTokenEndByte            uint32
-	LastTokenSymbol             Symbol
-	LastTokenWasEOF             bool
-	IterationLimit              int
-	StackDepthLimit             int
-	NodeLimit                   int
-	MemoryBudgetBytes           int64
-	Iterations                  int
-	NodesAllocated              int
-	ArenaBytesAllocated         int64
-	ScratchBytesAllocated       int64
-	EntryScratchBytesAllocated  int64
-	GSSBytesAllocated           int64
-	PeakStackDepth              int
-	MaxStacksSeen               int
-	SingleStackIterations       int
-	MultiStackIterations        int
-	SingleStackTokens           uint64
-	MultiStackTokens            uint64
-	SingleStackGSSNodes         uint64
-	MultiStackGSSNodes          uint64
-	GSSNodesAllocated           uint64
-	GSSNodesRetained            uint64
-	GSSNodesDroppedSameToken    uint64
-	ParentNodesAllocated        uint64
-	ParentNodesRetained         uint64
-	ParentNodesDroppedSameToken uint64
-	LeafNodesAllocated          uint64
-	LeafNodesRetained           uint64
-	LeafNodesDroppedSameToken   uint64
-	MergeStacksIn               uint64
-	MergeStacksOut              uint64
-	MergeSlotsUsed              uint64
-	GlobalCullStacksIn          uint64
-	GlobalCullStacksOut         uint64
+	StopReason                    ParseStopReason
+	SourceLen                     uint32
+	ExpectedEOFByte               uint32
+	RootEndByte                   uint32
+	Truncated                     bool
+	TokenSourceEOFEarly           bool
+	TokensConsumed                uint64
+	LastTokenEndByte              uint32
+	LastTokenSymbol               Symbol
+	LastTokenWasEOF               bool
+	IterationLimit                int
+	StackDepthLimit               int
+	NodeLimit                     int
+	MemoryBudgetBytes             int64
+	Iterations                    int
+	NodesAllocated                int
+	ArenaBytesAllocated           int64
+	ScratchBytesAllocated         int64
+	EntryScratchBytesAllocated    int64
+	GSSBytesAllocated             int64
+	PeakStackDepth                int
+	MaxStacksSeen                 int
+	SingleStackIterations         int
+	MultiStackIterations          int
+	SingleStackTokens             uint64
+	MultiStackTokens              uint64
+	SingleStackGSSNodes           uint64
+	MultiStackGSSNodes            uint64
+	GSSNodesAllocated             uint64
+	GSSNodesRetained              uint64
+	GSSNodesDroppedSameToken      uint64
+	ParentNodesAllocated          uint64
+	ParentNodesRetained           uint64
+	ParentNodesDroppedSameToken   uint64
+	LeafNodesAllocated            uint64
+	LeafNodesRetained             uint64
+	LeafNodesDroppedSameToken     uint64
+	ChildSlicesAllocated          uint64
+	ChildSlicesRetained           uint64
+	ChildSlicesDroppedSameToken   uint64
+	ChildPointersAllocated        uint64
+	ChildPointersRetained         uint64
+	ChildPointersDroppedSameToken uint64
+	ReduceChildFastGSS            ReduceChildPathRuntime
+	ReduceChildAllVisible         ReduceChildPathRuntime
+	ReduceChildNoAlias            ReduceChildPathRuntime
+	ReduceChildScratchGeneral     ReduceChildPathRuntime
+	ReduceChildScratchNoAlias     ReduceChildPathRuntime
+	FinalNodes                    uint64
+	FinalParentNodes              uint64
+	FinalLeafNodes                uint64
+	FinalFieldedParentNodes       uint64
+	FinalUnfieldedParentNodes     uint64
+	FinalChildSlices              uint64
+	FinalChildPointers            uint64
+	FinalFieldIDElements          uint64
+	FinalFieldSourceElements      uint64
+	MergeStacksIn                 uint64
+	MergeStacksOut                uint64
+	MergeSlotsUsed                uint64
+	GlobalCullStacksIn            uint64
+	GlobalCullStacksOut           uint64
 
 	ExternalScannerCheckpointRecords        uint64
 	ExternalScannerCheckpointSlotsAllocated uint64
@@ -182,6 +202,31 @@ type ParseRuntime struct {
 	NormalizationNodesVisited               uint64
 	NormalizationNodesRewritten             uint64
 	NormalizationNanos                      int64
+}
+
+type ReduceChildPathRuntime struct {
+	SlicesAllocated   uint64
+	SlicesRetained    uint64
+	SlicesDropped     uint64
+	PointersAllocated uint64
+	PointersRetained  uint64
+	PointersDropped   uint64
+}
+
+type reduceChildPath uint8
+
+const (
+	reduceChildPathNone reduceChildPath = iota
+	reduceChildPathFastGSS
+	reduceChildPathAllVisible
+	reduceChildPathNoAlias
+	reduceChildPathScratchGeneral
+	reduceChildPathScratchNoAlias
+	reduceChildPathCount
+)
+
+func (p reduceChildPath) valid() bool {
+	return p > reduceChildPathNone && p < reduceChildPathCount
 }
 
 // ArenaBreakdown captures optional arena/materialization attribution. It is
@@ -209,6 +254,45 @@ type ArenaBreakdown struct {
 	LargestNodeSlabUsedFraction       float64
 	LeafNodesConstructed              uint64
 	ParentNodesConstructed            uint64
+	FieldedParentNodesConstructed     uint64
+	UnfieldedParentNodesConstructed   uint64
+	ParentConstructedChildLen0        uint64
+	ParentConstructedChildLen1        uint64
+	ParentConstructedChildLen2        uint64
+	ParentConstructedChildLen3        uint64
+	ParentConstructedChildLen4Plus    uint64
+	ParentConstructedNoLinks          uint64
+	ParentConstructedWithLinks        uint64
+	ParentConstructedTrackErrors      uint64
+	ParentConstructedFieldSources     uint64
+	ParentReductionVisible            uint64
+	ParentReductionInvisible          uint64
+	ParentReductionVisibleFielded     uint64
+	ParentReductionVisibleUnfielded   uint64
+	ParentReductionInvisibleFielded   uint64
+	ParentReductionInvisibleUnfielded uint64
+	ParentReductionVisibleChildPtrs   uint64
+	ParentReductionInvisibleChildPtrs uint64
+	ParentReductionVisibleLen0        uint64
+	ParentReductionVisibleLen1        uint64
+	ParentReductionVisibleLen2        uint64
+	ParentReductionVisibleLen3        uint64
+	ParentReductionVisibleLen4Plus    uint64
+	ParentReductionInvisibleLen0      uint64
+	ParentReductionInvisibleLen1      uint64
+	ParentReductionInvisibleLen2      uint64
+	ParentReductionInvisibleLen3      uint64
+	ParentReductionInvisibleLen4Plus  uint64
+	ReduceChildSlicesFastGSS          uint64
+	ReduceChildPointersFastGSS        uint64
+	ReduceChildSlicesAllVisible       uint64
+	ReduceChildPointersAllVisible     uint64
+	ReduceChildSlicesNoAlias          uint64
+	ReduceChildPointersNoAlias        uint64
+	ReduceChildSlicesScratchGeneral   uint64
+	ReduceChildPointersScratchGeneral uint64
+	ReduceChildSlicesScratchNoAlias   uint64
+	ReduceChildPointersScratchNoAlias uint64
 	NoTreeReduceNodesConstructed      uint64
 	NoTreeLeafNodesConstructed        uint64
 	NoTreePlaceholderNodesConstructed uint64
@@ -766,6 +850,59 @@ func wireParentLinksWithScratch(root *Node, scratch *[]*Node) {
 	}
 }
 
+type finalTreeMaterializationStats struct {
+	nodes                uint64
+	parentNodes          uint64
+	leafNodes            uint64
+	fieldedParentNodes   uint64
+	unfieldedParentNodes uint64
+	childSlices          uint64
+	childPointers        uint64
+	fieldIDElements      uint64
+	fieldSourceElements  uint64
+}
+
+func collectFinalTreeMaterializationStats(root *Node) finalTreeMaterializationStats {
+	var stats finalTreeMaterializationStats
+	if root == nil {
+		return stats
+	}
+	var local [64]*Node
+	stack := local[:0]
+	stack = append(stack, root)
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if n == nil {
+			continue
+		}
+		stats.nodes++
+		childCount := len(n.children)
+		if childCount == 0 {
+			stats.leafNodes++
+			continue
+		}
+		stats.parentNodes++
+		stats.childSlices++
+		stats.childPointers += uint64(childCount)
+		if len(n.fieldIDs) > 0 {
+			stats.fieldIDElements += uint64(len(n.fieldIDs))
+		}
+		if len(n.fieldSources) > 0 {
+			stats.fieldSourceElements += uint64(len(n.fieldSources))
+		}
+		if hasParentFieldMetadata(n.fieldIDs, n.fieldSources) {
+			stats.fieldedParentNodes++
+		} else {
+			stats.unfieldedParentNodes++
+		}
+		for i := childCount - 1; i >= 0; i-- {
+			stack = append(stack, n.children[i])
+		}
+	}
+	return stats
+}
+
 func (a *nodeArena) deferParentLinks(root *Node) {
 	if a == nil || root == nil {
 		return
@@ -896,7 +1033,7 @@ func newParentNodeInArenaWithFieldSources(arena *nodeArena, sym Symbol, named bo
 	}
 	n.productionID = productionID
 	n.childIndex = -1
-	arena.parentNodesConstructed++
+	arena.recordParentNodeConstructed(len(children), fieldIDs, n.fieldSources, fieldSources != nil, false, false)
 	populateParentNode(n, children)
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {
@@ -925,13 +1062,153 @@ func newParentNodeInArenaNoLinksWithFieldSources(arena *nodeArena, sym Symbol, n
 	}
 	n.productionID = productionID
 	n.childIndex = -1
-	arena.parentNodesConstructed++
+	arena.recordParentNodeConstructed(len(children), fieldIDs, n.fieldSources, fieldSources != nil, true, trackChildErrors)
 	populateParentNodeNoLinks(n, children, trackChildErrors)
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {
 		arena.audit.recordNodeAlloc(n, runtimeAuditNodeKindParent)
 	}
 	return n
+}
+
+func (a *nodeArena) recordParentNodeConstructed(childCount int, fieldIDs []FieldID, fieldSources []uint8, fieldSourcesProvided bool, noLinks bool, trackChildErrors bool) {
+	if a == nil {
+		return
+	}
+	a.parentNodesConstructed++
+	if !a.breakdownEnabled {
+		return
+	}
+	switch childCount {
+	case 0:
+		a.parentConstructedChildLen0++
+	case 1:
+		a.parentConstructedChildLen1++
+	case 2:
+		a.parentConstructedChildLen2++
+	case 3:
+		a.parentConstructedChildLen3++
+	default:
+		a.parentConstructedChildLen4Plus++
+	}
+	if noLinks {
+		a.parentConstructedNoLinks++
+	} else {
+		a.parentConstructedWithLinks++
+	}
+	if trackChildErrors {
+		a.parentConstructedTrackErrors++
+	}
+	if fieldSourcesProvided {
+		a.parentConstructedFieldSources++
+	}
+	if hasParentFieldMetadata(fieldIDs, fieldSources) {
+		a.fieldedParentNodesConstructed++
+		return
+	}
+	a.unfieldedParentNodesConstructed++
+}
+
+func (a *nodeArena) recordReductionParentConstructed(visible bool, childCount int, fieldIDs []FieldID, fieldSources []uint8) {
+	if a == nil || !a.breakdownEnabled {
+		return
+	}
+	fielded := hasParentFieldMetadata(fieldIDs, fieldSources)
+	if visible {
+		a.parentReductionVisible++
+		a.parentReductionVisibleChildPointers += uint64(childCount)
+		if fielded {
+			a.parentReductionVisibleFielded++
+		} else {
+			a.parentReductionVisibleUnfielded++
+		}
+		switch childCount {
+		case 0:
+			a.parentReductionVisibleChildLen0++
+		case 1:
+			a.parentReductionVisibleChildLen1++
+		case 2:
+			a.parentReductionVisibleChildLen2++
+		case 3:
+			a.parentReductionVisibleChildLen3++
+		default:
+			a.parentReductionVisibleChildLen4Plus++
+		}
+		return
+	}
+	a.parentReductionInvisible++
+	a.parentReductionInvisibleChildPtrs += uint64(childCount)
+	if fielded {
+		a.parentReductionInvisibleFielded++
+	} else {
+		a.parentReductionInvisibleUnfielded++
+	}
+	switch childCount {
+	case 0:
+		a.parentReductionInvisibleChildLen0++
+	case 1:
+		a.parentReductionInvisibleChildLen1++
+	case 2:
+		a.parentReductionInvisibleChildLen2++
+	case 3:
+		a.parentReductionInvisibleChildLen3++
+	default:
+		a.parentReductionInvisibleChildLen4P++
+	}
+}
+
+func (a *nodeArena) recordReduceChildSliceFastGSS(n int) {
+	if a == nil || !a.breakdownEnabled || n <= 0 {
+		return
+	}
+	a.reduceChildSlicesFastGSS++
+	a.reduceChildPointersFastGSS += uint64(n)
+}
+
+func (a *nodeArena) recordReduceChildSliceAllVisible(n int) {
+	if a == nil || !a.breakdownEnabled || n <= 0 {
+		return
+	}
+	a.reduceChildSlicesAllVisible++
+	a.reduceChildPointersAllVisible += uint64(n)
+}
+
+func (a *nodeArena) recordReduceChildSliceNoAlias(n int) {
+	if a == nil || !a.breakdownEnabled || n <= 0 {
+		return
+	}
+	a.reduceChildSlicesNoAlias++
+	a.reduceChildPointersNoAlias += uint64(n)
+}
+
+func (a *nodeArena) recordReduceChildSliceScratchGeneral(n int) {
+	if a == nil || !a.breakdownEnabled || n <= 0 {
+		return
+	}
+	a.reduceChildSlicesScratchGeneral++
+	a.reduceChildPointersScratchGeneral += uint64(n)
+}
+
+func (a *nodeArena) recordReduceChildSliceScratchNoAlias(n int) {
+	if a == nil || !a.breakdownEnabled || n <= 0 {
+		return
+	}
+	a.reduceChildSlicesScratchNoAlias++
+	a.reduceChildPointersScratchNoAlias += uint64(n)
+}
+
+func hasParentFieldMetadata(fieldIDs []FieldID, fieldSources []uint8) bool {
+	for _, fid := range fieldIDs {
+		if fid != 0 {
+			return true
+		}
+	}
+	for _, source := range fieldSources {
+		if source != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Tree holds a complete syntax tree along with its source text and language.

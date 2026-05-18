@@ -45,6 +45,18 @@ func TestParseRuntimeReportsAcceptedOnCompleteParse(t *testing.T) {
 	if rt.ParentNodesConstructed == 0 {
 		t.Fatal("ParentNodesConstructed = 0, want > 0")
 	}
+	if rt.FinalNodes == 0 {
+		t.Fatal("FinalNodes = 0, want > 0")
+	}
+	if got, want := rt.FinalParentNodes+rt.FinalLeafNodes, rt.FinalNodes; got != want {
+		t.Fatalf("final parent+leaf nodes = %d, want %d", got, want)
+	}
+	if got, want := rt.FinalFieldedParentNodes+rt.FinalUnfieldedParentNodes, rt.FinalParentNodes; got != want {
+		t.Fatalf("final fielded+unfielded parents = %d, want %d", got, want)
+	}
+	if rt.FinalChildPointers == 0 {
+		t.Fatal("FinalChildPointers = 0, want > 0")
+	}
 	if rt.NoTreeReduceNodesConstructed != 0 {
 		t.Fatalf("NoTreeReduceNodesConstructed = %d, want 0", rt.NoTreeReduceNodesConstructed)
 	}
@@ -54,6 +66,15 @@ func TestParseRuntimeReportsAcceptedOnCompleteParse(t *testing.T) {
 	breakdown := assertParseRuntimeArenaBreakdown(t, tree, rt)
 	if got := breakdown.NoTreePlaceholderNodesConstructed; got != 0 {
 		t.Fatalf("NoTreePlaceholderNodesConstructed = %d, want 0", got)
+	}
+	if got, want := breakdown.FieldedParentNodesConstructed+breakdown.UnfieldedParentNodesConstructed, rt.ParentNodesConstructed; got != want {
+		t.Fatalf("parent field attribution = %d, want %d", got, want)
+	}
+	if got, want := breakdown.ParentConstructedChildLen0+breakdown.ParentConstructedChildLen1+breakdown.ParentConstructedChildLen2+breakdown.ParentConstructedChildLen3+breakdown.ParentConstructedChildLen4Plus, rt.ParentNodesConstructed; got != want {
+		t.Fatalf("parent child-count attribution = %d, want %d", got, want)
+	}
+	if got, want := breakdown.ParentConstructedNoLinks+breakdown.ParentConstructedWithLinks, rt.ParentNodesConstructed; got != want {
+		t.Fatalf("parent link attribution = %d, want %d", got, want)
 	}
 }
 
@@ -83,12 +104,33 @@ func TestParseRuntimeReportsNoTreeNodeVolume(t *testing.T) {
 	if rt.NoTreeLeafNodesConstructed != 0 {
 		t.Fatalf("NoTreeLeafNodesConstructed = %d, want 0", rt.NoTreeLeafNodesConstructed)
 	}
+	if got, want := rt.FinalNodes, uint64(1); got != want {
+		t.Fatalf("FinalNodes = %d, want %d", got, want)
+	}
+	if got := rt.FinalParentNodes; got != 0 {
+		t.Fatalf("FinalParentNodes = %d, want 0", got)
+	}
+	if got, want := rt.FinalLeafNodes, uint64(1); got != want {
+		t.Fatalf("FinalLeafNodes = %d, want %d", got, want)
+	}
+	if got := rt.FinalChildPointers; got != 0 {
+		t.Fatalf("FinalChildPointers = %d, want 0", got)
+	}
 	breakdown := assertParseRuntimeArenaBreakdown(t, tree, rt)
 	if got := breakdown.NoTreePlaceholderNodesConstructed; got != 1 {
 		t.Fatalf("NoTreePlaceholderNodesConstructed = %d, want 1", got)
 	}
 	if got := breakdown.NoTreeLeafNodesConstructed; got != 0 {
 		t.Fatalf("NoTreeLeafNodesConstructed breakdown = %d, want 0", got)
+	}
+	if got := breakdown.FieldedParentNodesConstructed + breakdown.UnfieldedParentNodesConstructed; got != 0 {
+		t.Fatalf("parent field attribution = %d, want 0", got)
+	}
+	if got := breakdown.ParentConstructedChildLen0 + breakdown.ParentConstructedChildLen1 + breakdown.ParentConstructedChildLen2 + breakdown.ParentConstructedChildLen3 + breakdown.ParentConstructedChildLen4Plus; got != 0 {
+		t.Fatalf("parent child-count attribution = %d, want 0", got)
+	}
+	if got := breakdown.ParentConstructedNoLinks + breakdown.ParentConstructedWithLinks; got != 0 {
+		t.Fatalf("parent link attribution = %d, want 0", got)
 	}
 	if breakdown.NoTreeNodeBytesAllocated == 0 {
 		t.Fatal("NoTreeNodeBytesAllocated = 0, want > 0")

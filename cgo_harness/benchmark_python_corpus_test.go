@@ -30,6 +30,33 @@ const (
 	pythonCorpusParseModeDFANoTreeWithCheckpoints pythonCorpusParseMode = "dfa_no_tree_with_checkpoints"
 )
 
+type pythonReduceChildPathStats struct {
+	slicesAllocated   uint64
+	slicesRetained    uint64
+	slicesDropped     uint64
+	pointersAllocated uint64
+	pointersRetained  uint64
+	pointersDropped   uint64
+}
+
+func (s *pythonReduceChildPathStats) add(rt gotreesitter.ReduceChildPathRuntime) {
+	s.slicesAllocated += rt.SlicesAllocated
+	s.slicesRetained += rt.SlicesRetained
+	s.slicesDropped += rt.SlicesDropped
+	s.pointersAllocated += rt.PointersAllocated
+	s.pointersRetained += rt.PointersRetained
+	s.pointersDropped += rt.PointersDropped
+}
+
+func (s pythonReduceChildPathStats) report(b *testing.B, tokens float64, name string) {
+	b.ReportMetric(float64(s.slicesAllocated)/tokens, "reduce_child_slices_"+name+"_alloc/token")
+	b.ReportMetric(float64(s.slicesRetained)/tokens, "reduce_child_slices_"+name+"_retained/token")
+	b.ReportMetric(float64(s.slicesDropped)/tokens, "reduce_child_slices_"+name+"_dropped/token")
+	b.ReportMetric(float64(s.pointersAllocated)/tokens, "reduce_child_ptrs_"+name+"_alloc/token")
+	b.ReportMetric(float64(s.pointersRetained)/tokens, "reduce_child_ptrs_"+name+"_retained/token")
+	b.ReportMetric(float64(s.pointersDropped)/tokens, "reduce_child_ptrs_"+name+"_dropped/token")
+}
+
 type pythonRuntimeBenchStats struct {
 	ops                               int
 	arenaBreakdownSamples             int
@@ -37,8 +64,34 @@ type pythonRuntimeBenchStats struct {
 	iterations                        uint64
 	nodesAllocated                    uint64
 	parentNodesAllocated              uint64
+	parentNodesRetained               uint64
+	parentNodesDropped                uint64
 	leafNodesAllocated                uint64
+	leafNodesRetained                 uint64
+	leafNodesDropped                  uint64
+	childSlicesAllocated              uint64
+	childSlicesRetained               uint64
+	childSlicesDropped                uint64
+	childPointersAllocated            uint64
+	childPointersRetained             uint64
+	childPointersDropped              uint64
+	reduceChildFastGSS                pythonReduceChildPathStats
+	reduceChildAllVisible             pythonReduceChildPathStats
+	reduceChildNoAlias                pythonReduceChildPathStats
+	reduceChildScratchGeneral         pythonReduceChildPathStats
+	reduceChildScratchNoAlias         pythonReduceChildPathStats
+	finalNodes                        uint64
+	finalParentNodes                  uint64
+	finalLeafNodes                    uint64
+	finalFieldedParentNodes           uint64
+	finalUnfieldedParentNodes         uint64
+	finalChildSlices                  uint64
+	finalChildPointers                uint64
+	finalFieldIDElements              uint64
+	finalFieldSourceElements          uint64
 	gssNodesAllocated                 uint64
+	gssNodesRetained                  uint64
+	gssNodesDropped                   uint64
 	singleStackGSSNodes               uint64
 	multiStackGSSNodes                uint64
 	arenaBytesAllocated               int64
@@ -67,6 +120,45 @@ type pythonRuntimeBenchStats struct {
 	largestNodeSlabUsedFractionSum    float64
 	leafNodesConstructed              uint64
 	parentNodesConstructed            uint64
+	fieldedParentNodesConstructed     uint64
+	unfieldedParentNodesConstructed   uint64
+	parentConstructedChildLen0        uint64
+	parentConstructedChildLen1        uint64
+	parentConstructedChildLen2        uint64
+	parentConstructedChildLen3        uint64
+	parentConstructedChildLen4Plus    uint64
+	parentConstructedNoLinks          uint64
+	parentConstructedWithLinks        uint64
+	parentConstructedTrackErrors      uint64
+	parentConstructedFieldSources     uint64
+	parentReductionVisible            uint64
+	parentReductionInvisible          uint64
+	parentReductionVisibleFielded     uint64
+	parentReductionVisibleUnfielded   uint64
+	parentReductionInvisibleFielded   uint64
+	parentReductionInvisibleUnfielded uint64
+	parentReductionVisibleChildPtrs   uint64
+	parentReductionInvisibleChildPtrs uint64
+	parentReductionVisibleLen0        uint64
+	parentReductionVisibleLen1        uint64
+	parentReductionVisibleLen2        uint64
+	parentReductionVisibleLen3        uint64
+	parentReductionVisibleLen4Plus    uint64
+	parentReductionInvisibleLen0      uint64
+	parentReductionInvisibleLen1      uint64
+	parentReductionInvisibleLen2      uint64
+	parentReductionInvisibleLen3      uint64
+	parentReductionInvisibleLen4Plus  uint64
+	reduceChildSlicesFastGSS          uint64
+	reduceChildPointersFastGSS        uint64
+	reduceChildSlicesAllVisible       uint64
+	reduceChildPointersAllVisible     uint64
+	reduceChildSlicesNoAlias          uint64
+	reduceChildPointersNoAlias        uint64
+	reduceChildSlicesScratchGeneral   uint64
+	reduceChildPointersScratchGeneral uint64
+	reduceChildSlicesScratchNoAlias   uint64
+	reduceChildPointersScratchNoAlias uint64
 	noTreeReduceNodesConstructed      uint64
 	noTreeLeafNodesConstructed        uint64
 	noTreePlaceholderNodesConstructed uint64
@@ -102,8 +194,34 @@ func (s *pythonRuntimeBenchStats) add(rt gotreesitter.ParseRuntime, breakdown go
 	s.iterations += uint64(rt.Iterations)
 	s.nodesAllocated += uint64(rt.NodesAllocated)
 	s.parentNodesAllocated += rt.ParentNodesAllocated
+	s.parentNodesRetained += rt.ParentNodesRetained
+	s.parentNodesDropped += rt.ParentNodesDroppedSameToken
 	s.leafNodesAllocated += rt.LeafNodesAllocated
+	s.leafNodesRetained += rt.LeafNodesRetained
+	s.leafNodesDropped += rt.LeafNodesDroppedSameToken
+	s.childSlicesAllocated += rt.ChildSlicesAllocated
+	s.childSlicesRetained += rt.ChildSlicesRetained
+	s.childSlicesDropped += rt.ChildSlicesDroppedSameToken
+	s.childPointersAllocated += rt.ChildPointersAllocated
+	s.childPointersRetained += rt.ChildPointersRetained
+	s.childPointersDropped += rt.ChildPointersDroppedSameToken
+	s.reduceChildFastGSS.add(rt.ReduceChildFastGSS)
+	s.reduceChildAllVisible.add(rt.ReduceChildAllVisible)
+	s.reduceChildNoAlias.add(rt.ReduceChildNoAlias)
+	s.reduceChildScratchGeneral.add(rt.ReduceChildScratchGeneral)
+	s.reduceChildScratchNoAlias.add(rt.ReduceChildScratchNoAlias)
+	s.finalNodes += rt.FinalNodes
+	s.finalParentNodes += rt.FinalParentNodes
+	s.finalLeafNodes += rt.FinalLeafNodes
+	s.finalFieldedParentNodes += rt.FinalFieldedParentNodes
+	s.finalUnfieldedParentNodes += rt.FinalUnfieldedParentNodes
+	s.finalChildSlices += rt.FinalChildSlices
+	s.finalChildPointers += rt.FinalChildPointers
+	s.finalFieldIDElements += rt.FinalFieldIDElements
+	s.finalFieldSourceElements += rt.FinalFieldSourceElements
 	s.gssNodesAllocated += rt.GSSNodesAllocated
+	s.gssNodesRetained += rt.GSSNodesRetained
+	s.gssNodesDropped += rt.GSSNodesDroppedSameToken
 	s.singleStackGSSNodes += rt.SingleStackGSSNodes
 	s.multiStackGSSNodes += rt.MultiStackGSSNodes
 	s.arenaBytesAllocated += rt.ArenaBytesAllocated
@@ -136,6 +254,45 @@ func (s *pythonRuntimeBenchStats) add(rt gotreesitter.ParseRuntime, breakdown go
 		s.overflowNodeUsed += breakdown.OverflowNodeUsed
 		s.overflowNodeSlabs += breakdown.OverflowNodeSlabs
 		s.largestNodeSlabUsedFractionSum += breakdown.LargestNodeSlabUsedFraction
+		s.fieldedParentNodesConstructed += breakdown.FieldedParentNodesConstructed
+		s.unfieldedParentNodesConstructed += breakdown.UnfieldedParentNodesConstructed
+		s.parentConstructedChildLen0 += breakdown.ParentConstructedChildLen0
+		s.parentConstructedChildLen1 += breakdown.ParentConstructedChildLen1
+		s.parentConstructedChildLen2 += breakdown.ParentConstructedChildLen2
+		s.parentConstructedChildLen3 += breakdown.ParentConstructedChildLen3
+		s.parentConstructedChildLen4Plus += breakdown.ParentConstructedChildLen4Plus
+		s.parentConstructedNoLinks += breakdown.ParentConstructedNoLinks
+		s.parentConstructedWithLinks += breakdown.ParentConstructedWithLinks
+		s.parentConstructedTrackErrors += breakdown.ParentConstructedTrackErrors
+		s.parentConstructedFieldSources += breakdown.ParentConstructedFieldSources
+		s.parentReductionVisible += breakdown.ParentReductionVisible
+		s.parentReductionInvisible += breakdown.ParentReductionInvisible
+		s.parentReductionVisibleFielded += breakdown.ParentReductionVisibleFielded
+		s.parentReductionVisibleUnfielded += breakdown.ParentReductionVisibleUnfielded
+		s.parentReductionInvisibleFielded += breakdown.ParentReductionInvisibleFielded
+		s.parentReductionInvisibleUnfielded += breakdown.ParentReductionInvisibleUnfielded
+		s.parentReductionVisibleChildPtrs += breakdown.ParentReductionVisibleChildPtrs
+		s.parentReductionInvisibleChildPtrs += breakdown.ParentReductionInvisibleChildPtrs
+		s.parentReductionVisibleLen0 += breakdown.ParentReductionVisibleLen0
+		s.parentReductionVisibleLen1 += breakdown.ParentReductionVisibleLen1
+		s.parentReductionVisibleLen2 += breakdown.ParentReductionVisibleLen2
+		s.parentReductionVisibleLen3 += breakdown.ParentReductionVisibleLen3
+		s.parentReductionVisibleLen4Plus += breakdown.ParentReductionVisibleLen4Plus
+		s.parentReductionInvisibleLen0 += breakdown.ParentReductionInvisibleLen0
+		s.parentReductionInvisibleLen1 += breakdown.ParentReductionInvisibleLen1
+		s.parentReductionInvisibleLen2 += breakdown.ParentReductionInvisibleLen2
+		s.parentReductionInvisibleLen3 += breakdown.ParentReductionInvisibleLen3
+		s.parentReductionInvisibleLen4Plus += breakdown.ParentReductionInvisibleLen4Plus
+		s.reduceChildSlicesFastGSS += breakdown.ReduceChildSlicesFastGSS
+		s.reduceChildPointersFastGSS += breakdown.ReduceChildPointersFastGSS
+		s.reduceChildSlicesAllVisible += breakdown.ReduceChildSlicesAllVisible
+		s.reduceChildPointersAllVisible += breakdown.ReduceChildPointersAllVisible
+		s.reduceChildSlicesNoAlias += breakdown.ReduceChildSlicesNoAlias
+		s.reduceChildPointersNoAlias += breakdown.ReduceChildPointersNoAlias
+		s.reduceChildSlicesScratchGeneral += breakdown.ReduceChildSlicesScratchGeneral
+		s.reduceChildPointersScratchGeneral += breakdown.ReduceChildPointersScratchGeneral
+		s.reduceChildSlicesScratchNoAlias += breakdown.ReduceChildSlicesScratchNoAlias
+		s.reduceChildPointersScratchNoAlias += breakdown.ReduceChildPointersScratchNoAlias
 		s.noTreePlaceholderNodesConstructed += breakdown.NoTreePlaceholderNodesConstructed
 		s.otherNodesConstructed += breakdown.OtherNodesConstructed
 		s.extraNodesConstructed += breakdown.ExtraNodesConstructed
@@ -186,12 +343,54 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 	b.ReportMetric(float64(s.iterations)/tokens, "iters/token")
 	b.ReportMetric(float64(s.nodesAllocated)/tokens, "nodes/token")
 	b.ReportMetric(float64(s.leafNodesConstructed)/tokens, "leaf_nodes/token")
+	b.ReportMetric(float64(s.leafNodesConstructed)/tokens, "leaf_full_nodes/token")
 	b.ReportMetric(float64(s.parentNodesConstructed)/tokens, "parent_nodes/token")
+	b.ReportMetric(float64(s.parentNodesConstructed)/tokens, "parent_full_nodes/token")
 	b.ReportMetric(float64(s.noTreeReduceNodesConstructed)/tokens, "notree_nodes/token")
 	b.ReportMetric(float64(s.noTreeLeafNodesConstructed)/tokens, "notree_leaf_nodes/token")
+	if s.finalNodes != 0 {
+		b.ReportMetric(float64(s.finalNodes)/tokens, "final_nodes/token")
+		b.ReportMetric(float64(s.finalParentNodes)/tokens, "final_parent_nodes/token")
+		b.ReportMetric(float64(s.finalLeafNodes)/tokens, "final_leaf_nodes/token")
+		b.ReportMetric(float64(s.finalFieldedParentNodes)/tokens, "final_fielded_parent_nodes/token")
+		b.ReportMetric(float64(s.finalUnfieldedParentNodes)/tokens, "final_unfielded_parent_nodes/token")
+		b.ReportMetric(float64(s.finalChildSlices)/tokens, "final_child_slices/token")
+		b.ReportMetric(float64(s.finalChildPointers)/tokens, "final_child_ptrs/token")
+		b.ReportMetric(float64(s.finalFieldIDElements)/tokens, "final_field_ids/token")
+		b.ReportMetric(float64(s.finalFieldSourceElements)/tokens, "final_field_sources/token")
+	}
 	if s.parentNodesAllocated != 0 || s.leafNodesAllocated != 0 {
 		b.ReportMetric(float64(s.parentNodesAllocated)/tokens, "surv_parent_nodes/token")
 		b.ReportMetric(float64(s.leafNodesAllocated)/tokens, "surv_leaf_nodes/token")
+		fullNodesAllocated := s.parentNodesAllocated + s.leafNodesAllocated
+		fullNodesRetained := s.parentNodesRetained + s.leafNodesRetained
+		fullNodesDropped := s.parentNodesDropped + s.leafNodesDropped
+		b.ReportMetric(float64(fullNodesAllocated)/tokens, "full_nodes_alloc/token")
+		b.ReportMetric(float64(fullNodesRetained)/tokens, "full_nodes_retained/token")
+		b.ReportMetric(float64(fullNodesRetained)/tokens, "nodes_retained/token")
+		b.ReportMetric(float64(fullNodesDropped)/tokens, "full_nodes_dropped/token")
+		b.ReportMetric(float64(fullNodesDropped)/tokens, "nodes_discarded/token")
+		b.ReportMetric(float64(s.parentNodesRetained)/tokens, "parent_retained/token")
+		b.ReportMetric(float64(s.parentNodesDropped)/tokens, "parent_dropped/token")
+		b.ReportMetric(float64(s.leafNodesRetained)/tokens, "leaf_retained/token")
+		b.ReportMetric(float64(s.leafNodesDropped)/tokens, "leaf_dropped/token")
+		b.ReportMetric(float64(s.childSlicesAllocated)/tokens, "child_slices_alloc/token")
+		b.ReportMetric(float64(s.childSlicesRetained)/tokens, "child_slices_retained/token")
+		b.ReportMetric(float64(s.childSlicesDropped)/tokens, "child_slices_dropped/token")
+		b.ReportMetric(float64(s.childSlicesDropped)/tokens, "child_slices_discarded/token")
+		b.ReportMetric(float64(s.childPointersAllocated)/tokens, "child_ptrs_alloc/token")
+		b.ReportMetric(float64(s.childPointersRetained)/tokens, "child_ptrs_retained/token")
+		b.ReportMetric(float64(s.childPointersDropped)/tokens, "child_ptrs_dropped/token")
+		b.ReportMetric(float64(s.childPointersDropped)/tokens, "child_ptrs_discarded/token")
+		s.reduceChildFastGSS.report(b, tokens, "fast_gss")
+		s.reduceChildAllVisible.report(b, tokens, "all_visible")
+		s.reduceChildNoAlias.report(b, tokens, "no_alias")
+		s.reduceChildScratchGeneral.report(b, tokens, "scratch_general")
+		s.reduceChildScratchNoAlias.report(b, tokens, "scratch_no_alias")
+	}
+	if s.gssNodesRetained != 0 || s.gssNodesDropped != 0 {
+		b.ReportMetric(float64(s.gssNodesRetained)/tokens, "gss_retained/token")
+		b.ReportMetric(float64(s.gssNodesDropped)/tokens, "gss_dropped/token")
 	}
 	b.ReportMetric(float64(gssNodes)/tokens, "gss_nodes/token")
 	b.ReportMetric(float64(s.singleStackGSSNodes)/tokens, "single_gss/token")
@@ -211,16 +410,59 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 		b.ReportMetric(float64(s.overflowNodeUsed)/float64(s.arenaBreakdownSamples), "overflow_node_used")
 		b.ReportMetric(float64(s.overflowNodeSlabs)/float64(s.arenaBreakdownSamples), "overflow_slabs")
 		b.ReportMetric(s.largestNodeSlabUsedFractionSum/float64(s.arenaBreakdownSamples), "largest_slab_used_fraction")
+		b.ReportMetric(float64(s.fieldedParentNodesConstructed)/tokens, "fielded_parent_nodes/token")
+		b.ReportMetric(float64(s.unfieldedParentNodesConstructed)/tokens, "unfielded_parent_nodes/token")
+		b.ReportMetric(float64(s.parentConstructedChildLen0)/tokens, "parent_ctor_len0/token")
+		b.ReportMetric(float64(s.parentConstructedChildLen1)/tokens, "parent_ctor_len1/token")
+		b.ReportMetric(float64(s.parentConstructedChildLen2)/tokens, "parent_ctor_len2/token")
+		b.ReportMetric(float64(s.parentConstructedChildLen3)/tokens, "parent_ctor_len3/token")
+		b.ReportMetric(float64(s.parentConstructedChildLen4Plus)/tokens, "parent_ctor_len4plus/token")
+		b.ReportMetric(float64(s.parentConstructedNoLinks)/tokens, "parent_ctor_nolinks/token")
+		b.ReportMetric(float64(s.parentConstructedWithLinks)/tokens, "parent_ctor_withlinks/token")
+		b.ReportMetric(float64(s.parentConstructedTrackErrors)/tokens, "parent_ctor_track_errors/token")
+		b.ReportMetric(float64(s.parentConstructedFieldSources)/tokens, "parent_ctor_field_sources/token")
+		b.ReportMetric(float64(s.parentReductionVisible)/tokens, "parent_reduce_visible/token")
+		b.ReportMetric(float64(s.parentReductionInvisible)/tokens, "parent_reduce_invisible/token")
+		b.ReportMetric(float64(s.parentReductionVisibleFielded)/tokens, "parent_reduce_visible_fielded/token")
+		b.ReportMetric(float64(s.parentReductionVisibleUnfielded)/tokens, "parent_reduce_visible_unfielded/token")
+		b.ReportMetric(float64(s.parentReductionInvisibleFielded)/tokens, "parent_reduce_invisible_fielded/token")
+		b.ReportMetric(float64(s.parentReductionInvisibleUnfielded)/tokens, "parent_reduce_invisible_unfielded/token")
+		b.ReportMetric(float64(s.parentReductionVisibleChildPtrs)/tokens, "parent_reduce_visible_child_ptrs/token")
+		b.ReportMetric(float64(s.parentReductionInvisibleChildPtrs)/tokens, "parent_reduce_invisible_child_ptrs/token")
+		b.ReportMetric(float64(s.parentReductionVisibleLen0)/tokens, "parent_reduce_visible_len0/token")
+		b.ReportMetric(float64(s.parentReductionVisibleLen1)/tokens, "parent_reduce_visible_len1/token")
+		b.ReportMetric(float64(s.parentReductionVisibleLen2)/tokens, "parent_reduce_visible_len2/token")
+		b.ReportMetric(float64(s.parentReductionVisibleLen3)/tokens, "parent_reduce_visible_len3/token")
+		b.ReportMetric(float64(s.parentReductionVisibleLen4Plus)/tokens, "parent_reduce_visible_len4plus/token")
+		b.ReportMetric(float64(s.parentReductionInvisibleLen0)/tokens, "parent_reduce_invisible_len0/token")
+		b.ReportMetric(float64(s.parentReductionInvisibleLen1)/tokens, "parent_reduce_invisible_len1/token")
+		b.ReportMetric(float64(s.parentReductionInvisibleLen2)/tokens, "parent_reduce_invisible_len2/token")
+		b.ReportMetric(float64(s.parentReductionInvisibleLen3)/tokens, "parent_reduce_invisible_len3/token")
+		b.ReportMetric(float64(s.parentReductionInvisibleLen4Plus)/tokens, "parent_reduce_invisible_len4plus/token")
+		b.ReportMetric(float64(s.reduceChildSlicesFastGSS)/tokens, "reduce_child_slices_fast_gss/token")
+		b.ReportMetric(float64(s.reduceChildPointersFastGSS)/tokens, "reduce_child_ptrs_fast_gss/token")
+		b.ReportMetric(float64(s.reduceChildSlicesAllVisible)/tokens, "reduce_child_slices_all_visible/token")
+		b.ReportMetric(float64(s.reduceChildPointersAllVisible)/tokens, "reduce_child_ptrs_all_visible/token")
+		b.ReportMetric(float64(s.reduceChildSlicesNoAlias)/tokens, "reduce_child_slices_no_alias/token")
+		b.ReportMetric(float64(s.reduceChildPointersNoAlias)/tokens, "reduce_child_ptrs_no_alias/token")
+		b.ReportMetric(float64(s.reduceChildSlicesScratchGeneral)/tokens, "reduce_child_slices_scratch_general/token")
+		b.ReportMetric(float64(s.reduceChildPointersScratchGeneral)/tokens, "reduce_child_ptrs_scratch_general/token")
+		b.ReportMetric(float64(s.reduceChildSlicesScratchNoAlias)/tokens, "reduce_child_slices_scratch_no_alias/token")
+		b.ReportMetric(float64(s.reduceChildPointersScratchNoAlias)/tokens, "reduce_child_ptrs_scratch_no_alias/token")
 		b.ReportMetric(float64(s.noTreePlaceholderNodesConstructed)/tokens, "notree_placeholder_nodes/token")
 		b.ReportMetric(float64(s.otherNodesConstructed)/tokens, "other_nodes/token")
 		b.ReportMetric(float64(s.extraNodesConstructed)/tokens, "extra_nodes/token")
 		b.ReportMetric(float64(s.errorSymbolNodesConstructed)/tokens, "error_symbol_nodes/token")
+		b.ReportMetric(float64(s.errorSymbolNodesConstructed)/tokens, "error_nodes/token")
 		b.ReportMetric(float64(s.hasErrorNodesConstructed)/tokens, "has_error_nodes/token")
 		b.ReportMetric(float64(s.arenaNodeStructBytesAllocated)/tokens, "arena_node_B/token")
 		b.ReportMetric(float64(s.arenaNoTreeNodeBytesAllocated)/tokens, "arena_notree_node_B/token")
 		b.ReportMetric(float64(s.arenaChildSliceBytesAllocated)/tokens, "arena_child_B/token")
+		b.ReportMetric(float64(s.arenaChildSliceBytesAllocated)/tokens, "child_slice_B/token")
 		b.ReportMetric(float64(s.arenaFieldIDBytesAllocated)/tokens, "arena_field_id_B/token")
+		b.ReportMetric(float64(s.arenaFieldIDBytesAllocated)/tokens, "field_id_B/token")
 		b.ReportMetric(float64(s.arenaFieldSourceBytesAllocated)/tokens, "arena_field_src_B/token")
+		b.ReportMetric(float64(s.arenaFieldSourceBytesAllocated)/tokens, "field_source_B/token")
 		b.ReportMetric(float64(s.mergeScratchBytesAllocated)/tokens, "merge_B/token")
 		b.ReportMetric(float64(s.childSlicesConstructed)/tokens, "child_slices/token")
 		b.ReportMetric(float64(s.childPointersConstructed)/tokens, "child_ptrs/token")
@@ -307,6 +549,20 @@ func pythonCorpusArenaBreakdownEnabled(tb testing.TB) bool {
 	return enabled
 }
 
+func pythonCorpusRuntimeAuditEnabled(tb testing.TB) bool {
+	tb.Helper()
+
+	raw := strings.TrimSpace(os.Getenv("GOT_PYTHON_CORPUS_RUNTIME_AUDIT"))
+	if raw == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		tb.Fatalf("invalid GOT_PYTHON_CORPUS_RUNTIME_AUDIT=%q", raw)
+	}
+	return enabled
+}
+
 func requireCompletePythonCorpusTree(tb testing.TB, lang *gotreesitter.Language, file pythonCorpusFile, tree *gotreesitter.Tree, phase string) {
 	tb.Helper()
 
@@ -339,6 +595,10 @@ func benchmarkPythonCorpusGoDFA(b *testing.B, mode pythonCorpusParseMode) {
 	if pythonCorpusArenaBreakdownEnabled(b) {
 		gotreesitter.EnableArenaBreakdown(true)
 		defer gotreesitter.EnableArenaBreakdown(false)
+	}
+	if pythonCorpusRuntimeAuditEnabled(b) {
+		gotreesitter.EnableRuntimeAudit(true)
+		defer gotreesitter.EnableRuntimeAudit(false)
 	}
 	pool := gotreesitter.NewParserPool(
 		lang,

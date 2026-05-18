@@ -320,6 +320,7 @@ func resetSnippetParser(parser *Parser) {
 	parser.noTreeBenchmarkOnly = false
 	parser.noTreeCheckpointBenchmarkOnly = false
 	parser.compactNoTreeShiftLeaves = false
+	parser.noResultCompatibilityBenchmarkOnly = false
 	parser.timeoutMicros = 0
 	parser.cancellationFlag = nil
 	// Release *Node refs so the arenas from the last incremental parse can be
@@ -1481,6 +1482,17 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		parseRuntime.LeafNodesAllocated = scratch.audit.totalLeafAllocated
 		parseRuntime.LeafNodesRetained = scratch.audit.totalLeafRetained
 		parseRuntime.LeafNodesDroppedSameToken = scratch.audit.totalLeafDropped
+		parseRuntime.ChildSlicesAllocated = scratch.audit.totalChildSlicesAllocated
+		parseRuntime.ChildSlicesRetained = scratch.audit.totalChildSlicesRetained
+		parseRuntime.ChildSlicesDroppedSameToken = scratch.audit.totalChildSlicesDropped
+		parseRuntime.ChildPointersAllocated = scratch.audit.totalChildPointersAllocated
+		parseRuntime.ChildPointersRetained = scratch.audit.totalChildPointersRetained
+		parseRuntime.ChildPointersDroppedSameToken = scratch.audit.totalChildPointersDropped
+		parseRuntime.ReduceChildFastGSS = scratch.audit.reduceChildPathRuntime(reduceChildPathFastGSS)
+		parseRuntime.ReduceChildAllVisible = scratch.audit.reduceChildPathRuntime(reduceChildPathAllVisible)
+		parseRuntime.ReduceChildNoAlias = scratch.audit.reduceChildPathRuntime(reduceChildPathNoAlias)
+		parseRuntime.ReduceChildScratchGeneral = scratch.audit.reduceChildPathRuntime(reduceChildPathScratchGeneral)
+		parseRuntime.ReduceChildScratchNoAlias = scratch.audit.reduceChildPathRuntime(reduceChildPathScratchNoAlias)
 		parseRuntime.MergeStacksIn = scratch.audit.mergeStacksIn
 		parseRuntime.MergeStacksOut = scratch.audit.mergeStacksOut
 		parseRuntime.MergeSlotsUsed = scratch.audit.mergeSlotsUsed
@@ -1494,8 +1506,21 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		parseRuntime.RootEndByte = 0
 		parseRuntime.Truncated = false
 		if tree != nil && tree.RootNode() != nil {
-			parseRuntime.RootEndByte = tree.RootNode().EndByte()
+			root := tree.RootNode()
+			parseRuntime.RootEndByte = root.EndByte()
 			parseRuntime.Truncated = parseRuntime.RootEndByte < expectedEOFByte
+			if scratch.audit.enabled || (arena != nil && arena.breakdownEnabled) {
+				finalStats := collectFinalTreeMaterializationStats(root)
+				parseRuntime.FinalNodes = finalStats.nodes
+				parseRuntime.FinalParentNodes = finalStats.parentNodes
+				parseRuntime.FinalLeafNodes = finalStats.leafNodes
+				parseRuntime.FinalFieldedParentNodes = finalStats.fieldedParentNodes
+				parseRuntime.FinalUnfieldedParentNodes = finalStats.unfieldedParentNodes
+				parseRuntime.FinalChildSlices = finalStats.childSlices
+				parseRuntime.FinalChildPointers = finalStats.childPointers
+				parseRuntime.FinalFieldIDElements = finalStats.fieldIDElements
+				parseRuntime.FinalFieldSourceElements = finalStats.fieldSourceElements
+			}
 		}
 		p.copyNormalizationStats(&parseRuntime)
 		if tree != nil {
