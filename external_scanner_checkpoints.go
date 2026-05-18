@@ -1,6 +1,9 @@
 package gotreesitter
 
-import "unsafe"
+import (
+	"bytes"
+	"unsafe"
+)
 
 type externalScannerCheckpoint struct {
 	start []byte
@@ -50,9 +53,14 @@ func (a *nodeArena) recordExternalScannerLeafCheckpoint(node *Node, start, end [
 		return
 	}
 	a.externalScannerCheckpointRecords++
+	startRef := a.copyExternalScannerSnapshotRef(start)
+	endRef := startRef
+	if !bytes.Equal(start, end) {
+		endRef = a.copyExternalScannerSnapshotRef(end)
+	}
 	*slot = externalScannerCheckpointRef{
-		start: a.copyExternalScannerSnapshotRef(start),
-		end:   a.copyExternalScannerSnapshotRef(end),
+		start: startRef,
+		end:   endRef,
 	}
 }
 

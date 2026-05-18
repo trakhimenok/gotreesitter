@@ -103,3 +103,23 @@ func TestExternalScannerCheckpointStats(t *testing.T) {
 		t.Fatalf("snapshot bytes after reset = %d, want 0", got)
 	}
 }
+
+func TestExternalScannerCheckpointReusesEqualStartEndSnapshot(t *testing.T) {
+	arena := acquireNodeArena(arenaClassFull)
+	defer arena.Release()
+
+	node := arena.allocNode()
+	node.ownerArena = arena
+	arena.recordExternalScannerLeafCheckpoint(node, []byte{1, 2, 3}, []byte{1, 2, 3})
+
+	if got, want := arena.externalScannerSnapshotPayloadBytes, uint64(3); got != want {
+		t.Fatalf("snapshot bytes = %d, want %d", got, want)
+	}
+	got, ok := externalScannerCheckpointForNode(node)
+	if !ok {
+		t.Fatal("missing checkpoint")
+	}
+	if !bytes.Equal(got.start, []byte{1, 2, 3}) || !bytes.Equal(got.end, []byte{1, 2, 3}) {
+		t.Fatalf("checkpoint = (%v, %v), want ([1 2 3], [1 2 3])", got.start, got.end)
+	}
+}
