@@ -59,6 +59,8 @@ type Parser struct {
 	noTreeBenchmarkOnly                 bool
 	noTreeCheckpointBenchmarkOnly       bool
 	compactNoTreeShiftLeaves            bool
+	transientReduceChildren             bool
+	transientChildren                   *transientChildScratch
 	noResultCompatibilityBenchmarkOnly  bool
 	currentExternalTokenCheckpoint      externalScannerCheckpoint
 	currentExternalTokenCheckpointStart uint32
@@ -1308,9 +1310,13 @@ func resolveParseMaxStacks(configuredMaxStacks, maxStacksOverride, conflictWidth
 func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor, oldTree *Tree, arenaClass arenaClass, timing *incrementalParseTiming, maxStacksOverride int, maxNodesOverride int, maxMergePerKeyOverride int, deterministicExternalConflicts bool) *Tree {
 	parseStart := time.Now()
 	prevCompactNoTreeShiftLeaves := p.compactNoTreeShiftLeaves
+	prevTransientReduceChildren := p.transientReduceChildren
+	prevTransientChildren := p.transientChildren
 	p.compactNoTreeShiftLeaves = p.noTreeBenchmarkOnly && !p.noTreeCheckpointBenchmarkOnly && parseShouldCompactNoTreeShiftLeaves(len(source))
 	defer func() {
 		p.compactNoTreeShiftLeaves = prevCompactNoTreeShiftLeaves
+		p.transientReduceChildren = prevTransientReduceChildren
+		p.transientChildren = prevTransientChildren
 	}()
 	p.clearCurrentExternalTokenCheckpoint()
 	p.resetNormalizationStats()
@@ -1319,6 +1325,12 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	}
 	deferParentLinks := reuse == nil && oldTree == nil
 	scratch := acquireParserScratch()
+	p.transientReduceChildren = p.shouldUseTransientReduceChildren(source, reuse, oldTree, arenaClass)
+	if p.transientReduceChildren {
+		p.transientChildren = &scratch.transientChildren
+	} else {
+		p.transientChildren = nil
+	}
 	scratch.merge.beginEquivEpoch()
 	// Python's generated grammar-test style files can spend most parse time
 	// recursively comparing near-equivalent GLR survivors. Limit the shallower
@@ -1456,6 +1468,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		scratchStatsCaptured = true
 	}
 	finalizeTree := func(tree *Tree, stopReason ParseStopReason) *Tree {
+		if p.transientReduceChildren && tree != nil {
+			scratch.transientChildren.materializeNode(tree.RootNode(), arena, &scratch.nodeLinks)
+		}
 		scratch.audit.finishParse(stacks)
 		captureArenaStats()
 		captureScratchStats()
@@ -2361,6 +2376,19 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 
 	// Iteration limit reached.
 	return finalize(stacks, ParseStopIterationLimit)
+}
+
+func (p *Parser) shouldUseTransientReduceChildren(source []byte, reuse *reuseCursor, oldTree *Tree, arenaClass arenaClass) bool {
+	return parseTransientReduceChildrenEnabled() &&
+		p != nil &&
+		p.language != nil &&
+		p.language.Name == "python" &&
+		arenaClass == arenaClassFull &&
+		reuse == nil &&
+		oldTree == nil &&
+		!p.noTreeBenchmarkOnly &&
+		!p.noTreeCheckpointBenchmarkOnly &&
+		len(source) > 0
 }
 
 func repetitionShiftConflictChoice(actions []ParseAction) (ParseAction, bool) {

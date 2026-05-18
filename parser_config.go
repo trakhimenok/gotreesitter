@@ -82,6 +82,14 @@ func parseMaxMergePerKeyEnvConfigured() bool {
 	return strings.TrimSpace(os.Getenv("GOT_GLR_MAX_MERGE_PER_KEY")) != ""
 }
 
+func parseTransientReduceChildrenEnabled() bool {
+	raw := strings.TrimSpace(os.Getenv("GOT_PYTHON_TRANSIENT_REDUCE_CHILDREN"))
+	if raw == "" {
+		return true
+	}
+	return raw != "0" && !strings.EqualFold(raw, "false")
+}
+
 func parseMemoryBudgetMB() int {
 	parseMemoryBudgetOnce.Do(func() {
 		// Default to a bounded per-parse ceiling so runaway GLR/arena growth

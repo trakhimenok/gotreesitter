@@ -1221,6 +1221,18 @@ func materializeReduceChildrenFromScratch(scratch *reduceBuildScratch, arena *no
 	return children, fieldIDs, fieldSources
 }
 
+func (p *Parser) allocAllVisibleReduceChildren(arena *nodeArena, n int, aliasSeq []Symbol, rawFieldIDs []FieldID, rawInherited []bool) []*Node {
+	if p != nil &&
+		p.transientReduceChildren &&
+		p.transientChildren != nil &&
+		len(aliasSeq) == 0 &&
+		len(rawFieldIDs) == 0 &&
+		len(rawInherited) == 0 {
+		return p.transientChildren.alloc(n)
+	}
+	return arena.allocNodeSliceNoClear(n)
+}
+
 func (p *Parser) buildReduceChildrenAllVisible(entries []stackEntry, start, end, childCount int, aliasSeq []Symbol, rawFieldIDs []FieldID, rawInherited []bool, symbolMeta []SymbolMetadata, arena *nodeArena) ([]*Node, []FieldID, []uint8, bool) {
 	visibleCount := 0
 	structuralChildIndex := 0
@@ -1251,7 +1263,7 @@ func (p *Parser) buildReduceChildrenAllVisible(entries []stackEntry, start, end,
 		return nil, nil, nil, true
 	}
 
-	children := arena.allocNodeSliceNoClear(visibleCount)
+	children := p.allocAllVisibleReduceChildren(arena, visibleCount, aliasSeq, rawFieldIDs, rawInherited)
 	arena.recordReduceChildSliceAllVisible(visibleCount)
 	if perfCountersEnabled {
 		perfRecordReduceChildrenAllVisible(visibleCount)

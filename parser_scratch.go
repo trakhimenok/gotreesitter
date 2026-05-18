@@ -15,6 +15,7 @@ type parserScratch struct {
 	stackCull           []stackCullKey
 	stateKeep           []StateID
 	reduce              reduceBuildScratch
+	transientChildren   transientChildScratch
 	budgetBytes         int64
 	budgetBaselineBytes int64
 }
@@ -51,7 +52,7 @@ func (s *parserScratch) allocatedBytes() int64 {
 	if s == nil {
 		return 0
 	}
-	return s.entries.allocatedBytes + s.gss.allocatedBytes + s.merge.allocatedBytes()
+	return s.entries.allocatedBytes + s.gss.allocatedBytes + s.merge.allocatedBytes() + s.transientChildren.allocatedBytes
 }
 
 func (s *parserScratch) budgetExhausted() bool {
@@ -129,6 +130,7 @@ func releaseParserScratch(s *parserScratch, skipGSSClear bool) {
 	} else {
 		s.reduce.reset()
 	}
+	s.transientChildren.resetForRelease()
 	s.entries.reset()
 	s.gss.skipClear = skipGSSClear
 	s.gss.audit = nil
