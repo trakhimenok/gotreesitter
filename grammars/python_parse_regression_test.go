@@ -176,6 +176,34 @@ func TestPythonScannerSerializationRecomputesInterpolatedStringState(t *testing.
 	}
 }
 
+func TestPythonNoTreeBenchmarkSkipsExternalScannerCheckpoints(t *testing.T) {
+	src := []byte("def f(x):\n    return f\"{x}\"\n")
+	lang := PythonLanguage()
+
+	parser := gotreesitter.NewParser(lang)
+	fullTree, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	defer fullTree.Release()
+	if fullTree.ParseRuntime().ExternalScannerCheckpointRecords == 0 {
+		t.Fatalf("full parse checkpoint records = 0, want > 0; runtime=%s", fullTree.ParseRuntime().Summary())
+	}
+
+	noTreeParser := gotreesitter.NewParser(lang)
+	noTree, err := noTreeParser.ParseNoTreeBenchmarkOnly(src)
+	if err != nil {
+		t.Fatalf("no-tree parse failed: %v", err)
+	}
+	defer noTree.Release()
+	if noTree.ParseRuntime().ExternalScannerCheckpointRecords != 0 {
+		t.Fatalf("no-tree checkpoint records = %d, want 0; runtime=%s", noTree.ParseRuntime().ExternalScannerCheckpointRecords, noTree.ParseRuntime().Summary())
+	}
+	if noTree.ParseRuntime().ExternalScannerCheckpointBytesAllocated != 0 {
+		t.Fatalf("no-tree checkpoint bytes = %d, want 0; runtime=%s", noTree.ParseRuntime().ExternalScannerCheckpointBytesAllocated, noTree.ParseRuntime().Summary())
+	}
+}
+
 func TestPythonUnderscoreAssignmentDoesNotTerminateModule(t *testing.T) {
 	src := []byte(`import os
 import sys

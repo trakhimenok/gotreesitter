@@ -1230,6 +1230,9 @@ func (p *Parser) recordCurrentExternalLeafCheckpoint(node *Node, tok Token) {
 	if p == nil || node == nil || !p.currentExternalTokenCheckpointValid {
 		return
 	}
+	if p.noTreeBenchmarkOnly {
+		return
+	}
 	if tok.Missing || tok.NoLookahead || tok.Symbol == 0 {
 		return
 	}
