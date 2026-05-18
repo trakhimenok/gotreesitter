@@ -795,6 +795,9 @@ func repairPythonKeywordErrorNode(node *Node, source []byte, arena *nodeArena, l
 	if node == nil || lang == nil || lang.Name != "python" || len(source) == 0 {
 		return node
 	}
+	if !node.hasError && node.symbol != errorSymbol {
+		return node
+	}
 	if node.Type(lang) == "ERROR" && len(node.children) == 0 {
 		if keyword, ok := pythonKeywordLeafSymbol(node, source, lang); ok {
 			named := false
