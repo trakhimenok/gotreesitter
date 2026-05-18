@@ -20,31 +20,127 @@ func normalizePythonCompatibilityWithParser(root *Node, source []byte, parser *P
 			parser.normalizationStats.nanos += time.Since(start).Nanoseconds()
 		}()
 	}
+	sourceFlags := pythonCompatibilitySourceFlagsFor(source)
 	parser.runNormalizationPass(func() bool {
-		return pythonSourceMayContainCodeByte(source, ';')
+		return sourceFlags.trailingSelfCalls
 	}, func() normalizationPassCounters {
 		return normalizePythonTrailingSelfCalls(root, source, lang)
 	})
 	parser.runNormalizationPass(func() bool {
-		return pythonSourceMayContainPrintChevron(source)
+		return sourceFlags.printChevron
 	}, func() normalizationPassCounters {
 		return normalizePythonPrintStatements(root, source, lang)
 	})
 	parser.runNormalizationPass(func() bool {
-		return bytes.IndexByte(source, '{') >= 0 && pythonSourceMayContainFStringPatternNormalization(source)
+		return sourceFlags.fStringPattern
 	}, func() normalizationPassCounters {
 		return normalizePythonInterpolationPatterns(root, lang)
 	})
 	parser.runNormalizationPass(func() bool {
-		return pythonSourceMayContainCodeWord(source, "pass")
+		return sourceFlags.passWord
 	}, func() normalizationPassCounters {
 		return normalizeCollapsedNamedLeafChildrenWithStats(root, lang, "pass_statement", "pass")
 	})
 	parser.runNormalizationPass(func() bool {
-		return bytes.Contains(source, []byte("\\\n")) || bytes.Contains(source, []byte("\\\r\n"))
+		return sourceFlags.continuationEscape
 	}, func() normalizationPassCounters {
 		return normalizePythonStringContinuationEscapes(root, source, lang)
 	})
+}
+
+type pythonCompatibilitySourceFlags struct {
+	trailingSelfCalls  bool
+	printChevron       bool
+	fStringPattern     bool
+	passWord           bool
+	continuationEscape bool
+}
+
+func pythonCompatibilitySourceFlagsFor(source []byte) pythonCompatibilitySourceFlags {
+	var flags pythonCompatibilitySourceFlags
+	for i := 0; i < len(source); {
+		if !flags.continuationEscape && pythonSourceContinuationEscapeAt(source, i) {
+			flags.continuationEscape = true
+		}
+		switch source[i] {
+		case '#':
+			next := pythonSkipLineComment(source, i+1)
+			if !flags.continuationEscape && pythonSourceRangeContainsContinuationEscape(source, i, next) {
+				flags.continuationEscape = true
+			}
+			i = next
+			continue
+		case '\'', '"':
+			start := pythonStringPrefixStart(source, i)
+			validPrefix := start < i && (start == 0 || !pythonIdentifierByte(source[start-1]))
+			hasFPrefix := false
+			if validPrefix {
+				for _, p := range source[start:i] {
+					if p == 'f' || p == 'F' {
+						hasFPrefix = true
+						break
+					}
+				}
+			}
+			end, ok := pythonSkipQuotedLiteral(source, i)
+			if !flags.continuationEscape && pythonSourceRangeContainsContinuationEscape(source, i, end) {
+				flags.continuationEscape = true
+			}
+			if !ok {
+				flags.trailingSelfCalls = true
+				flags.printChevron = true
+				flags.fStringPattern = true
+				flags.passWord = true
+				i = end
+				continue
+			}
+			if hasFPrefix {
+				contentStart, contentEnd := pythonQuotedLiteralContentRange(source, i, end)
+				if contentStart < contentEnd && pythonFStringContentMayNeedPatternNormalization(source[contentStart:contentEnd]) {
+					flags.fStringPattern = true
+				}
+			}
+			i = end
+			continue
+		}
+		if source[i] == ';' {
+			flags.trailingSelfCalls = true
+		}
+		if !flags.printChevron && pythonSourceWordAt(source, i, "print") {
+			j := i + len("print")
+			for j < len(source) && (source[j] == ' ' || source[j] == '\t' || source[j] == '\f') {
+				j++
+			}
+			if j+1 < len(source) && source[j] == '>' && source[j+1] == '>' {
+				flags.printChevron = true
+			}
+		}
+		if !flags.passWord && pythonSourceWordAt(source, i, "pass") {
+			flags.passWord = true
+		}
+		i++
+	}
+	return flags
+}
+
+func pythonSourceRangeContainsContinuationEscape(source []byte, start, end int) bool {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(source) {
+		end = len(source)
+	}
+	for i := start; i < end; i++ {
+		if pythonSourceContinuationEscapeAt(source, i) {
+			return true
+		}
+	}
+	return false
+}
+
+func pythonSourceContinuationEscapeAt(source []byte, i int) bool {
+	return i+1 < len(source) && source[i] == '\\' &&
+		(source[i+1] == '\n' || (i+2 < len(source) && source[i+1] == '\r' && source[i+2] == '\n'))
 }
 
 func pythonSourceMayContainFString(source []byte) bool {

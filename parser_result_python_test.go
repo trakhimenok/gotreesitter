@@ -535,20 +535,47 @@ func TestPythonCompatibilitySourceGatesPreferCodeTokens(t *testing.T) {
 	if pythonSourceMayContainCodeByte([]byte(`x = ";"; y = 1`), ';') != true {
 		t.Fatal("expected code semicolon after string literal")
 	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte(`x = ";"; y = 1`)); !flags.trailingSelfCalls {
+		t.Fatal("expected combined flags to detect code semicolon after string literal")
+	}
 	if pythonSourceMayContainCodeByte([]byte("\";\"\n# ;\n"), ';') {
 		t.Fatal("did not expect semicolon inside string/comment to pass code gate")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("\";\"\n# ;\n")); flags.trailingSelfCalls {
+		t.Fatal("did not expect combined flags to detect semicolon inside string/comment")
 	}
 	if !pythonSourceMayContainPrintChevron([]byte(`print >>sys.stderr, "x"`)) {
 		t.Fatal("expected print-chevron statement gate")
 	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte(`print >>sys.stderr, "x"`)); !flags.printChevron {
+		t.Fatal("expected combined flags to detect print-chevron statement")
+	}
 	if pythonSourceMayContainPrintChevron([]byte("\"print >> x\"\nprint_value = 1\nx >> 1")) {
 		t.Fatal("did not expect split print/chevron occurrences to pass gate")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("\"print >> x\"\nprint_value = 1\nx >> 1")); flags.printChevron {
+		t.Fatal("did not expect combined flags to detect split print/chevron occurrences")
 	}
 	if !pythonSourceMayContainCodeWord([]byte("if ok:\n    pass\n"), "pass") {
 		t.Fatal("expected pass statement code word")
 	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("if ok:\n    pass\n")); !flags.passWord {
+		t.Fatal("expected combined flags to detect pass statement code word")
+	}
 	if pythonSourceMayContainCodeWord([]byte("\"may pass NULL\"\npassword = 1\n# pass\n"), "pass") {
 		t.Fatal("did not expect pass inside string/comment or identifier to pass code gate")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("\"may pass NULL\"\npassword = 1\n# pass\n")); flags.passWord {
+		t.Fatal("did not expect combined flags to detect pass inside string/comment or identifier")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte(`f"{a, b}"`)); !flags.fStringPattern {
+		t.Fatal("expected combined flags to detect f-string pattern normalization")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte(`"regular {a, b}"`)); flags.fStringPattern {
+		t.Fatal("did not expect combined flags to detect non-f-string pattern normalization")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("x = \"a\\\nb\"")); !flags.continuationEscape {
+		t.Fatal("expected combined flags to detect continuation escape")
 	}
 }
 
