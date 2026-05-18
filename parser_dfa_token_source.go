@@ -534,7 +534,8 @@ func (d *dfaTokenSource) nextGLRUnionDFAToken() (Token, bool) {
 	}
 
 	// Deduplicate equivalent lex mode pairs to avoid redundant scans.
-	seen := make(map[lexModeKey]struct{}, len(d.glrStates))
+	var seenBuf [32]lexModeKey
+	seen := seenBuf[:0]
 	for _, st := range d.glrStates {
 		if int(st) >= len(d.language.LexModes) {
 			continue
@@ -544,10 +545,17 @@ func (d *dfaTokenSource) nextGLRUnionDFAToken() (Token, bool) {
 			lexState:                mode.LexStateIndex(),
 			afterWhitespaceLexState: mode.AfterWhitespaceLexStateIndex(),
 		}
-		if _, ok := seen[key]; ok {
+		alreadySeen := false
+		for _, existing := range seen {
+			if existing == key {
+				alreadySeen = true
+				break
+			}
+		}
+		if alreadySeen {
 			continue
 		}
-		seen[key] = struct{}{}
+		seen = append(seen, key)
 
 		candTok, candEndPos, candEndRow, candEndCol := d.scanPreferredTokenForState(st)
 
@@ -1620,7 +1628,9 @@ func (d *dfaTokenSource) nextExternalToken() (Token, bool) {
 	anyValid := false
 	states := d.glrStates
 	if len(states) == 0 {
-		states = []StateID{d.state}
+		var single [1]StateID
+		single[0] = d.state
+		states = single[:]
 	}
 	if tok, ok := d.nextGLRScoredExternalToken(states); ok {
 		return tok, true
@@ -1851,7 +1861,9 @@ func (d *dfaTokenSource) shouldDeferFortranExternalEndOfStatementToDFA(valid []b
 		return false
 	}
 	if len(states) == 0 {
-		states = []StateID{d.state}
+		var single [1]StateID
+		single[0] = d.state
+		states = single[:]
 	}
 	for _, st := range states {
 		tok, endPos, _, _ := d.scanPreferredTokenForState(st)
