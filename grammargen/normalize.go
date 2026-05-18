@@ -1275,6 +1275,21 @@ func (st *symbolTable) recordStringTokenPrecedence(value string, prec int) {
 	}
 }
 
+func (st *symbolTable) hasLongerStringLiteralPrefix(value string) bool {
+	if st == nil || value == "" {
+		return false
+	}
+	for name, id := range st.byName {
+		if len(name) <= len(value) || !strings.HasPrefix(name, value) {
+			continue
+		}
+		if id >= 0 && id < len(st.symbols) && st.symbols[id].Kind == SymbolTerminal {
+			return true
+		}
+	}
+	return false
+}
+
 func tokenRulePrecedence(r *Rule) int {
 	if r == nil {
 		return 0
@@ -1390,24 +1405,30 @@ func liftTokensInRule(r *Rule, parentName string, st *symbolTable, entries *[]in
 	switch r.Kind {
 	case RuleToken, RuleImmToken:
 		// Inline Token/ImmToken inside a nonterminal rule.
+		key := canonicalTokenKey(r)
 
 		// For non-immediate Token wrapping a simple STRING (possibly through
 		// prec wrappers), reuse the bare string symbol if it was already
 		// registered in Phase 1. This matches tree-sitter C which unifies
-		// token("x") and token(prec(N, "x")) with the bare "x" terminal.
+		// token("x") with the bare "x" terminal. A non-zero lexical
+		// precedence is kept distinct when the string is a prefix of a longer
+		// literal; otherwise the shorter token can globally outrank the longer
+		// match in unrelated lex states (for example Python "*" vs "**").
 		if r.Kind == RuleToken {
 			if sv := extractTokenStringValue(r); sv != "" {
 				if _, exists := st.lookup(sv); exists {
-					st.recordStringTokenPrecedence(sv, tokenRulePrecedence(r))
-					key := canonicalTokenKey(r)
-					dedup[key] = sv
-					return Sym(sv)
+					prec := tokenRulePrecedence(r)
+					if prec == 0 || !st.hasLongerStringLiteralPrefix(sv) {
+						st.recordStringTokenPrecedence(sv, prec)
+						dedup[key] = sv
+						return Sym(sv)
+					}
+					key += ":lexprec=" + strconv.Itoa(prec)
 				}
 			}
 		}
 
 		// Check if an identical pattern was already registered.
-		key := canonicalTokenKey(r)
 		if existingName, ok := dedup[key]; ok {
 			return Sym(existingName)
 		}

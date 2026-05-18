@@ -99,6 +99,54 @@ func TestPythonTypeAliasStatementParity(t *testing.T) {
 	}
 }
 
+func TestPythonDoubleStarParity(t *testing.T) {
+	genLang := loadGeneratedPythonLanguageForParity(t)
+	refLang := grammars.PythonLanguage()
+	adaptExternalScanner(refLang, genLang)
+
+	samples := []string{
+		"def g(**kwarg):\n    pass\n",
+		"def g(h, i, /, j, *, k=100, **kwarg):\n    pass\n",
+		"async def i(a, b=c, *c, **d):\n    a\n",
+		"x = a ** b\n",
+		"type IntFunc[**P] = Callable[P, int]\n",
+	}
+
+	for _, sample := range samples {
+		assertPythonParity(t, genLang, refLang, sample)
+	}
+}
+
+func TestTokenPrecStringDoesNotGloballyOverrideLongerBareString(t *testing.T) {
+	g := NewGrammar("token_prec_prefix")
+	g.Define("source_file", Choice(Sym("short"), Sym("long"), Seq(Str("q"), Sym("contextual"))))
+	g.Define("short", Seq(Str("*"), Str("x")))
+	g.Define("long", Seq(Str("**"), Str("y")))
+	g.Define("contextual", Seq(Token(Prec(1, Str("*"))), Str("z")))
+
+	lang, err := GenerateLanguage(g)
+	if err != nil {
+		t.Fatalf("GenerateLanguage: %v", err)
+	}
+
+	tree, err := gotreesitter.NewParser(lang).Parse([]byte("**y"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	t.Cleanup(tree.Release)
+
+	root := tree.RootNode()
+	if root.HasError() {
+		t.Fatalf("parse has error: %s", root.SExpr(lang))
+	}
+	if got, want := root.EndByte(), uint32(3); got != want {
+		t.Fatalf("root end byte = %d, want %d; tree=%s", got, want, root.SExpr(lang))
+	}
+	if got, want := root.SExpr(lang), "(source_file (long))"; got != want {
+		t.Fatalf("SExpr = %s, want %s", got, want)
+	}
+}
+
 func loadGeneratedPythonLanguageForParity(t *testing.T) *gotreesitter.Language {
 	t.Helper()
 
