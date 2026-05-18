@@ -179,6 +179,19 @@ func noteRepeatedReduceChainSignature(prev reduceChainSignature, prevCount int, 
 	return prev, prevCount, prevCount > maxRepeatedReduceChainSignature
 }
 
+func (p *Parser) useCompactNoTreeShiftLeaf() bool {
+	return p != nil && p.noTreeBenchmarkOnly && p.compactNoTreeShiftLeaves && !p.noTreeCheckpointBenchmarkOnly
+}
+
+func (p *Parser) shiftTokenIsMissingError(tok Token) bool {
+	if tok.Missing {
+		return true
+	}
+	return p != nil && p.language != nil &&
+		(p.language.Name == "c" || p.language.Name == "cpp" || p.language.Name == "objc") &&
+		tok.Symbol != 0 && tok.StartByte == tok.EndByte && tok.Text == ""
+}
+
 func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bool, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, tmpEntries *[]stackEntry, deferParentLinks bool, trackChildErrors *bool) bool {
 	if s == nil || s.dead || s.accepted || s.shifted {
 		return false
@@ -253,27 +266,37 @@ func (p *Parser) applyAction(s *glrStack, act ParseAction, tok Token, anyReduced
 	switch act.Type {
 	case ParseActionShift:
 		named := p.isNamedSymbol(tok.Symbol)
-		leaf := newLeafNodeInArena(arena, tok.Symbol, named,
-			tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
-		if tok.Missing || (p != nil && p.language != nil &&
-			(p.language.Name == "c" || p.language.Name == "cpp" || p.language.Name == "objc") &&
-			tok.Symbol != 0 && tok.StartByte == tok.EndByte && tok.Text == "") {
-			leaf.setMissing(true)
-			leaf.setHasError(true)
-			if trackChildErrors != nil {
-				*trackChildErrors = true
-			}
-		}
-		leaf.setExtra(act.Extra)
-		if leaf.isExtra() && perfCountersEnabled {
-			perfRecordExtraNode()
-		}
 		currentState := s.top().state
 		targetState := extraShiftTargetState(currentState, act)
-		leaf.preGotoState = currentState
-		leaf.parseState = targetState
-		p.recordCurrentExternalLeafCheckpoint(leaf, tok)
-		p.pushStackNode(s, targetState, leaf, entryScratch, gssScratch)
+		if p.useCompactNoTreeShiftLeaf() && !p.shiftTokenIsMissingError(tok) {
+			leaf := newNoTreeLeafNodeInArena(arena, tok.Symbol, named,
+				tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
+			leaf.setExtra(act.Extra)
+			if leaf.isExtra() && perfCountersEnabled {
+				perfRecordExtraNode()
+			}
+			leaf.preGotoState = currentState
+			leaf.parseState = targetState
+			p.pushStackNoTreeNode(s, targetState, leaf, entryScratch, gssScratch)
+		} else {
+			leaf := newLeafNodeInArena(arena, tok.Symbol, named,
+				tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
+			if p.shiftTokenIsMissingError(tok) {
+				leaf.setMissing(true)
+				leaf.setHasError(true)
+				if trackChildErrors != nil {
+					*trackChildErrors = true
+				}
+			}
+			leaf.setExtra(act.Extra)
+			if leaf.isExtra() && perfCountersEnabled {
+				perfRecordExtraNode()
+			}
+			leaf.preGotoState = currentState
+			leaf.parseState = targetState
+			p.recordCurrentExternalLeafCheckpoint(leaf, tok)
+			p.pushStackNode(s, targetState, leaf, entryScratch, gssScratch)
+		}
 		s.shifted = true
 		*nodeCount++
 		if p != nil && p.glrTrace {

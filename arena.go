@@ -96,6 +96,7 @@ type nodeArena struct {
 	leafNodesConstructed                uint64
 	parentNodesConstructed              uint64
 	noTreeReduceNodesConstructed        uint64
+	noTreeLeafNodesConstructed          uint64
 	noTreePlaceholderNodesConstructed   uint64
 }
 
@@ -444,6 +445,7 @@ func (a *nodeArena) reset() {
 	a.leafNodesConstructed = 0
 	a.parentNodesConstructed = 0
 	a.noTreeReduceNodesConstructed = 0
+	a.noTreeLeafNodesConstructed = 0
 	a.noTreePlaceholderNodesConstructed = 0
 	if len(a.fieldSlabs) > 0 {
 		retained := 0
@@ -933,6 +935,7 @@ func (a *nodeArena) collectArenaBreakdown() *ArenaBreakdown {
 		LeafNodesConstructed:              a.leafNodesConstructed,
 		ParentNodesConstructed:            a.parentNodesConstructed,
 		NoTreeReduceNodesConstructed:      a.noTreeReduceNodesConstructed,
+		NoTreeLeafNodesConstructed:        a.noTreeLeafNodesConstructed,
 		NoTreePlaceholderNodesConstructed: a.noTreePlaceholderNodesConstructed,
 		ChildPointersConstructed:          a.childPointersUsed(),
 		FieldIDElementsConstructed:        a.fieldIDElementsUsed(),

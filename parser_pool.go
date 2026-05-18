@@ -113,6 +113,7 @@ func (pp *ParserPool) applyDefaults(p *Parser) {
 	p.SetAmbiguityProfile(pp.ambiguityProfile)
 	p.noTreeBenchmarkOnly = false
 	p.noTreeCheckpointBenchmarkOnly = false
+	p.compactNoTreeShiftLeaves = false
 	p.noResultCompatibilityBenchmarkOnly = false
 }
 

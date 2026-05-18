@@ -58,6 +58,7 @@ type Parser struct {
 	reduceScratch                       *reduceBuildScratch
 	noTreeBenchmarkOnly                 bool
 	noTreeCheckpointBenchmarkOnly       bool
+	compactNoTreeShiftLeaves            bool
 	noResultCompatibilityBenchmarkOnly  bool
 	currentExternalTokenCheckpoint      externalScannerCheckpoint
 	currentExternalTokenCheckpointStart uint32
@@ -318,6 +319,7 @@ func resetSnippetParser(parser *Parser) {
 	parser.ambiguityProfile = nil
 	parser.noTreeBenchmarkOnly = false
 	parser.noTreeCheckpointBenchmarkOnly = false
+	parser.compactNoTreeShiftLeaves = false
 	parser.timeoutMicros = 0
 	parser.cancellationFlag = nil
 	// Release *Node refs so the arenas from the last incremental parse can be
@@ -1304,6 +1306,11 @@ func resolveParseMaxStacks(configuredMaxStacks, maxStacksOverride, conflictWidth
 // merged; distinct alternatives are preserved.
 func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor, oldTree *Tree, arenaClass arenaClass, timing *incrementalParseTiming, maxStacksOverride int, maxNodesOverride int, maxMergePerKeyOverride int, deterministicExternalConflicts bool) *Tree {
 	parseStart := time.Now()
+	prevCompactNoTreeShiftLeaves := p.compactNoTreeShiftLeaves
+	p.compactNoTreeShiftLeaves = p.noTreeBenchmarkOnly && !p.noTreeCheckpointBenchmarkOnly && parseShouldCompactNoTreeShiftLeaves(len(source))
+	defer func() {
+		p.compactNoTreeShiftLeaves = prevCompactNoTreeShiftLeaves
+	}()
 	p.clearCurrentExternalTokenCheckpoint()
 	p.resetNormalizationStats()
 	if p.logger != nil {
@@ -1371,6 +1378,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		target := parseFullArenaNodeCapacity(len(source), p.fullArenaHintCapacity())
 		if p.noTreeBenchmarkOnly {
 			target = parseNoTreeArenaNodeCapacity(len(source))
+			if p.noTreeCheckpointBenchmarkOnly {
+				target = parseNoTreeFullLeafArenaNodeCapacity(len(source))
+			}
 		}
 		arena.ensureNodeCapacity(target)
 		scratch.entries.ensureInitialCap(parseFullEntryScratchCapacity(len(source)))
@@ -1422,6 +1432,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		parseRuntime.LeafNodesConstructed = arena.leafNodesConstructed
 		parseRuntime.ParentNodesConstructed = arena.parentNodesConstructed
 		parseRuntime.NoTreeReduceNodesConstructed = arena.noTreeReduceNodesConstructed
+		parseRuntime.NoTreeLeafNodesConstructed = arena.noTreeLeafNodesConstructed
 		if arena.breakdownEnabled {
 			arenaBreakdown = arena.collectArenaBreakdown()
 		}
@@ -1947,17 +1958,27 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			if len(actions) > 0 &&
 				actions[0].Type == ParseActionShift && actions[0].Extra {
 				named := p.isNamedSymbol(tok.Symbol)
-				leaf := newLeafNodeInArena(arena, tok.Symbol, named,
-					tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
-				if tok.Missing {
-					leaf.setMissing(true)
-					leaf.setHasError(true)
+				targetState := extraShiftTargetState(currentState, actions[0])
+				if p.useCompactNoTreeShiftLeaf() && !p.shiftTokenIsMissingError(tok) {
+					leaf := newNoTreeLeafNodeInArena(arena, tok.Symbol, named,
+						tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
+					leaf.setExtra(true)
+					leaf.preGotoState = currentState
+					leaf.parseState = targetState
+					p.pushStackNoTreeNode(s, targetState, leaf, &scratch.entries, &scratch.gss)
+				} else {
+					leaf := newLeafNodeInArena(arena, tok.Symbol, named,
+						tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
+					if tok.Missing {
+						leaf.setMissing(true)
+						leaf.setHasError(true)
+					}
+					leaf.setExtra(true)
+					leaf.preGotoState = currentState
+					leaf.parseState = targetState
+					p.recordCurrentExternalLeafCheckpoint(leaf, tok)
+					p.pushStackNode(s, targetState, leaf, &scratch.entries, &scratch.gss)
 				}
-				leaf.setExtra(true)
-				leaf.preGotoState = currentState
-				leaf.parseState = extraShiftTargetState(currentState, actions[0])
-				p.recordCurrentExternalLeafCheckpoint(leaf, tok)
-				p.pushStackNode(s, leaf.parseState, leaf, &scratch.entries, &scratch.gss)
 				nodeCount++
 				needToken = true
 				continue

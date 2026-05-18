@@ -48,6 +48,9 @@ func TestParseRuntimeReportsAcceptedOnCompleteParse(t *testing.T) {
 	if rt.NoTreeReduceNodesConstructed != 0 {
 		t.Fatalf("NoTreeReduceNodesConstructed = %d, want 0", rt.NoTreeReduceNodesConstructed)
 	}
+	if rt.NoTreeLeafNodesConstructed != 0 {
+		t.Fatalf("NoTreeLeafNodesConstructed = %d, want 0", rt.NoTreeLeafNodesConstructed)
+	}
 	breakdown := assertParseRuntimeArenaBreakdown(t, tree, rt)
 	if got := breakdown.NoTreePlaceholderNodesConstructed; got != 0 {
 		t.Fatalf("NoTreePlaceholderNodesConstructed = %d, want 0", got)
@@ -77,12 +80,43 @@ func TestParseRuntimeReportsNoTreeNodeVolume(t *testing.T) {
 	if rt.NoTreeReduceNodesConstructed == 0 {
 		t.Fatal("NoTreeReduceNodesConstructed = 0, want > 0")
 	}
+	if rt.NoTreeLeafNodesConstructed != 0 {
+		t.Fatalf("NoTreeLeafNodesConstructed = %d, want 0", rt.NoTreeLeafNodesConstructed)
+	}
 	breakdown := assertParseRuntimeArenaBreakdown(t, tree, rt)
 	if got := breakdown.NoTreePlaceholderNodesConstructed; got != 1 {
 		t.Fatalf("NoTreePlaceholderNodesConstructed = %d, want 1", got)
 	}
+	if got := breakdown.NoTreeLeafNodesConstructed; got != 0 {
+		t.Fatalf("NoTreeLeafNodesConstructed breakdown = %d, want 0", got)
+	}
 	if breakdown.NoTreeNodeBytesAllocated == 0 {
 		t.Fatal("NoTreeNodeBytesAllocated = 0, want > 0")
+	}
+}
+
+func TestParseRuntimeReportsNoTreeCheckpointLeavesRemainNodes(t *testing.T) {
+	EnableArenaBreakdown(true)
+	defer EnableArenaBreakdown(false)
+
+	lang := buildArithmeticLanguage()
+	parser := NewParser(lang)
+
+	tree, err := parser.ParseNoTreeWithExternalCheckpointsBenchmarkOnly([]byte("1+2"))
+	if err != nil {
+		t.Fatalf("ParseNoTreeWithExternalCheckpointsBenchmarkOnly() error = %v", err)
+	}
+	defer tree.Release()
+	rt := tree.ParseRuntime()
+
+	if rt.LeafNodesConstructed == 0 {
+		t.Fatal("LeafNodesConstructed = 0, want > 0")
+	}
+	if rt.NoTreeLeafNodesConstructed != 0 {
+		t.Fatalf("NoTreeLeafNodesConstructed = %d, want 0", rt.NoTreeLeafNodesConstructed)
+	}
+	if rt.NoTreeReduceNodesConstructed == 0 {
+		t.Fatal("NoTreeReduceNodesConstructed = 0, want > 0")
 	}
 }
 

@@ -68,6 +68,7 @@ type pythonRuntimeBenchStats struct {
 	leafNodesConstructed              uint64
 	parentNodesConstructed            uint64
 	noTreeReduceNodesConstructed      uint64
+	noTreeLeafNodesConstructed        uint64
 	noTreePlaceholderNodesConstructed uint64
 	otherNodesConstructed             uint64
 	extraNodesConstructed             uint64
@@ -116,6 +117,7 @@ func (s *pythonRuntimeBenchStats) add(rt gotreesitter.ParseRuntime, breakdown go
 	s.leafNodesConstructed += rt.LeafNodesConstructed
 	s.parentNodesConstructed += rt.ParentNodesConstructed
 	s.noTreeReduceNodesConstructed += rt.NoTreeReduceNodesConstructed
+	s.noTreeLeafNodesConstructed += rt.NoTreeLeafNodesConstructed
 	if hasBreakdown {
 		s.arenaBreakdownSamples++
 		s.arenaNodeStructBytesAllocated += breakdown.NodeStructBytesAllocated
@@ -186,6 +188,7 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 	b.ReportMetric(float64(s.leafNodesConstructed)/tokens, "leaf_nodes/token")
 	b.ReportMetric(float64(s.parentNodesConstructed)/tokens, "parent_nodes/token")
 	b.ReportMetric(float64(s.noTreeReduceNodesConstructed)/tokens, "notree_nodes/token")
+	b.ReportMetric(float64(s.noTreeLeafNodesConstructed)/tokens, "notree_leaf_nodes/token")
 	if s.parentNodesAllocated != 0 || s.leafNodesAllocated != 0 {
 		b.ReportMetric(float64(s.parentNodesAllocated)/tokens, "surv_parent_nodes/token")
 		b.ReportMetric(float64(s.leafNodesAllocated)/tokens, "surv_leaf_nodes/token")

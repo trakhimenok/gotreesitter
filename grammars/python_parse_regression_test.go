@@ -202,6 +202,12 @@ func TestPythonNoTreeBenchmarkSkipsExternalScannerCheckpoints(t *testing.T) {
 	if noTree.ParseRuntime().ExternalScannerCheckpointBytesAllocated != 0 {
 		t.Fatalf("no-tree checkpoint bytes = %d, want 0; runtime=%s", noTree.ParseRuntime().ExternalScannerCheckpointBytesAllocated, noTree.ParseRuntime().Summary())
 	}
+	if noTree.ParseRuntime().LeafNodesConstructed == 0 {
+		t.Fatalf("no-tree leaf nodes = 0, want > 0 for small corpus; runtime=%s", noTree.ParseRuntime().Summary())
+	}
+	if noTree.ParseRuntime().NoTreeLeafNodesConstructed != 0 {
+		t.Fatalf("no-tree compact leaf nodes = %d, want 0 for small corpus; runtime=%s", noTree.ParseRuntime().NoTreeLeafNodesConstructed, noTree.ParseRuntime().Summary())
+	}
 }
 
 func TestPythonNoTreeBenchmarkCanKeepExternalScannerCheckpoints(t *testing.T) {
@@ -216,6 +222,12 @@ func TestPythonNoTreeBenchmarkCanKeepExternalScannerCheckpoints(t *testing.T) {
 	rt := tree.ParseRuntime()
 	if rt.NoTreeReduceNodesConstructed == 0 {
 		t.Fatalf("no-tree reduce nodes = 0, want > 0; runtime=%s", rt.Summary())
+	}
+	if rt.LeafNodesConstructed == 0 {
+		t.Fatalf("checkpoint leaf nodes = 0, want > 0; runtime=%s", rt.Summary())
+	}
+	if rt.NoTreeLeafNodesConstructed != 0 {
+		t.Fatalf("checkpoint compact leaf nodes = %d, want 0; runtime=%s", rt.NoTreeLeafNodesConstructed, rt.Summary())
 	}
 	if rt.ExternalScannerCheckpointRecords == 0 {
 		t.Fatalf("checkpoint records = 0, want > 0; runtime=%s", rt.Summary())

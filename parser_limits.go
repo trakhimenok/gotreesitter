@@ -136,12 +136,26 @@ func parseFullArenaInitialNodeCapacity(sourceLen int) int {
 }
 
 func parseNoTreeArenaNodeCapacity(sourceLen int) int {
+	if !parseShouldCompactNoTreeShiftLeaves(sourceLen) {
+		return parseNoTreeFullLeafArenaNodeCapacity(sourceLen)
+	}
+	// Large no-tree parses keep shifted leaves and reductions in compact
+	// noTreeNode slabs, so full Node capacity is needed only for the returned
+	// placeholder root and unusual recovery/error fallbacks.
+	return nodeCapacityForClass(arenaClassFull)
+}
+
+func parseShouldCompactNoTreeShiftLeaves(sourceLen int) bool {
+	return sourceLen >= 256*1024
+}
+
+func parseNoTreeFullLeafArenaNodeCapacity(sourceLen int) int {
 	base := nodeCapacityForClass(arenaClassFull)
 	if sourceLen <= 0 {
 		return base
 	}
-	// No-tree still allocates shifted leaves and recovery nodes as public Nodes,
-	// but compact reduce placeholders no longer need full Node capacity.
+	// Small no-tree parses and the checkpoint attribution lane still use real
+	// shifted leaves; keep enough full Node capacity for that mode.
 	estimate := sourceLen / 2
 	if sourceLen >= 1024*1024 {
 		estimate = sourceLen / 3

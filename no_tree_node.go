@@ -245,3 +245,20 @@ func stackEntryNodeFieldIDCount(e stackEntry) int {
 	}
 	return 0
 }
+
+func newNoTreeLeafNodeInArena(arena *nodeArena, sym Symbol, named bool, startByte, endByte uint32, startPoint, endPoint Point) *noTreeNode {
+	var n *noTreeNode
+	if arena == nil {
+		n = &noTreeNode{}
+	} else {
+		n = arena.allocNoTreeNode()
+		arena.noTreeLeafNodesConstructed++
+	}
+	n.symbol = sym
+	n.setNamed(named)
+	n.startByte = startByte
+	n.endByte = endByte
+	n.startPoint = startPoint
+	n.endPoint = endPoint
+	return n
+}

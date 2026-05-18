@@ -176,6 +176,7 @@ type ParseRuntime struct {
 	LeafNodesConstructed                    uint64
 	ParentNodesConstructed                  uint64
 	NoTreeReduceNodesConstructed            uint64
+	NoTreeLeafNodesConstructed              uint64
 	NormalizationPassesChecked              uint64
 	NormalizationPassesRun                  uint64
 	NormalizationNodesVisited               uint64
@@ -209,6 +210,7 @@ type ArenaBreakdown struct {
 	LeafNodesConstructed              uint64
 	ParentNodesConstructed            uint64
 	NoTreeReduceNodesConstructed      uint64
+	NoTreeLeafNodesConstructed        uint64
 	NoTreePlaceholderNodesConstructed uint64
 	OtherNodesConstructed             uint64
 	ExtraNodesConstructed             uint64
