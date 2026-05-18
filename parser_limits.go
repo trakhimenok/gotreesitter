@@ -116,12 +116,18 @@ func parseFullArenaInitialNodeCapacity(sourceLen int) int {
 	if sourceLen <= 0 {
 		return base
 	}
-	// First-pass sizing when no adaptive hint exists yet. Empirically our Go
-	// grammar consumes ~1 node per 5-10 input bytes, so sourceLen/4 gives
-	// comfortable headroom without front-loading arena memory that never
-	// becomes live. Any shortfall is absorbed by overflow slabs and the
-	// adaptive hint on the next parse trims to observed peak + 25%.
+	// First-pass sizing when no adaptive hint exists yet. Small and medium
+	// sources use conservative headroom so ordinary parses do not front-load
+	// arena memory they never touch. Very large generated sources, especially
+	// Python/SWIG output, commonly approach one node per input byte; giving
+	// those parses a larger primary arena avoids repeated overflow-slab growth
+	// that is thrown away immediately by the large-arena retention guard.
 	estimate := sourceLen / 4
+	if sourceLen >= 1024*1024 {
+		estimate = sourceLen
+	} else if sourceLen >= 256*1024 {
+		estimate = sourceLen / 2
+	}
 	const maxPreallocNodes = 1_500_000
 	if estimate > maxPreallocNodes {
 		estimate = maxPreallocNodes

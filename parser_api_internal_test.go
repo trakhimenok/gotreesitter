@@ -733,3 +733,12 @@ func TestParseFullArenaNodeCapacityKeepsUsefulSameSizeHint(t *testing.T) {
 		t.Fatalf("parseFullArenaNodeCapacity(%d, useful hint %d) = %d, want hint", sourceLen, hint, got)
 	}
 }
+
+func TestParseFullArenaInitialNodeCapacityScalesForLargeSources(t *testing.T) {
+	sourceLen := 2 * 1024 * 1024
+	got := parseFullArenaInitialNodeCapacity(sourceLen)
+	want := 1_500_000
+	if got != want {
+		t.Fatalf("parseFullArenaInitialNodeCapacity(%d) = %d, want %d", sourceLen, got, want)
+	}
+}
