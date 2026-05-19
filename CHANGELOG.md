@@ -9,6 +9,85 @@ for tags and release notes while still in `0.x`.
 
 - Nothing yet.
 
+## [0.18.0] - 2026-05-19
+
+Cold dependency extraction and parser materialization diagnostics release.
+
+### Added
+- Language-neutral import extraction APIs:
+  `ExtractImports`, `ExtractImportsFromSource`, and
+  `ExtractImportsFromSourceWithReport`. The source extractor reports status,
+  reason, and fallback recommendation so callers can use a fast source scan and
+  fall back to a full tree parse only when needed.
+- Source-vs-tree import parity fixtures and Docker corpus gates for Go, Java,
+  Python, and optional Starlark corpora.
+- `cgo_harness/cmd/import_replay`, a Bazel/Gazelle-shaped replay command that
+  scans repositories and compares cgo tree extraction, Go tree extraction, and
+  hybrid source extraction with normalized dependency-output diffs and timing
+  JSON.
+- Python corpus parsing and materialization benchmarks, including no-tree,
+  no-tree-plus-checkpoints, full no-compat, full compat, arena, checkpoint,
+  GSS, transient reduction, final materialization, and normalization counters.
+- Parser runtime attribution for constructed/final node volume, arena usage,
+  checkpoint storage, reduction/transient storage, final tree materialization,
+  normalization timing, and GLR collapse behavior.
+- Experimental GLR v2 scaffolding for compact full leaves and pending parents,
+  kept diagnostic/controlled while materialization coverage is broadened.
+
+### Changed
+- Python full parses now use sparse external scanner checkpoint storage,
+  scanner snapshot reuse, capped large-file arena headroom, transient
+  reduction-child storage, deferred parent links, and source-gated
+  compatibility normalization.
+- No-tree benchmark paths carry compact no-tree payloads and skip public tree
+  construction/checkpoint work when the benchmark mode does not need it.
+- Python compatibility repair now skips clean subtrees and avoids running
+  f-string, keyword, and punctuation normalization passes when source flags
+  prove they cannot apply.
+- Import extraction for Python handles preamble comments, `__future__` imports,
+  multiline imports, relative imports, and triple-quoted strings consistently
+  across source and tree extractors.
+- Diagnostic tests and Canopy scratch output are kept out of normal repository
+  noise; `.canopy/` is ignored and stale tracked scratch programs were removed.
+
+### Fixed
+- Python token precedence now preserves longer prefix literals such as `**`
+  instead of letting shared shorter literals split them during generated-parser
+  lexing.
+- Python external scanner lex-state registration is restored for generated
+  grammar parity and corpus parsing.
+- Java annotation declarations and zero-version GLR cache invalidation no
+  longer corrupt branch selection.
+- Transient parent reuse in result assembly now preserves child ownership and
+  avoids unsafe reuse across incompatible reduction paths.
+- Go source dependency replay now exposes full-tree completeness failures that
+  would otherwise hide imports in cold dependency scans.
+
+### Performance
+- On a `rules_python` replay with 564 Python files and 949 imports, hybrid
+  source extraction matched cgo tree extraction and Go tree extraction exactly:
+  cgo parse+extract was about `158 ms`, Go tree extraction about `1.17 s`, and
+  source extraction about `3.9 ms`.
+- On a `rules_jvm` replay with 231 Java files and 1028 imports, hybrid source
+  extraction matched cgo and Go tree extraction exactly: cgo parse+extract was
+  about `70 ms`, Go tree extraction about `276 ms`, and source extraction about
+  `1 ms`.
+- On an `aspect-gazelle` Go replay with 148 files and 916 refs, hybrid source
+  extraction matched cgo tree extraction exactly in about `0.7 ms`; Go full-tree
+  extraction missed 8 refs because three full-tree parses were incomplete.
+- Sparse checkpoint storage and snapshot reuse substantially reduce Python
+  checkpoint bytes/token on stress and PyMuPDF lanes while preserving corpus and
+  grammargen-vs-cgo parity.
+
+### Testing
+- Focused import extraction tests cover Go, Java, Python, Starlark, source
+  fallback reporting, Python preamble comments, docstrings, and future imports.
+- Docker import replay smoke passed under `4 GB` memory and `1 CPU` with
+  `oom_killed=false`.
+- Python real corpus and grammargen-vs-cgo parity remain the gate for parser
+  correctness work; heavy parity and performance lanes stay Docker-scoped and
+  language-scoped.
+
 ## [0.17.4] - 2026-05-17
 
 Python parser compatibility patch for downstream Gazelle consumers.
