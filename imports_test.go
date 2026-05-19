@@ -204,6 +204,34 @@ from pkg import *
 			},
 		},
 		{
+			name: "python_import_after_preamble_comments",
+			lang: grammars.PythonLanguage(),
+			source: `# Copyright 2026 Example
+#
+# from fake import comment
+from foo.bar import baz
+`,
+			want: []gotreesitter.ImportRef{
+				{Lang: "python", Kind: "from_import", Path: "foo.bar.baz", From: "foo.bar", Name: "baz"},
+			},
+		},
+		{
+			name: "python_future_import_and_triple_string",
+			lang: grammars.PythonLanguage(),
+			source: `"""module docstring"""
+from __future__ import annotations
+template = """
+import fake_template
+from fake import template
+"""
+from real.pkg import thing
+`,
+			want: []gotreesitter.ImportRef{
+				{Lang: "python", Kind: "from_import", Path: "__future__.annotations", From: "__future__", Name: "annotations"},
+				{Lang: "python", Kind: "from_import", Path: "real.pkg.thing", From: "real.pkg", Name: "thing"},
+			},
+		},
+		{
 			name: "starlark_skip_comments_and_strings",
 			lang: grammars.StarlarkLanguage(),
 			source: `# load("//fake:comment.bzl", "x")

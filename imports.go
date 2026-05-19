@@ -345,55 +345,12 @@ func javaImportRefFromText(lang *Language, text string, startByte, endByte uint3
 
 func extractPythonImportNode(n *Node, lang *Language, source []byte, refs *[]ImportRef) bool {
 	switch n.Type(lang) {
-	case "import_statement":
-		text := strings.TrimSpace(n.Text(source))
-		body := strings.TrimSpace(strings.TrimPrefix(text, "import"))
-		for _, part := range splitImportList(body) {
-			path, alias := splitImportAlias(part)
-			if path == "" {
-				continue
-			}
-			*refs = append(*refs, ImportRef{
-				Lang:      lang.Name,
-				Kind:      "import",
-				Path:      path,
-				Name:      lastDottedName(path),
-				Alias:     alias,
-				StartByte: n.StartByte(),
-				EndByte:   n.EndByte(),
-			})
-		}
-		return false
-	case "import_from_statement":
-		text := strings.TrimSpace(n.Text(source))
-		body := strings.TrimSpace(strings.TrimPrefix(text, "from"))
-		fromPart, importPart, ok := strings.Cut(body, " import ")
-		if !ok {
-			return false
-		}
-		relative := countLeadingDots(fromPart)
-		from := strings.TrimLeft(fromPart, ".")
-		for _, part := range splitImportList(importPart) {
-			name, alias := splitImportAlias(part)
-			if name == "" {
-				continue
-			}
-			ref := ImportRef{
-				Lang:      lang.Name,
-				Kind:      "from_import",
-				From:      from,
-				Name:      name,
-				Alias:     alias,
-				Relative:  relative,
-				StartByte: n.StartByte(),
-				EndByte:   n.EndByte(),
-			}
-			if name == "*" {
-				ref.Wildcard = true
-				ref.Path = joinPythonImportPath(from, "")
-			} else {
-				ref.Path = joinPythonImportPath(from, name)
-			}
+	case "import_statement", "import_from_statement", "future_import_statement":
+		start := n.StartByte()
+		result := extractPythonImportsFromSourceWithReport(lang, []byte(n.Text(source)))
+		for _, ref := range result.Imports {
+			ref.StartByte += start
+			ref.EndByte += start
 			*refs = append(*refs, ref)
 		}
 		return false
@@ -411,26 +368,27 @@ func extractPythonImportsFromSourceWithReport(lang *Language, source []byte) Imp
 	reason := ""
 	fallback := false
 	offset := 0
+	tripleQuote := ""
 	for offset <= len(source) {
 		next := offset
 		for next < len(source) && source[next] != '\n' {
 			next++
 		}
 		line := string(source[offset:next])
-		stripped := stripPythonLineComment(line)
-		trimmed := strings.TrimSpace(stripped)
-		start := offset + len(line) - len(strings.TrimLeft(line, " \t\r"))
+		codeLine := pythonCodeLineOutsideStrings(line, &tripleQuote)
+		trimmed := strings.TrimSpace(codeLine)
+		start := offset + len(codeLine) - len(strings.TrimLeft(codeLine, " \t\r"))
 		stmtEnd := next
 		advance := next + 1
 		if strings.HasPrefix(trimmed, "import ") || strings.HasPrefix(trimmed, "from ") {
-			stmt := stripped
+			stmt := codeLine
 			for pythonImportStatementContinues(stmt) && advance <= len(source) {
 				lineStart := advance
 				lineEnd := lineStart
 				for lineEnd < len(source) && source[lineEnd] != '\n' {
 					lineEnd++
 				}
-				stmt += "\n" + stripPythonLineComment(string(source[lineStart:lineEnd]))
+				stmt += "\n" + pythonCodeLineOutsideStrings(string(source[lineStart:lineEnd]), &tripleQuote)
 				stmtEnd = lineEnd
 				advance = lineEnd + 1
 				if lineEnd == len(source) {
@@ -813,36 +771,6 @@ func stripLineAndBlockComments(source []byte) []byte {
 	return out
 }
 
-func stripPythonLineComment(line string) string {
-	inQuote := byte(0)
-	escaped := false
-	for i := 0; i < len(line); i++ {
-		c := line[i]
-		if escaped {
-			escaped = false
-			continue
-		}
-		if inQuote != 0 {
-			if c == '\\' {
-				escaped = true
-				continue
-			}
-			if c == inQuote {
-				inQuote = 0
-			}
-			continue
-		}
-		if c == '\'' || c == '"' {
-			inQuote = c
-			continue
-		}
-		if c == '#' {
-			return line[:i]
-		}
-	}
-	return line
-}
-
 func pythonImportStatementContinues(stmt string) bool {
 	trimmed := strings.TrimRight(stmt, " \t\r\n")
 	if strings.HasSuffix(trimmed, "\\") {
@@ -885,6 +813,91 @@ func parenBalanceIgnoringQuotes(text string) int {
 		}
 	}
 	return depth
+}
+
+func pythonCodeLineOutsideStrings(line string, tripleQuote *string) string {
+	out := []byte(line)
+	for i := 0; i < len(line); {
+		if tripleQuote != nil && *tripleQuote != "" {
+			end := strings.Index(line[i:], *tripleQuote)
+			if end < 0 {
+				blankBytes(out, i, len(out))
+				return string(out)
+			}
+			end += i + len(*tripleQuote)
+			blankBytes(out, i, end)
+			i = end
+			*tripleQuote = ""
+			continue
+		}
+		if line[i] == '#' {
+			blankBytes(out, i, len(out))
+			break
+		}
+		if quote, ok := pythonTripleQuoteAt(line, i); ok {
+			end := i + len(quote)
+			blankBytes(out, i, end)
+			i = end
+			if tripleQuote != nil {
+				*tripleQuote = quote
+			}
+			continue
+		}
+		if line[i] == '\'' || line[i] == '"' {
+			i = blankPythonQuotedLineSegment(out, line, i)
+			continue
+		}
+		i++
+	}
+	return string(out)
+}
+
+func pythonTripleQuoteAt(line string, i int) (string, bool) {
+	if strings.HasPrefix(line[i:], `"""`) {
+		return `"""`, true
+	}
+	if strings.HasPrefix(line[i:], `'''`) {
+		return `'''`, true
+	}
+	return "", false
+}
+
+func blankPythonQuotedLineSegment(out []byte, line string, i int) int {
+	quote := line[i]
+	out[i] = ' '
+	i++
+	escaped := false
+	for i < len(line) {
+		out[i] = ' '
+		if escaped {
+			escaped = false
+			i++
+			continue
+		}
+		if line[i] == '\\' {
+			escaped = true
+			i++
+			continue
+		}
+		if line[i] == quote {
+			i++
+			break
+		}
+		i++
+	}
+	return i
+}
+
+func blankBytes(out []byte, start, end int) {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(out) {
+		end = len(out)
+	}
+	for i := start; i < end; i++ {
+		out[i] = ' '
+	}
 }
 
 func findClosingParen(text string, open int) int {

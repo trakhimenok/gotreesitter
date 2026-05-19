@@ -97,6 +97,7 @@ func main() {
 		outPath    = flag.String("out", "", "optional JSON report path")
 		outputDir  = flag.String("output-dir", "", "optional directory for normalized dependency outputs and diff")
 		modesFlag  = flag.String("modes", strings.Join([]string{modeCGOTreeParse, modeGoTreeExtract, modeGoSourceExtractHybrid}, ","), "comma-separated replay modes")
+		langsFlag  = flag.String("langs", strings.Join(supportedReplayLanguages(), ","), "comma-separated languages to scan")
 		maxFiles   = flag.Int("max-files", 0, "optional maximum files to scan")
 		maxBytes   = flag.Int64("max-bytes", 0, "optional maximum total bytes to scan")
 		sampleDiff = flag.Int("sample-diff", 80, "maximum normalized diff sample lines")
@@ -104,7 +105,8 @@ func main() {
 	flag.Parse()
 
 	started := time.Now()
-	files, unsupported, err := collectReplayFiles(*root, *maxFiles, *maxBytes)
+	langs := parseLanguages(*langsFlag)
+	files, unsupported, err := collectReplayFiles(*root, langs, *maxFiles, *maxBytes)
 	if err != nil {
 		fatalf("%v", err)
 	}
@@ -117,6 +119,7 @@ func main() {
 		Unsupported: unsupported,
 		Options: map[string]string{
 			"modes":       *modesFlag,
+			"langs":       strings.Join(sortedLanguageNames(langs), ","),
 			"max_files":   fmt.Sprint(*maxFiles),
 			"max_bytes":   fmt.Sprint(*maxBytes),
 			"output_dir":  *outputDir,
@@ -153,7 +156,7 @@ func main() {
 	}
 }
 
-func collectReplayFiles(root string, maxFiles int, maxBytes int64) ([]replayFile, map[string]int, error) {
+func collectReplayFiles(root string, langs map[string]bool, maxFiles int, maxBytes int64) ([]replayFile, map[string]int, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, nil, err
@@ -165,7 +168,7 @@ func collectReplayFiles(root string, maxFiles int, maxBytes int64) ([]replayFile
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
+		if d.IsDir() && path != absRoot {
 			switch d.Name() {
 			case ".git", ".hg", ".svn", ".gradle", "bazel-bin", "bazel-out", "bazel-testlogs", "node_modules", "target", "vendor":
 				return filepath.SkipDir
@@ -185,6 +188,9 @@ func collectReplayFiles(root string, maxFiles int, maxBytes int64) ([]replayFile
 		case "go", "java", "python", "starlark":
 		default:
 			unsupported[lang]++
+			return nil
+		}
+		if !langs[lang] {
 			return nil
 		}
 		src, err := os.ReadFile(path)
@@ -239,6 +245,41 @@ func parseModes(raw string) []string {
 	if len(out) == 0 {
 		fatalf("no modes selected")
 	}
+	return out
+}
+
+func supportedReplayLanguages() []string {
+	return []string{"go", "java", "python", "starlark"}
+}
+
+func parseLanguages(raw string) map[string]bool {
+	out := make(map[string]bool)
+	supported := make(map[string]bool)
+	for _, lang := range supportedReplayLanguages() {
+		supported[lang] = true
+	}
+	for _, part := range strings.Split(raw, ",") {
+		lang := strings.TrimSpace(part)
+		if lang == "" {
+			continue
+		}
+		if !supported[lang] {
+			fatalf("unknown language %q", lang)
+		}
+		out[lang] = true
+	}
+	if len(out) == 0 {
+		fatalf("no languages selected")
+	}
+	return out
+}
+
+func sortedLanguageNames(langs map[string]bool) []string {
+	out := make([]string, 0, len(langs))
+	for lang := range langs {
+		out = append(out, lang)
+	}
+	sort.Strings(out)
 	return out
 }
 
