@@ -185,6 +185,9 @@ type ParseRuntime struct {
 	FinalLeafNodes                     uint64
 	FinalFieldedParentNodes            uint64
 	FinalUnfieldedParentNodes          uint64
+	FinalVisibleParentNodes            uint64
+	FinalHiddenParentNodes             uint64
+	FinalCheckpointLeafNodes           uint64
 	FinalChildSlices                   uint64
 	FinalChildPointers                 uint64
 	FinalFieldIDElements               uint64
@@ -887,13 +890,16 @@ type finalTreeMaterializationStats struct {
 	leafNodes            uint64
 	fieldedParentNodes   uint64
 	unfieldedParentNodes uint64
+	visibleParentNodes   uint64
+	hiddenParentNodes    uint64
+	checkpointLeafNodes  uint64
 	childSlices          uint64
 	childPointers        uint64
 	fieldIDElements      uint64
 	fieldSourceElements  uint64
 }
 
-func collectFinalTreeMaterializationStats(root *Node) finalTreeMaterializationStats {
+func collectFinalTreeMaterializationStats(root *Node, lang *Language) finalTreeMaterializationStats {
 	var stats finalTreeMaterializationStats
 	if root == nil {
 		return stats
@@ -911,9 +917,17 @@ func collectFinalTreeMaterializationStats(root *Node) finalTreeMaterializationSt
 		childCount := len(n.children)
 		if childCount == 0 {
 			stats.leafNodes++
+			if _, ok := externalScannerCheckpointRefForNode(n); ok {
+				stats.checkpointLeafNodes++
+			}
 			continue
 		}
 		stats.parentNodes++
+		if nodeVisibleInLanguage(n, lang) {
+			stats.visibleParentNodes++
+		} else {
+			stats.hiddenParentNodes++
+		}
 		stats.childSlices++
 		stats.childPointers += uint64(childCount)
 		if len(n.fieldIDs) > 0 {
@@ -932,6 +946,17 @@ func collectFinalTreeMaterializationStats(root *Node) finalTreeMaterializationSt
 		}
 	}
 	return stats
+}
+
+func nodeVisibleInLanguage(n *Node, lang *Language) bool {
+	if n == nil || lang == nil {
+		return true
+	}
+	idx := int(n.symbol)
+	if idx < 0 || idx >= len(lang.SymbolMetadata) {
+		return true
+	}
+	return lang.SymbolMetadata[idx].Visible
 }
 
 func (a *nodeArena) deferParentLinks(root *Node) {

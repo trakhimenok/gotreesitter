@@ -57,6 +57,13 @@ func (s pythonReduceChildPathStats) report(b *testing.B, tokens float64, name st
 	b.ReportMetric(float64(s.pointersDropped)/tokens, "reduce_child_ptrs_"+name+"_dropped/token")
 }
 
+func reportPythonRuntimeDroppedMetric(b *testing.B, created, final uint64, tokens float64, name string) {
+	if created < final {
+		return
+	}
+	b.ReportMetric(float64(created-final)/tokens, name)
+}
+
 type pythonRuntimeBenchStats struct {
 	ops                                int
 	arenaBreakdownSamples              int
@@ -91,6 +98,9 @@ type pythonRuntimeBenchStats struct {
 	finalLeafNodes                     uint64
 	finalFieldedParentNodes            uint64
 	finalUnfieldedParentNodes          uint64
+	finalVisibleParentNodes            uint64
+	finalHiddenParentNodes             uint64
+	finalCheckpointLeafNodes           uint64
 	finalChildSlices                   uint64
 	finalChildPointers                 uint64
 	finalFieldIDElements               uint64
@@ -252,6 +262,9 @@ func (s *pythonRuntimeBenchStats) add(rt gotreesitter.ParseRuntime, breakdown go
 	s.finalLeafNodes += rt.FinalLeafNodes
 	s.finalFieldedParentNodes += rt.FinalFieldedParentNodes
 	s.finalUnfieldedParentNodes += rt.FinalUnfieldedParentNodes
+	s.finalVisibleParentNodes += rt.FinalVisibleParentNodes
+	s.finalHiddenParentNodes += rt.FinalHiddenParentNodes
+	s.finalCheckpointLeafNodes += rt.FinalCheckpointLeafNodes
 	s.finalChildSlices += rt.FinalChildSlices
 	s.finalChildPointers += rt.FinalChildPointers
 	s.finalFieldIDElements += rt.FinalFieldIDElements
@@ -416,10 +429,22 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 		b.ReportMetric(float64(s.finalLeafNodes)/tokens, "final_leaf_nodes/token")
 		b.ReportMetric(float64(s.finalFieldedParentNodes)/tokens, "final_fielded_parent_nodes/token")
 		b.ReportMetric(float64(s.finalUnfieldedParentNodes)/tokens, "final_unfielded_parent_nodes/token")
+		b.ReportMetric(float64(s.finalVisibleParentNodes)/tokens, "final_visible_parent_nodes/token")
+		b.ReportMetric(float64(s.finalHiddenParentNodes)/tokens, "final_hidden_parent_nodes/token")
+		b.ReportMetric(float64(s.finalCheckpointLeafNodes)/tokens, "final_checkpoint_leaf_nodes/token")
 		b.ReportMetric(float64(s.finalChildSlices)/tokens, "final_child_slices/token")
 		b.ReportMetric(float64(s.finalChildPointers)/tokens, "final_child_ptrs/token")
 		b.ReportMetric(float64(s.finalFieldIDElements)/tokens, "final_field_ids/token")
 		b.ReportMetric(float64(s.finalFieldSourceElements)/tokens, "final_field_sources/token")
+		b.ReportMetric(float64(s.leafNodesConstructed)/tokens, "full_leaf_nodes_created/token")
+		b.ReportMetric(float64(s.finalLeafNodes)/tokens, "full_leaf_nodes_final/token")
+		reportPythonRuntimeDroppedMetric(b, s.leafNodesConstructed, s.finalLeafNodes, tokens, "full_leaf_nodes_dropped/token")
+		b.ReportMetric(float64(s.parentNodesConstructed)/tokens, "parent_nodes_created/token")
+		b.ReportMetric(float64(s.finalParentNodes)/tokens, "parent_nodes_final/token")
+		reportPythonRuntimeDroppedMetric(b, s.parentNodesConstructed, s.finalParentNodes, tokens, "parent_nodes_dropped/token")
+		b.ReportMetric(float64(s.externalCheckpointLeafNodes)/tokens, "checkpoint_leaf_nodes_created/token")
+		b.ReportMetric(float64(s.finalCheckpointLeafNodes)/tokens, "checkpoint_leaf_nodes_final/token")
+		reportPythonRuntimeDroppedMetric(b, s.externalCheckpointLeafNodes, s.finalCheckpointLeafNodes, tokens, "checkpoint_leaf_nodes_dropped/token")
 	}
 	if s.parentNodesAllocated != 0 || s.leafNodesAllocated != 0 {
 		b.ReportMetric(float64(s.parentNodesAllocated)/tokens, "surv_parent_nodes/token")
@@ -485,6 +510,18 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 		b.ReportMetric(s.largestNodeSlabUsedFractionSum/float64(s.arenaBreakdownSamples), "largest_slab_used_fraction")
 		b.ReportMetric(float64(s.fieldedParentNodesConstructed)/tokens, "fielded_parent_nodes/token")
 		b.ReportMetric(float64(s.unfieldedParentNodesConstructed)/tokens, "unfielded_parent_nodes/token")
+		b.ReportMetric(float64(s.fieldedParentNodesConstructed)/tokens, "fielded_parent_nodes_created/token")
+		b.ReportMetric(float64(s.finalFieldedParentNodes)/tokens, "fielded_parent_nodes_final/token")
+		reportPythonRuntimeDroppedMetric(b, s.fieldedParentNodesConstructed, s.finalFieldedParentNodes, tokens, "fielded_parent_nodes_dropped/token")
+		b.ReportMetric(float64(s.unfieldedParentNodesConstructed)/tokens, "unfielded_parent_nodes_created/token")
+		b.ReportMetric(float64(s.finalUnfieldedParentNodes)/tokens, "unfielded_parent_nodes_final/token")
+		reportPythonRuntimeDroppedMetric(b, s.unfieldedParentNodesConstructed, s.finalUnfieldedParentNodes, tokens, "unfielded_parent_nodes_dropped/token")
+		b.ReportMetric(float64(s.parentReductionVisible)/tokens, "visible_parent_nodes_created/token")
+		b.ReportMetric(float64(s.finalVisibleParentNodes)/tokens, "visible_parent_nodes_final/token")
+		reportPythonRuntimeDroppedMetric(b, s.parentReductionVisible, s.finalVisibleParentNodes, tokens, "visible_parent_nodes_dropped/token")
+		b.ReportMetric(float64(s.parentReductionInvisible)/tokens, "hidden_parent_nodes_created/token")
+		b.ReportMetric(float64(s.finalHiddenParentNodes)/tokens, "hidden_parent_nodes_final/token")
+		reportPythonRuntimeDroppedMetric(b, s.parentReductionInvisible, s.finalHiddenParentNodes, tokens, "hidden_parent_nodes_dropped/token")
 		b.ReportMetric(float64(s.parentConstructedChildLen0)/tokens, "parent_ctor_len0/token")
 		b.ReportMetric(float64(s.parentConstructedChildLen1)/tokens, "parent_ctor_len1/token")
 		b.ReportMetric(float64(s.parentConstructedChildLen2)/tokens, "parent_ctor_len2/token")

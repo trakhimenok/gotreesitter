@@ -54,6 +54,15 @@ func TestParseRuntimeReportsAcceptedOnCompleteParse(t *testing.T) {
 	if got, want := rt.FinalFieldedParentNodes+rt.FinalUnfieldedParentNodes, rt.FinalParentNodes; got != want {
 		t.Fatalf("final fielded+unfielded parents = %d, want %d", got, want)
 	}
+	if got, want := rt.FinalVisibleParentNodes+rt.FinalHiddenParentNodes, rt.FinalParentNodes; got != want {
+		t.Fatalf("final visible+hidden parents = %d, want %d", got, want)
+	}
+	if got := rt.FinalHiddenParentNodes; got != 0 {
+		t.Fatalf("FinalHiddenParentNodes = %d, want 0", got)
+	}
+	if got := rt.FinalCheckpointLeafNodes; got != 0 {
+		t.Fatalf("FinalCheckpointLeafNodes = %d, want 0", got)
+	}
 	if rt.FinalChildPointers == 0 {
 		t.Fatal("FinalChildPointers = 0, want > 0")
 	}
@@ -159,6 +168,35 @@ func TestParseRuntimeReportsNoTreeCheckpointLeavesRemainNodes(t *testing.T) {
 	}
 	if rt.NoTreeReduceNodesConstructed == 0 {
 		t.Fatal("NoTreeReduceNodesConstructed = 0, want > 0")
+	}
+}
+
+func TestFinalTreeMaterializationStatsClassifiesHiddenParentsAndCheckpointLeaves(t *testing.T) {
+	arena := acquireNodeArena(arenaClassFull)
+	defer arena.Release()
+
+	lang := &Language{
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "leaf", Visible: true, Named: true},
+			{Name: "_hidden", Visible: false, Named: false},
+		},
+	}
+	leaf := newLeafNodeInArena(arena, 0, true, 0, 1, Point{}, Point{Column: 1})
+	arena.recordExternalScannerLeafCheckpoint(leaf, []byte{1}, []byte{2})
+	root := newParentNodeInArena(arena, 1, false, []*Node{leaf}, nil, 0)
+
+	stats := collectFinalTreeMaterializationStats(root, lang)
+	if got, want := stats.nodes, uint64(2); got != want {
+		t.Fatalf("nodes = %d, want %d", got, want)
+	}
+	if got, want := stats.hiddenParentNodes, uint64(1); got != want {
+		t.Fatalf("hiddenParentNodes = %d, want %d", got, want)
+	}
+	if got := stats.visibleParentNodes; got != 0 {
+		t.Fatalf("visibleParentNodes = %d, want 0", got)
+	}
+	if got, want := stats.checkpointLeafNodes, uint64(1); got != want {
+		t.Fatalf("checkpointLeafNodes = %d, want %d", got, want)
 	}
 }
 

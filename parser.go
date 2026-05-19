@@ -1594,12 +1594,15 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			parseRuntime.RootEndByte = root.EndByte()
 			parseRuntime.Truncated = parseRuntime.RootEndByte < expectedEOFByte
 			if scratch.audit.enabled || (arena != nil && arena.breakdownEnabled) {
-				finalStats := collectFinalTreeMaterializationStats(root)
+				finalStats := collectFinalTreeMaterializationStats(root, p.language)
 				parseRuntime.FinalNodes = finalStats.nodes
 				parseRuntime.FinalParentNodes = finalStats.parentNodes
 				parseRuntime.FinalLeafNodes = finalStats.leafNodes
 				parseRuntime.FinalFieldedParentNodes = finalStats.fieldedParentNodes
 				parseRuntime.FinalUnfieldedParentNodes = finalStats.unfieldedParentNodes
+				parseRuntime.FinalVisibleParentNodes = finalStats.visibleParentNodes
+				parseRuntime.FinalHiddenParentNodes = finalStats.hiddenParentNodes
+				parseRuntime.FinalCheckpointLeafNodes = finalStats.checkpointLeafNodes
 				parseRuntime.FinalChildSlices = finalStats.childSlices
 				parseRuntime.FinalChildPointers = finalStats.childPointers
 				parseRuntime.FinalFieldIDElements = finalStats.fieldIDElements
