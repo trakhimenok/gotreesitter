@@ -209,9 +209,9 @@ from pkg import *
 			source: `# load("//fake:comment.bzl", "x")
 s = 'load("//fake:string.bzl", "y")'
 load(
-    "@repo//pkg:file.bzl",
-    "sym",
-    alias = "other",
+    '@repo//pkg:file.bzl',
+    'sym',
+    alias = 'other',
 )
 `,
 			want: []gotreesitter.ImportRef{
@@ -225,9 +225,68 @@ load(
 		t.Run(tc.name, func(t *testing.T) {
 			source := []byte(tc.source)
 			treeRefs := extractImportsFromTree(t, tc.lang, source)
-			sourceRefs := gotreesitter.ExtractImportsFromSource(tc.lang, source)
-			assertImportRefsEqualShape(t, sourceRefs, treeRefs)
+			sourceReport := gotreesitter.ExtractImportsFromSourceWithReport(tc.lang, source)
+			assertImportExtractOK(t, sourceReport)
+			assertImportRefsEqualShape(t, sourceReport.Imports, treeRefs)
 			assertImportRefsEqualShape(t, treeRefs, tc.want)
+		})
+	}
+}
+
+func TestExtractImportsFromSourceReportsFallback(t *testing.T) {
+	cases := []struct {
+		name       string
+		lang       *gotreesitter.Language
+		source     string
+		status     gotreesitter.ImportExtractStatus
+		reason     string
+		wantImport int
+	}{
+		{
+			name:   "python_malformed_multiline",
+			lang:   grammars.PythonLanguage(),
+			source: "from pkg import (\n    a\n",
+			status: gotreesitter.ImportExtractScannerError,
+			reason: "malformed_python_import",
+		},
+		{
+			name:   "starlark_malformed_load",
+			lang:   grammars.StarlarkLanguage(),
+			source: `load("//pkg:file.bzl", "x"`,
+			status: gotreesitter.ImportExtractScannerError,
+			reason: "malformed_starlark_load",
+		},
+		{
+			name:   "starlark_nonliteral_module",
+			lang:   grammars.StarlarkLanguage(),
+			source: `load(label, "x")`,
+			status: gotreesitter.ImportExtractUnsupportedConstruct,
+			reason: "non_literal_starlark_load_module",
+		},
+		{
+			name:   "starlark_nonliteral_symbol",
+			lang:   grammars.StarlarkLanguage(),
+			source: `load("//pkg:file.bzl", sym)`,
+			status: gotreesitter.ImportExtractUnsupportedConstruct,
+			reason: "non_literal_starlark_load_symbol",
+		},
+		{
+			name:   "unsupported_language",
+			lang:   &gotreesitter.Language{Name: "ruby"},
+			source: `require "x"`,
+			status: gotreesitter.ImportExtractUnsupportedConstruct,
+			reason: "unsupported_language",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			report := gotreesitter.ExtractImportsFromSourceWithReport(tc.lang, []byte(tc.source))
+			if report.Status != tc.status || report.Reason != tc.reason || !report.FallbackRecommended {
+				t.Fatalf("report = %#v, want status=%q reason=%q fallback=true", report, tc.status, tc.reason)
+			}
+			if len(report.Imports) != tc.wantImport {
+				t.Fatalf("imports len = %d, want %d: %#v", len(report.Imports), tc.wantImport, report.Imports)
+			}
 		})
 	}
 }
@@ -241,6 +300,13 @@ func extractImportsFromTree(t *testing.T, lang *gotreesitter.Language, source []
 	}
 	defer tree.Release()
 	return gotreesitter.ExtractImports(tree)
+}
+
+func assertImportExtractOK(t *testing.T, report gotreesitter.ImportExtractResult) {
+	t.Helper()
+	if report.Status != gotreesitter.ImportExtractOK || report.FallbackRecommended {
+		t.Fatalf("source import report = %#v, want ok without fallback", report)
+	}
 }
 
 func assertImportRef(t *testing.T, ref gotreesitter.ImportRef, lang, kind, path, name, alias string) {

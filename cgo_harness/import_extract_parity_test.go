@@ -92,7 +92,11 @@ func TestStarlarkCorpusImportExtractionParity(t *testing.T) {
 func assertImportExtractionParity(t *testing.T, lang *gotreesitter.Language, path string, source []byte, tree *gotreesitter.Tree) {
 	t.Helper()
 	treeRefs := gotreesitter.ExtractImports(tree)
-	sourceRefs := gotreesitter.ExtractImportsFromSource(lang, source)
+	sourceReport := gotreesitter.ExtractImportsFromSourceWithReport(lang, source)
+	if sourceReport.Status != gotreesitter.ImportExtractOK || sourceReport.FallbackRecommended {
+		t.Fatalf("%s: source import extraction report = %#v, want ok without fallback", path, sourceReport)
+	}
+	sourceRefs := sourceReport.Imports
 	if len(sourceRefs) != len(treeRefs) {
 		t.Fatalf("%s: source import refs len = %d, tree refs len = %d\nsource=%#v\ntree=%#v", path, len(sourceRefs), len(treeRefs), sourceRefs, treeRefs)
 	}

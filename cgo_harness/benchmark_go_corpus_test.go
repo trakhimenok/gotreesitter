@@ -130,12 +130,18 @@ func BenchmarkGoCorpusSourceImportExtract(b *testing.B) {
 	b.ResetTimer()
 
 	var imports int64
+	var fallbacks int64
 	for i := 0; i < b.N; i++ {
 		for _, file := range files {
-			imports += int64(len(gotreesitter.ExtractImportsFromSource(lang, file.source)))
+			report := gotreesitter.ExtractImportsFromSourceWithReport(lang, file.source)
+			imports += int64(len(report.Imports))
+			if report.FallbackRecommended {
+				fallbacks++
+			}
 		}
 	}
 	if b.N > 0 {
 		b.ReportMetric(float64(imports)/float64(b.N), "imports/op")
+		b.ReportMetric(float64(fallbacks)/float64(b.N), "fallbacks/op")
 	}
 }

@@ -23,6 +23,28 @@ type ImportRef struct {
 	EndByte   uint32
 }
 
+// ImportExtractStatus describes the confidence of source-only import
+// extraction.
+type ImportExtractStatus string
+
+const (
+	ImportExtractOK                   ImportExtractStatus = "ok"
+	ImportExtractUnsupportedConstruct ImportExtractStatus = "unsupported_construct"
+	ImportExtractScannerError         ImportExtractStatus = "scanner_error"
+	ImportExtractAmbiguous            ImportExtractStatus = "ambiguous"
+	ImportExtractFallbackToTree       ImportExtractStatus = "fallback_to_tree"
+)
+
+// ImportExtractResult is returned by source-only dependency extraction. When
+// FallbackRecommended is true, callers that need exact tree-sitter behavior
+// should parse the file and use ExtractImports.
+type ImportExtractResult struct {
+	Imports             []ImportRef
+	Status              ImportExtractStatus
+	Reason              string
+	FallbackRecommended bool
+}
+
 // ExtractImports returns package/import declarations for the languages used by
 // Gazelle-style dependency extraction. It is intentionally independent from the
 // generic query engine so it can later be backed by compact parser refs.
@@ -54,20 +76,38 @@ func ExtractImports(tree *Tree) []ImportRef {
 // directly from source text. It is intended for cold dependency-extraction
 // workflows that do not need a public syntax tree.
 func ExtractImportsFromSource(lang *Language, source []byte) []ImportRef {
+	return ExtractImportsFromSourceWithReport(lang, source).Imports
+}
+
+// ExtractImportsFromSourceWithReport returns source-only dependency
+// declarations and a confidence report for fallback policy.
+func ExtractImportsFromSourceWithReport(lang *Language, source []byte) ImportExtractResult {
 	if lang == nil {
-		return nil
+		return importExtractResult(nil, ImportExtractUnsupportedConstruct, "language_nil", true)
 	}
 	switch lang.Name {
 	case "go":
-		return extractGoImportsFromSource(lang, source)
+		return extractGoImportsFromSourceWithReport(lang, source)
 	case "java":
-		return extractJavaImportsFromSource(lang, source)
+		return importExtractResult(extractJavaImportsFromSource(lang, source), ImportExtractOK, "", false)
 	case "python":
-		return extractPythonImportsFromSource(lang, source)
+		return extractPythonImportsFromSourceWithReport(lang, source)
 	case "starlark":
-		return extractStarlarkImportsFromSource(lang, source)
+		return extractStarlarkImportsFromSourceWithReport(lang, source)
 	default:
-		return nil
+		return importExtractResult(nil, ImportExtractUnsupportedConstruct, "unsupported_language", true)
+	}
+}
+
+func importExtractResult(refs []ImportRef, status ImportExtractStatus, reason string, fallback bool) ImportExtractResult {
+	if status == "" {
+		status = ImportExtractOK
+	}
+	return ImportExtractResult{
+		Imports:             refs,
+		Status:              status,
+		Reason:              reason,
+		FallbackRecommended: fallback,
 	}
 }
 
@@ -144,10 +184,14 @@ func goImportAlias(spec, pathNode *Node, lang *Language, source []byte) string {
 }
 
 func extractGoImportsFromSource(lang *Language, source []byte) []ImportRef {
+	return extractGoImportsFromSourceWithReport(lang, source).Imports
+}
+
+func extractGoImportsFromSourceWithReport(lang *Language, source []byte) ImportExtractResult {
 	fset := gotoken.NewFileSet()
 	file, err := goparser.ParseFile(fset, "", source, goparser.ImportsOnly)
 	if err != nil && file == nil {
-		return nil
+		return importExtractResult(nil, ImportExtractScannerError, "go_parse_imports", true)
 	}
 	var refs []ImportRef
 	if file.Name != nil {
@@ -180,7 +224,10 @@ func extractGoImportsFromSource(lang *Language, source []byte) []ImportRef {
 		}
 		refs = append(refs, ref)
 	}
-	return refs
+	if err != nil {
+		return importExtractResult(refs, ImportExtractScannerError, "go_parse_imports", true)
+	}
+	return importExtractResult(refs, ImportExtractOK, "", false)
 }
 
 func tokenOffset(fset *gotoken.FileSet, pos gotoken.Pos) uint32 {
@@ -355,7 +402,14 @@ func extractPythonImportNode(n *Node, lang *Language, source []byte, refs *[]Imp
 }
 
 func extractPythonImportsFromSource(lang *Language, source []byte) []ImportRef {
+	return extractPythonImportsFromSourceWithReport(lang, source).Imports
+}
+
+func extractPythonImportsFromSourceWithReport(lang *Language, source []byte) ImportExtractResult {
 	var refs []ImportRef
+	status := ImportExtractOK
+	reason := ""
+	fallback := false
 	offset := 0
 	for offset <= len(source) {
 		next := offset
@@ -382,6 +436,12 @@ func extractPythonImportsFromSource(lang *Language, source []byte) []ImportRef {
 				if lineEnd == len(source) {
 					break
 				}
+			}
+			if pythonImportStatementContinues(stmt) {
+				status = ImportExtractScannerError
+				reason = "malformed_python_import"
+				fallback = true
+				break
 			}
 			trimmed = strings.TrimSpace(stmt)
 		}
@@ -411,7 +471,7 @@ func extractPythonImportsFromSource(lang *Language, source []byte) []ImportRef {
 		}
 		offset = advance
 	}
-	return refs
+	return importExtractResult(refs, status, reason, fallback)
 }
 
 func appendPythonFromImportRefs(lang *Language, text string, startByte, endByte uint32, refs *[]ImportRef) {
@@ -463,6 +523,10 @@ func extractStarlarkImportNode(n *Node, lang *Language, source []byte, refs *[]I
 }
 
 func extractStarlarkImportsFromSource(lang *Language, source []byte) []ImportRef {
+	return extractStarlarkImportsFromSourceWithReport(lang, source).Imports
+}
+
+func extractStarlarkImportsFromSourceWithReport(lang *Language, source []byte) ImportExtractResult {
 	text := string(source)
 	var refs []ImportRef
 	searchFrom := 0
@@ -473,12 +537,14 @@ func extractStarlarkImportsFromSource(lang *Language, source []byte) []ImportRef
 		}
 		close := findClosingParen(text, open)
 		if close < 0 {
-			break
+			return importExtractResult(refs, ImportExtractScannerError, "malformed_starlark_load", true)
 		}
-		appendStarlarkLoadRefs(lang, text[start:close+1], uint32(start), uint32(close+1), &refs)
+		if ok, reason := appendStarlarkLoadRefs(lang, text[start:close+1], uint32(start), uint32(close+1), &refs); !ok {
+			return importExtractResult(refs, ImportExtractUnsupportedConstruct, reason, true)
+		}
 		searchFrom = close + 1
 	}
-	return refs
+	return importExtractResult(refs, ImportExtractOK, "", false)
 }
 
 func findStarlarkLoadCall(text string, from int) (int, int) {
@@ -530,19 +596,19 @@ func findStarlarkLoadCall(text string, from int) (int, int) {
 	return -1, -1
 }
 
-func appendStarlarkLoadRefs(lang *Language, text string, startByte, endByte uint32, refs *[]ImportRef) {
+func appendStarlarkLoadRefs(lang *Language, text string, startByte, endByte uint32, refs *[]ImportRef) (bool, string) {
 	open := strings.IndexByte(text, '(')
 	close := strings.LastIndexByte(text, ')')
 	if open <= 0 || close <= open || strings.TrimSpace(text[:open]) != "load" {
-		return
+		return false, "malformed_starlark_load"
 	}
 	args := splitImportList(text[open+1 : close])
 	if len(args) == 0 {
-		return
+		return false, "empty_starlark_load"
 	}
-	from := importStringLiteralText(args[0])
-	if from == "" {
-		return
+	from, ok := importStringLiteralValue(args[0])
+	if !ok || from == "" {
+		return false, "non_literal_starlark_load_module"
 	}
 	for _, arg := range args[1:] {
 		nameText := arg
@@ -551,9 +617,9 @@ func appendStarlarkLoadRefs(lang *Language, text string, startByte, endByte uint
 			alias = strings.TrimSpace(left)
 			nameText = right
 		}
-		name := importStringLiteralText(nameText)
-		if name == "" {
-			continue
+		name, ok := importStringLiteralValue(nameText)
+		if !ok || name == "" {
+			return false, "non_literal_starlark_load_symbol"
 		}
 		*refs = append(*refs, ImportRef{
 			Lang:      lang.Name,
@@ -566,6 +632,7 @@ func appendStarlarkLoadRefs(lang *Language, text string, startByte, endByte uint
 			EndByte:   endByte,
 		})
 	}
+	return true, ""
 }
 
 func splitImportList(s string) []string {
@@ -618,14 +685,34 @@ func joinPythonImportPath(from, name string) string {
 }
 
 func importStringLiteralText(text string) string {
+	value, ok := importStringLiteralValue(text)
+	if ok {
+		return value
+	}
+	return strings.Trim(strings.TrimSpace(text), "`\"'")
+}
+
+func importStringLiteralValue(text string) (string, bool) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return ""
+		return "", false
 	}
 	if unquoted, err := strconv.Unquote(text); err == nil {
-		return unquoted
+		return unquoted, true
 	}
-	return strings.Trim(text, "`\"'")
+	if len(text) >= 2 && text[0] == '\'' && text[len(text)-1] == '\'' {
+		var b strings.Builder
+		for s := text[1 : len(text)-1]; len(s) > 0; {
+			r, _, tail, err := strconv.UnquoteChar(s, '\'')
+			if err != nil {
+				return "", false
+			}
+			b.WriteRune(r)
+			s = tail
+		}
+		return b.String(), true
+	}
+	return "", false
 }
 
 func firstDescendantText(n *Node, lang *Language, source []byte, types ...string) string {
