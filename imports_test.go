@@ -17,7 +17,8 @@ import (
 	"example.com/plain"
 )
 `)
-	parser := gotreesitter.NewParser(grammars.GoLanguage())
+	lang := grammars.GoLanguage()
+	parser := gotreesitter.NewParser(lang)
 	tree, err := parser.Parse(source)
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +36,9 @@ import (
 	assertImportRef(t, refs[2], "go", "import", "example.com/sideeffect", "sideeffect", "_")
 	assertImportRef(t, refs[3], "go", "import", "example.com/dot", "dot", ".")
 	assertImportRef(t, refs[4], "go", "import", "example.com/plain", "plain", "")
+
+	sourceRefs := gotreesitter.ExtractImportsFromSource(lang, source)
+	assertImportRefsEqualShape(t, sourceRefs, refs)
 }
 
 func TestExtractImportsJava(t *testing.T) {
@@ -43,7 +47,8 @@ func TestExtractImportsJava(t *testing.T) {
 import java.util.List;
 import static java.util.Collections.*;
 `)
-	parser := gotreesitter.NewParser(grammars.JavaLanguage())
+	lang := grammars.JavaLanguage()
+	parser := gotreesitter.NewParser(lang)
 	tree, err := parser.Parse(source)
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +67,9 @@ import static java.util.Collections.*;
 	if !refs[2].Static || !refs[2].Wildcard {
 		t.Fatalf("static wildcard ref = %#v, want static wildcard", refs[2])
 	}
+
+	sourceRefs := gotreesitter.ExtractImportsFromSource(lang, source)
+	assertImportRefsEqualShape(t, sourceRefs, refs)
 }
 
 func TestExtractImportsPython(t *testing.T) {
@@ -69,7 +77,8 @@ func TestExtractImportsPython(t *testing.T) {
 from ..pkg.sub import name as alias, other
 from pkg import *
 `)
-	parser := gotreesitter.NewParser(grammars.PythonLanguage())
+	lang := grammars.PythonLanguage()
+	parser := gotreesitter.NewParser(lang)
 	tree, err := parser.Parse(source)
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +100,9 @@ from pkg import *
 	if !refs[4].Wildcard {
 		t.Fatalf("wildcard ref = %#v, want wildcard", refs[4])
 	}
+
+	sourceRefs := gotreesitter.ExtractImportsFromSource(lang, source)
+	assertImportRefsEqualShape(t, sourceRefs, refs)
 }
 
 func TestExtractImportsStarlark(t *testing.T) {
@@ -98,7 +110,8 @@ func TestExtractImportsStarlark(t *testing.T) {
 
 py_library(name = "lib")
 `)
-	parser := gotreesitter.NewParser(grammars.StarlarkLanguage())
+	lang := grammars.StarlarkLanguage()
+	parser := gotreesitter.NewParser(lang)
 	tree, err := parser.Parse(source)
 	if err != nil {
 		t.Fatal(err)
@@ -114,11 +127,34 @@ py_library(name = "lib")
 		t.Fatalf("load ref = %#v, want module in From", refs[0])
 	}
 	assertImportRef(t, refs[1], "starlark", "load", "@rules_python//python:defs.bzl:py_binary", "py_binary", "py_binary_alias")
+
+	sourceRefs := gotreesitter.ExtractImportsFromSource(lang, source)
+	assertImportRefsEqualShape(t, sourceRefs, refs)
 }
 
 func assertImportRef(t *testing.T, ref gotreesitter.ImportRef, lang, kind, path, name, alias string) {
 	t.Helper()
 	if ref.Lang != lang || ref.Kind != kind || ref.Path != path || ref.Name != name || ref.Alias != alias {
 		t.Fatalf("ref = %#v, want lang=%s kind=%s path=%s name=%s alias=%s", ref, lang, kind, path, name, alias)
+	}
+}
+
+func assertImportRefsEqualShape(t *testing.T, got, want []gotreesitter.ImportRef) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("source refs len = %d, want %d: got=%#v want=%#v", len(got), len(want), got, want)
+	}
+	for i := range got {
+		if got[i].Lang != want[i].Lang ||
+			got[i].Kind != want[i].Kind ||
+			got[i].Path != want[i].Path ||
+			got[i].From != want[i].From ||
+			got[i].Name != want[i].Name ||
+			got[i].Alias != want[i].Alias ||
+			got[i].Static != want[i].Static ||
+			got[i].Wildcard != want[i].Wildcard ||
+			got[i].Relative != want[i].Relative {
+			t.Fatalf("source ref[%d] = %#v, want %#v", i, got[i], want[i])
+		}
 	}
 }

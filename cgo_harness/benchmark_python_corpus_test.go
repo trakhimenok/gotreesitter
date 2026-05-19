@@ -890,6 +890,23 @@ func BenchmarkPythonCorpusGoTreeSitterParseDFAWithImportExtract(b *testing.B) {
 	}
 }
 
+func BenchmarkPythonCorpusSourceImportExtract(b *testing.B) {
+	file := loadPythonCorpusFile(b)
+	lang := grammars.PythonLanguage()
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(file.source)))
+	b.ResetTimer()
+
+	var imports int64
+	for i := 0; i < b.N; i++ {
+		imports += int64(len(gotreesitter.ExtractImportsFromSource(lang, file.source)))
+	}
+	if b.N > 0 {
+		b.ReportMetric(float64(imports)/float64(b.N), "imports/op")
+	}
+}
+
 func BenchmarkPythonCorpusCTreeSitterParseFull(b *testing.B) {
 	file := loadPythonCorpusFile(b)
 	parser := newCTreeSitterParserWithLanguage(b, sitterpython.GetLanguage)

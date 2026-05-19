@@ -119,3 +119,23 @@ func BenchmarkGoCorpusGoTreeSitterParseDFAWithImportExtract(b *testing.B) {
 		b.ReportMetric(float64(imports)/float64(b.N), "imports/op")
 	}
 }
+
+func BenchmarkGoCorpusSourceImportExtract(b *testing.B) {
+	files := loadGoCorpus(b)
+	totalBytes := totalGoCorpusBytes(files)
+	lang := grammars.GoLanguage()
+
+	b.ReportAllocs()
+	b.SetBytes(totalBytes)
+	b.ResetTimer()
+
+	var imports int64
+	for i := 0; i < b.N; i++ {
+		for _, file := range files {
+			imports += int64(len(gotreesitter.ExtractImportsFromSource(lang, file.source)))
+		}
+	}
+	if b.N > 0 {
+		b.ReportMetric(float64(imports)/float64(b.N), "imports/op")
+	}
+}

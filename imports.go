@@ -1,6 +1,8 @@
 package gotreesitter
 
 import (
+	goparser "go/parser"
+	gotoken "go/token"
 	"strconv"
 	"strings"
 )
@@ -46,6 +48,27 @@ func ExtractImports(tree *Tree) []ImportRef {
 		}
 	})
 	return refs
+}
+
+// ExtractImportsFromSource returns language-neutral dependency declarations
+// directly from source text. It is intended for cold dependency-extraction
+// workflows that do not need a public syntax tree.
+func ExtractImportsFromSource(lang *Language, source []byte) []ImportRef {
+	if lang == nil {
+		return nil
+	}
+	switch lang.Name {
+	case "go":
+		return extractGoImportsFromSource(lang, source)
+	case "java":
+		return extractJavaImportsFromSource(lang, source)
+	case "python":
+		return extractPythonImportsFromSource(lang, source)
+	case "starlark":
+		return extractStarlarkImportsFromSource(lang, source)
+	default:
+		return nil
+	}
 }
 
 func walkImportTree(n *Node, lang *Language, visit func(*Node) bool) {
@@ -120,6 +143,57 @@ func goImportAlias(spec, pathNode *Node, lang *Language, source []byte) string {
 	return ""
 }
 
+func extractGoImportsFromSource(lang *Language, source []byte) []ImportRef {
+	fset := gotoken.NewFileSet()
+	file, err := goparser.ParseFile(fset, "", source, goparser.ImportsOnly)
+	if err != nil && file == nil {
+		return nil
+	}
+	var refs []ImportRef
+	if file.Name != nil {
+		refs = append(refs, ImportRef{
+			Lang:      lang.Name,
+			Kind:      "package",
+			Name:      file.Name.Name,
+			StartByte: tokenOffset(fset, file.Name.Pos()),
+			EndByte:   tokenOffset(fset, file.Name.End()),
+		})
+	}
+	for _, spec := range file.Imports {
+		if spec == nil || spec.Path == nil {
+			continue
+		}
+		path := importStringLiteralText(spec.Path.Value)
+		if path == "" {
+			continue
+		}
+		ref := ImportRef{
+			Lang:      lang.Name,
+			Kind:      "import",
+			Path:      path,
+			Name:      lastDottedName(path),
+			StartByte: tokenOffset(fset, spec.Pos()),
+			EndByte:   tokenOffset(fset, spec.End()),
+		}
+		if spec.Name != nil {
+			ref.Alias = spec.Name.Name
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+func tokenOffset(fset *gotoken.FileSet, pos gotoken.Pos) uint32 {
+	if fset == nil || !pos.IsValid() {
+		return 0
+	}
+	offset := fset.PositionFor(pos, false).Offset
+	if offset < 0 {
+		return 0
+	}
+	return uint32(offset)
+}
+
 func extractJavaImportNode(n *Node, lang *Language, source []byte, refs *[]ImportRef) bool {
 	switch n.Type(lang) {
 	case "package_declaration":
@@ -161,6 +235,65 @@ func extractJavaImportNode(n *Node, lang *Language, source []byte, refs *[]Impor
 		return false
 	}
 	return true
+}
+
+func extractJavaImportsFromSource(lang *Language, source []byte) []ImportRef {
+	clean := stripLineAndBlockComments(source)
+	var refs []ImportRef
+	stmtStart := 0
+	for i, b := range clean {
+		if b != ';' {
+			continue
+		}
+		raw := string(clean[stmtStart : i+1])
+		leading := len(raw) - len(strings.TrimLeft(raw, " \t\r\n"))
+		start := stmtStart + leading
+		stmt := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(stmt, "package "):
+			text := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(stmt, "package")), ";")
+			if text != "" {
+				refs = append(refs, ImportRef{
+					Lang:      lang.Name,
+					Kind:      "package",
+					Path:      text,
+					Name:      lastDottedName(text),
+					StartByte: uint32(start),
+					EndByte:   uint32(i + 1),
+				})
+			}
+		case strings.HasPrefix(stmt, "import "):
+			ref := javaImportRefFromText(lang, stmt, uint32(start), uint32(i+1))
+			if ref.Path != "" {
+				refs = append(refs, ref)
+			}
+		}
+		stmtStart = i + 1
+	}
+	return refs
+}
+
+func javaImportRefFromText(lang *Language, text string, startByte, endByte uint32) ImportRef {
+	text = strings.TrimSpace(text)
+	text = strings.TrimPrefix(text, "import")
+	text = strings.TrimSuffix(strings.TrimSpace(text), ";")
+	ref := ImportRef{
+		Lang:      lang.Name,
+		Kind:      "import",
+		StartByte: startByte,
+		EndByte:   endByte,
+	}
+	if strings.HasPrefix(text, "static ") {
+		ref.Static = true
+		text = strings.TrimSpace(strings.TrimPrefix(text, "static"))
+	}
+	if strings.HasSuffix(text, ".*") {
+		ref.Wildcard = true
+		text = strings.TrimSuffix(text, ".*")
+	}
+	ref.Path = text
+	ref.Name = lastDottedName(text)
+	return ref
 }
 
 func extractPythonImportNode(n *Node, lang *Language, source []byte, refs *[]ImportRef) bool {
@@ -221,23 +354,136 @@ func extractPythonImportNode(n *Node, lang *Language, source []byte, refs *[]Imp
 	return true
 }
 
+func extractPythonImportsFromSource(lang *Language, source []byte) []ImportRef {
+	var refs []ImportRef
+	offset := 0
+	for offset <= len(source) {
+		next := offset
+		for next < len(source) && source[next] != '\n' {
+			next++
+		}
+		line := string(source[offset:next])
+		trimmed := strings.TrimSpace(stripPythonLineComment(line))
+		start := offset + len(line) - len(strings.TrimLeft(line, " \t\r"))
+		switch {
+		case strings.HasPrefix(trimmed, "import "):
+			body := strings.TrimSpace(strings.TrimPrefix(trimmed, "import"))
+			for _, part := range splitImportList(body) {
+				path, alias := splitImportAlias(part)
+				if path == "" {
+					continue
+				}
+				refs = append(refs, ImportRef{
+					Lang:      lang.Name,
+					Kind:      "import",
+					Path:      path,
+					Name:      lastDottedName(path),
+					Alias:     alias,
+					StartByte: uint32(start),
+					EndByte:   uint32(next),
+				})
+			}
+		case strings.HasPrefix(trimmed, "from "):
+			appendPythonFromImportRefs(lang, trimmed, uint32(start), uint32(next), &refs)
+		}
+		if next == len(source) {
+			break
+		}
+		offset = next + 1
+	}
+	return refs
+}
+
+func appendPythonFromImportRefs(lang *Language, text string, startByte, endByte uint32, refs *[]ImportRef) {
+	body := strings.TrimSpace(strings.TrimPrefix(text, "from"))
+	fromPart, importPart, ok := strings.Cut(body, " import ")
+	if !ok {
+		return
+	}
+	relative := countLeadingDots(fromPart)
+	from := strings.TrimLeft(fromPart, ".")
+	for _, part := range splitImportList(importPart) {
+		name, alias := splitImportAlias(part)
+		if name == "" {
+			continue
+		}
+		ref := ImportRef{
+			Lang:      lang.Name,
+			Kind:      "from_import",
+			From:      from,
+			Name:      name,
+			Alias:     alias,
+			Relative:  relative,
+			StartByte: startByte,
+			EndByte:   endByte,
+		}
+		if name == "*" {
+			ref.Wildcard = true
+			ref.Path = joinPythonImportPath(from, "")
+		} else {
+			ref.Path = joinPythonImportPath(from, name)
+		}
+		*refs = append(*refs, ref)
+	}
+}
+
 func extractStarlarkImportNode(n *Node, lang *Language, source []byte, refs *[]ImportRef) bool {
 	if n.Type(lang) != "call" {
 		return true
 	}
-	text := strings.TrimSpace(n.Text(source))
+	raw := n.Text(source)
+	text := strings.TrimLeft(raw, " \t\r\n")
+	open := strings.IndexByte(text, '(')
+	if open <= 0 || strings.TrimSpace(text[:open]) != "load" {
+		return true
+	}
+	startAdjust := len(raw) - len(text)
+	appendStarlarkLoadRefs(lang, text, n.StartByte()+uint32(startAdjust), n.EndByte(), refs)
+	return false
+}
+
+func extractStarlarkImportsFromSource(lang *Language, source []byte) []ImportRef {
+	text := string(stripHashLineComments(source))
+	var refs []ImportRef
+	searchFrom := 0
+	for {
+		idx := strings.Index(text[searchFrom:], "load")
+		if idx < 0 {
+			break
+		}
+		start := searchFrom + idx
+		beforeOK := start == 0 || !isIdentByte(text[start-1])
+		after := start + len("load")
+		for after < len(text) && (text[after] == ' ' || text[after] == '\t' || text[after] == '\r' || text[after] == '\n') {
+			after++
+		}
+		if !beforeOK || after >= len(text) || text[after] != '(' {
+			searchFrom = start + len("load")
+			continue
+		}
+		close := findClosingParen(text, after)
+		if close < 0 {
+			break
+		}
+		appendStarlarkLoadRefs(lang, text[start:close+1], uint32(start), uint32(close+1), &refs)
+		searchFrom = close + 1
+	}
+	return refs
+}
+
+func appendStarlarkLoadRefs(lang *Language, text string, startByte, endByte uint32, refs *[]ImportRef) {
 	open := strings.IndexByte(text, '(')
 	close := strings.LastIndexByte(text, ')')
 	if open <= 0 || close <= open || strings.TrimSpace(text[:open]) != "load" {
-		return true
+		return
 	}
 	args := splitImportList(text[open+1 : close])
 	if len(args) == 0 {
-		return false
+		return
 	}
 	from := importStringLiteralText(args[0])
 	if from == "" {
-		return false
+		return
 	}
 	for _, arg := range args[1:] {
 		nameText := arg
@@ -257,11 +503,10 @@ func extractStarlarkImportNode(n *Node, lang *Language, source []byte, refs *[]I
 			From:      from,
 			Name:      name,
 			Alias:     alias,
-			StartByte: n.StartByte(),
-			EndByte:   n.EndByte(),
+			StartByte: startByte,
+			EndByte:   endByte,
 		})
 	}
-	return false
 }
 
 func splitImportList(s string) []string {
@@ -380,4 +625,137 @@ func lastDottedName(path string) string {
 		return path[idx+1:]
 	}
 	return path
+}
+
+func stripLineAndBlockComments(source []byte) []byte {
+	out := make([]byte, len(source))
+	copy(out, source)
+	inBlock := false
+	for i := 0; i < len(out); i++ {
+		if inBlock {
+			if out[i] == '*' && i+1 < len(out) && out[i+1] == '/' {
+				out[i] = ' '
+				out[i+1] = ' '
+				i++
+				inBlock = false
+				continue
+			}
+			if out[i] != '\n' {
+				out[i] = ' '
+			}
+			continue
+		}
+		if out[i] == '/' && i+1 < len(out) {
+			switch out[i+1] {
+			case '/':
+				out[i] = ' '
+				out[i+1] = ' '
+				i += 2
+				for i < len(out) && out[i] != '\n' {
+					out[i] = ' '
+					i++
+				}
+				i--
+			case '*':
+				out[i] = ' '
+				out[i+1] = ' '
+				i++
+				inBlock = true
+			}
+		}
+	}
+	return out
+}
+
+func stripPythonLineComment(line string) string {
+	inQuote := byte(0)
+	escaped := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inQuote != 0 {
+			if c == '\\' {
+				escaped = true
+				continue
+			}
+			if c == inQuote {
+				inQuote = 0
+			}
+			continue
+		}
+		if c == '\'' || c == '"' {
+			inQuote = c
+			continue
+		}
+		if c == '#' {
+			return line[:i]
+		}
+	}
+	return line
+}
+
+func stripHashLineComments(source []byte) []byte {
+	out := make([]byte, len(source))
+	copy(out, source)
+	offset := 0
+	for offset <= len(out) {
+		next := offset
+		for next < len(out) && out[next] != '\n' {
+			next++
+		}
+		line := string(out[offset:next])
+		stripped := stripPythonLineComment(line)
+		for i := offset + len(stripped); i < next; i++ {
+			out[i] = ' '
+		}
+		if next == len(out) {
+			break
+		}
+		offset = next + 1
+	}
+	return out
+}
+
+func findClosingParen(text string, open int) int {
+	depth := 0
+	inQuote := byte(0)
+	escaped := false
+	for i := open; i < len(text); i++ {
+		c := text[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inQuote != 0 {
+			if c == '\\' {
+				escaped = true
+				continue
+			}
+			if c == inQuote {
+				inQuote = 0
+			}
+			continue
+		}
+		if c == '\'' || c == '"' {
+			inQuote = c
+			continue
+		}
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func isIdentByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
 }

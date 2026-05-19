@@ -1026,6 +1026,27 @@ func BenchmarkJavaCorpusGoTreeSitterParseDFAWithImportExtract(b *testing.B) {
 	})
 }
 
+func BenchmarkJavaCorpusSourceImportExtract(b *testing.B) {
+	files := loadJavaCorpus(b)
+	totalBytes := totalJavaCorpusBytes(files)
+	lang := grammars.JavaLanguage()
+
+	b.ReportAllocs()
+	b.SetBytes(totalBytes)
+	b.ResetTimer()
+
+	var imports int64
+	for i := 0; i < b.N; i++ {
+		for _, file := range files {
+			imports += int64(len(gotreesitter.ExtractImportsFromSource(lang, file.source)))
+		}
+	}
+	javaCorpusBenchmarkSink = imports
+	if b.N > 0 {
+		b.ReportMetric(float64(imports)/float64(b.N), "imports/op")
+	}
+}
+
 func BenchmarkJavaCorpusGoTreeSitterParseDFAWithNamedTraversal(b *testing.B) {
 	var scratch []*gotreesitter.Node
 	benchmarkJavaCorpusGoTreeSitterWithUse(b, javaParseModeDFA, "named_nodes/op", func(b *testing.B, lang *gotreesitter.Language, tree *gotreesitter.Tree, file javaCorpusFile) int64 {
