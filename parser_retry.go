@@ -11,6 +11,11 @@ const (
 	// the global GLR cap is widened. Only enable this on retries for parses
 	// that already proved the default merge budget was insufficient.
 	fullParseRetryMaxMergePerKey = 24
+	// Java's default full-parse merge cap stays intentionally narrow for large
+	// generated bodies, but repeatable annotation declarations can need a wider
+	// bounded retry to preserve the declaration branch.
+	javaFullParseRetryMaxGLRStacks   = 64
+	javaFullParseRetryMaxMergePerKey = 6
 	// Retry node-limit full parses with a bounded larger node budget instead of
 	// globally raising the default cap for every parse.
 	fullParseRetryNodeLimitScale = 2
@@ -340,12 +345,14 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		}
 	case "java":
 		// Giant generated switch/case bodies can retain many equivalent Java GLR
-		// survivors under the default per-key budget. A single survivor per
-		// merge key matched the accepted tree on Lucene stress files while
-		// avoiding minutes of ambiguity churn. Preserve explicit env overrides
-		// for diagnosis and parity experiments.
-		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
-			return 1
+		// survivors under the default per-key budget. Keep the Java full-parse
+		// cap narrow, but retain two survivors so common top-level annotations
+		// do not lose the declaration branch to expression-shaped alternatives.
+		// Accepted-error retries can still widen this cap when a file proves the
+		// steady-state budget is insufficient.
+		// Preserve explicit env overrides for diagnosis and parity experiments.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 2 {
+			return 2
 		}
 	}
 	return mergePerKeyCap
@@ -375,6 +382,9 @@ func shouldRepeatExternalScannerFullParse(lang *Language, tree *Tree) bool {
 
 func fullParseRetryMaxStacksOverride(tree *Tree, sourceLen int, initialMaxStacks int) int {
 	retryMaxStacks := fullParseRetryMaxGLRStacks
+	if tree != nil && tree.language != nil && tree.language.Name == "java" {
+		retryMaxStacks = javaFullParseRetryMaxGLRStacks
+	}
 	if initialMaxStacks > retryMaxStacks {
 		retryMaxStacks = initialMaxStacks * 2
 	}
@@ -434,6 +444,9 @@ func fullParseRetryMergePerKeyOverride(tree *Tree, sourceLen int, initialMaxStac
 	}
 	if rt.MaxStacksSeen < initialMaxStacks {
 		return 0
+	}
+	if tree.language != nil && tree.language.Name == "java" {
+		return javaFullParseRetryMaxMergePerKey
 	}
 	return fullParseRetryMaxMergePerKey
 }

@@ -1736,14 +1736,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		timing.maxStacksSeen = len(stacks)
 	}
 	maxStacks, retryPass := resolveParseMaxStacks(parseMaxGLRStacksValue(), maxStacksOverride, p.maxConflictWidth)
-	mergePerKeyCap := parseMaxMergePerKeyValue()
+	mergePerKeyCap := effectiveParseMergePerKeyCap(p.language, parseMaxMergePerKeyValue(), reuse != nil)
 	if maxMergePerKeyOverride > mergePerKeyCap {
 		mergePerKeyCap = maxMergePerKeyOverride
 	}
 	if mergePerKeyCap > maxStacksPerMergeKeyCeiling {
 		mergePerKeyCap = maxStacksPerMergeKeyCeiling
 	}
-	mergePerKeyCap = effectiveParseMergePerKeyCap(p.language, mergePerKeyCap, reuse != nil)
 	if reuse == nil && p.language != nil && p.language.Name == "bash" {
 		if maxStacks < 256 {
 			maxStacks = 256

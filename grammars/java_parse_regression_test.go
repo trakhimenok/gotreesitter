@@ -199,6 +199,158 @@ final class B extends A {
 	}
 }
 
+func TestJavaTopLevelAnnotationsKeepDeclarationBranchRegression(t *testing.T) {
+	cases := []struct {
+		name      string
+		src       []byte
+		childType string
+	}{
+		{
+			name: "annotation_type_declaration",
+			src: []byte(`@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+public @interface Intercept {
+  public Class<? extends JsonPostDeserializer> postDeserialize();
+}
+`),
+			childType: "annotation_type_declaration",
+		},
+		{
+			name: "repeatable_annotation_type_declaration",
+			src: []byte(`@Target({ ElementType.TYPE, ElementType.METHOD, ElementType.FIELD, ElementType.PARAMETER })
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Inherited
+@Repeatable(Extensions.class)
+@API(status = STABLE, since = "5.0")
+public @interface ExtendWith {
+  Class<? extends Extension>[] value();
+}
+`),
+			childType: "annotation_type_declaration",
+		},
+		{
+			name: "class_declaration",
+			src: []byte(`@ClassTemplate
+@ExtendWith(ClassTemplateDemo.MyClassTemplateInvocationContextProvider.class)
+class ClassTemplateDemo {
+}
+`),
+			childType: "class_declaration",
+		},
+	}
+
+	for _, tc := range cases {
+		for _, tokenSource := range []bool{false, true} {
+			name := tc.name + "/dfa"
+			if tokenSource {
+				name = tc.name + "/token_source"
+			}
+			t.Run(name, func(t *testing.T) {
+				assertJavaSourceParsesWithoutErrors(t, tc.src, tokenSource)
+
+				lang := JavaLanguage()
+				parser := gotreesitter.NewParser(lang)
+				var (
+					tree *gotreesitter.Tree
+					err  error
+				)
+				if tokenSource {
+					tree, err = parser.ParseWithTokenSourceFactory(tc.src, func(source []byte) (gotreesitter.TokenSource, error) {
+						return NewJavaTokenSource(source, lang)
+					})
+				} else {
+					tree, err = parser.Parse(tc.src)
+				}
+				if err != nil {
+					t.Fatalf("parse failed: %v", err)
+				}
+				root := tree.RootNode()
+				if got := root.NamedChild(0).Type(lang); got != tc.childType {
+					t.Fatalf("root named child = %q, want %q; sexpr: %s", got, tc.childType, root.SExpr(lang))
+				}
+			})
+		}
+	}
+}
+
+func TestJavaTopLevelAnnotationDeclarationsAfterClassRegression(t *testing.T) {
+	src := []byte(`class Host {
+}
+
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+@ExtendWith(MagicParameter.Extension.class)
+@interface MagicParameter {
+  String value();
+
+  @NullMarked
+  class Extension implements ParameterResolver {
+    Object resolveParameter(ParameterContext parameterContext) {
+      return parameterContext.findAnnotation(MagicParameter.class)
+          .map(MagicParameter::value)
+          .orElse("enigma");
+    }
+  }
+}
+
+@SuppressWarnings("unused")
+@NullMarked
+class BaseParameterExtension<T extends Annotation> implements ParameterResolver {
+}
+
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+@ExtendWith(ConstructorParameter.Extension.class)
+@interface ConstructorParameter {
+  class Extension extends BaseParameterExtension<ConstructorParameter> {
+  }
+}
+
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+@ExtendWith(AfterAllParameter.Extension.class)
+@interface AfterAllParameter {
+  class Extension extends BaseParameterExtension<AfterAllParameter> {
+  }
+}
+`)
+
+	for _, tokenSource := range []bool{false, true} {
+		name := "dfa"
+		if tokenSource {
+			name = "token_source"
+		}
+		t.Run(name, func(t *testing.T) {
+			assertJavaSourceParsesWithoutErrors(t, src, tokenSource)
+
+			lang := JavaLanguage()
+			parser := gotreesitter.NewParser(lang)
+			var (
+				tree *gotreesitter.Tree
+				err  error
+			)
+			if tokenSource {
+				tree, err = parser.ParseWithTokenSourceFactory(src, func(source []byte) (gotreesitter.TokenSource, error) {
+					return NewJavaTokenSource(source, lang)
+				})
+			} else {
+				tree, err = parser.Parse(src)
+			}
+			if err != nil {
+				t.Fatalf("parse failed: %v", err)
+			}
+			root := tree.RootNode()
+			if got := root.NamedChildCount(); got < 4 {
+				t.Fatalf("root named child count = %d, want at least 4; sexpr: %s", got, root.SExpr(lang))
+			}
+			if got := root.NamedChild(1).Type(lang); got != "annotation_type_declaration" {
+				t.Fatalf("root named child[1] = %q, want annotation_type_declaration; sexpr: %s", got, root.SExpr(lang))
+			}
+		})
+	}
+}
+
 func TestJavaParseWithTokenSourceCompactNestedGenericRegression(t *testing.T) {
 	lang := JavaLanguage()
 	parser := gotreesitter.NewParser(lang)
