@@ -60,6 +60,7 @@ type Parser struct {
 	noTreeCheckpointBenchmarkOnly       bool
 	compactNoTreeShiftLeaves            bool
 	transientReduceChildren             bool
+	transientReduceScratchNoAlias       bool
 	transientChildren                   *transientChildScratch
 	noResultCompatibilityBenchmarkOnly  bool
 	currentExternalTokenCheckpoint      externalScannerCheckpoint
@@ -1311,11 +1312,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	parseStart := time.Now()
 	prevCompactNoTreeShiftLeaves := p.compactNoTreeShiftLeaves
 	prevTransientReduceChildren := p.transientReduceChildren
+	prevTransientReduceScratchNoAlias := p.transientReduceScratchNoAlias
 	prevTransientChildren := p.transientChildren
 	p.compactNoTreeShiftLeaves = p.noTreeBenchmarkOnly && !p.noTreeCheckpointBenchmarkOnly && parseShouldCompactNoTreeShiftLeaves(len(source))
 	defer func() {
 		p.compactNoTreeShiftLeaves = prevCompactNoTreeShiftLeaves
 		p.transientReduceChildren = prevTransientReduceChildren
+		p.transientReduceScratchNoAlias = prevTransientReduceScratchNoAlias
 		p.transientChildren = prevTransientChildren
 	}()
 	p.clearCurrentExternalTokenCheckpoint()
@@ -1332,6 +1335,8 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		p.transientChildren = nil
 	}
 	scratch.merge.beginEquivEpoch()
+	transientReduceParents := p.shouldUseTransientReduceParents(source, reuse, oldTree, arenaClass)
+	p.transientReduceScratchNoAlias = p.transientReduceChildren && transientReduceParents && parseShouldUseTransientReduceScratchNoAlias(len(source))
 	// Python's generated grammar-test style files can spend most parse time
 	// recursively comparing near-equivalent GLR survivors. Limit the shallower
 	// merge equivalence to bounded inputs; very large generated wrappers have a
@@ -1344,7 +1349,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	}
 	defer releaseParserScratch(scratch, deferParentLinks)
 	p.reduceScratch = &scratch.reduce
-	if p.shouldUseTransientReduceParents(source, reuse, oldTree, arenaClass) {
+	if transientReduceParents {
 		p.reduceScratch.transientParents = &scratch.transientParents
 		p.reduceScratch.transientChildren = &scratch.transientChildren
 	}
@@ -1620,7 +1625,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		return finalizeTree(parseErrorTree(source, p.language), stopReason)
 	}
 	finalizeRecoveredNodes := func(nodes []*Node) *Tree {
-		captureArenaStats()
+		materializeTransientParentNodes(nodes, arena, scratch.reduce.transientParents, scratch.reduce.transientChildren)
 		tree := p.buildResultFromNodes(nodes, source, arena, oldTree, &reuseState, &scratch.nodeLinks)
 		if root := tree.RootNode(); root != nil {
 			normalizeSQLRecoveredMissingNull(root, arena, p.language)
@@ -2412,6 +2417,12 @@ func (p *Parser) shouldUseTransientReduceParents(source []byte, reuse *reuseCurs
 		!p.noTreeBenchmarkOnly &&
 		!p.noTreeCheckpointBenchmarkOnly &&
 		len(source) > 0
+}
+
+func (p *Parser) shouldUseTransientReduceScratchNoAlias() bool {
+	return p != nil &&
+		p.transientReduceScratchNoAlias &&
+		p.transientChildren != nil
 }
 
 func repetitionShiftConflictChoice(actions []ParseAction) (ParseAction, bool) {

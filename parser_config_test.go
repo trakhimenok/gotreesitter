@@ -78,3 +78,12 @@ func TestTransientReducePathDisable(t *testing.T) {
 		t.Fatal("transient reduce parent disable ignored")
 	}
 }
+
+func TestTransientReduceScratchNoAliasLargeOnly(t *testing.T) {
+	if parseShouldUseTransientReduceScratchNoAlias(50 * 1024) {
+		t.Fatal("scratch no-alias transient reduce enabled for 50KB input")
+	}
+	if !parseShouldUseTransientReduceScratchNoAlias(256 * 1024) {
+		t.Fatal("scratch no-alias transient reduce disabled at large-file threshold")
+	}
+}

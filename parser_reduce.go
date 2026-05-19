@@ -1427,6 +1427,28 @@ func materializeReduceChildrenFromScratch(scratch *reduceBuildScratch, arena *no
 	return children, fieldIDs, fieldSources
 }
 
+func (p *Parser) materializeNoFieldReduceChildrenFromScratch(scratch *reduceBuildScratch, arena *nodeArena) []*Node {
+	if scratch == nil || len(scratch.nodes) == 0 {
+		return nil
+	}
+	children := p.allocNoFieldReduceChildren(arena, len(scratch.nodes))
+	if perfCountersEnabled {
+		perfRecordReduceChildrenScratch(len(scratch.nodes))
+	}
+	copy(children, scratch.nodes)
+	return children
+}
+
+func (p *Parser) allocNoFieldReduceChildren(arena *nodeArena, n int) []*Node {
+	if n <= 0 {
+		return nil
+	}
+	if p.shouldUseTransientReduceScratchNoAlias() {
+		return p.transientChildren.alloc(n)
+	}
+	return arena.allocNodeSliceNoClear(n)
+}
+
 func (p *Parser) allocAllVisibleReduceChildren(arena *nodeArena, n int, aliasSeq []Symbol, rawFieldIDs []FieldID, rawInherited []bool) []*Node {
 	if p != nil &&
 		p.transientReduceChildren &&
@@ -1813,7 +1835,7 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 		perfRecordReduceScratchNoAlias(len(scratch.nodes))
 	}
 	arena.recordReduceChildSliceScratchNoAlias(len(scratch.nodes))
-	children, _, _ := materializeReduceChildrenFromScratch(scratch, arena)
+	children := p.materializeNoFieldReduceChildrenFromScratch(scratch, arena)
 	path := reduceChildPathNone
 	if len(children) > 0 {
 		path = reduceChildPathScratchNoAlias

@@ -149,6 +149,10 @@ func parseShouldCompactNoTreeShiftLeaves(sourceLen int) bool {
 	return sourceLen >= 256*1024
 }
 
+func parseShouldUseTransientReduceScratchNoAlias(sourceLen int) bool {
+	return sourceLen >= 256*1024
+}
+
 func parseNoTreeFullLeafArenaNodeCapacity(sourceLen int) int {
 	base := nodeCapacityForClass(arenaClassFull)
 	if sourceLen <= 0 {
