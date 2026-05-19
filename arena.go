@@ -738,6 +738,23 @@ func (a *nodeArena) ensureNodeCapacity(min int) {
 	a.recomputeAllocatedBytes()
 }
 
+func (a *nodeArena) ensureExactNodeCapacity(min int) {
+	if a == nil || min <= len(a.nodes) {
+		return
+	}
+	if a.used > 0 {
+		panic("ensureExactNodeCapacity called after arena allocations started")
+	}
+	newCap := max(min, minArenaNodeCap)
+	a.nodes = make([]Node, newCap)
+	a.used = 0
+	a.nodeSlabs = nil
+	a.nodeSlabCursor = 0
+	a.externalScannerNodeCheckpoints = externalScannerCheckpointSet{}
+	a.externalScannerNodeCheckpointSlabs = nil
+	a.recomputeAllocatedBytes()
+}
+
 func (a *nodeArena) allocNodeSlice(n int) []*Node {
 	return a.allocNodeSliceInternal(n, true)
 }

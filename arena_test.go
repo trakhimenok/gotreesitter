@@ -30,6 +30,17 @@ func TestEnsureNodeCapacityPreallocationBeforeUse(t *testing.T) {
 	}
 }
 
+func TestEnsureExactNodeCapacityDoesNotOverRound(t *testing.T) {
+	arena := acquireNodeArena(arenaClassFull)
+	defer arena.Release()
+
+	target := len(arena.nodes) + 123
+	arena.ensureExactNodeCapacity(target)
+	if got := len(arena.nodes); got != target {
+		t.Fatalf("ensureExactNodeCapacity nodes = %d, want %d", got, target)
+	}
+}
+
 func TestAllocNodeUsesOverflowSlabsWhenPrimaryExhausted(t *testing.T) {
 	arena := newNodeArena(arenaClassIncremental)
 	primaryCap := len(arena.nodes)

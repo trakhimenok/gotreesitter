@@ -211,7 +211,7 @@ func (p *Parser) recordFullArenaUsage(used int) {
 	if p == nil || used <= 0 {
 		return
 	}
-	target := used + used/4 // keep 25% headroom above observed peak.
+	target := used + parseFullArenaHintHeadroom(used)
 	base := nodeCapacityForClass(arenaClassFull)
 	if target < base {
 		target = base
@@ -237,6 +237,21 @@ func (p *Parser) recordFullArenaUsage(used int) {
 			return
 		}
 	}
+}
+
+func parseFullArenaHintHeadroom(used int) int {
+	if used <= 0 {
+		return 0
+	}
+	if used < 256*1024 {
+		return used / 4
+	}
+	headroom := used / 16
+	const maxLargeFullArenaHintHeadroom = 64 * 1024
+	if headroom > maxLargeFullArenaHintHeadroom {
+		return maxLargeFullArenaHintHeadroom
+	}
+	return headroom
 }
 
 func (p *Parser) recordIncrementalArenaUsage(used int) {

@@ -257,8 +257,8 @@ func TestRetryFullParseStopsSchedulingRetriesAfterTimeout(t *testing.T) {
 	source := []byte("1+")
 	initial := &Tree{
 		root: &Node{
-			endByte:  1,
-			flags: nodeFlagHasError,
+			endByte: 1,
+			flags:   nodeFlagHasError,
 		},
 		parseRuntime: ParseRuntime{
 			StopReason:      ParseStopAccepted,
@@ -269,8 +269,8 @@ func TestRetryFullParseStopsSchedulingRetriesAfterTimeout(t *testing.T) {
 	}
 	retry := &Tree{
 		root: &Node{
-			endByte:  2,
-			flags: nodeFlagHasError,
+			endByte: 2,
+			flags:   nodeFlagHasError,
 		},
 		parseRuntime: ParseRuntime{
 			StopReason:      ParseStopAccepted,
@@ -405,7 +405,7 @@ func TestPreferRetryTreePrefersFurtherAcceptedProgress(t *testing.T) {
 	incumbent := &Tree{
 		root: &Node{
 			endByte:  100,
-			flags: nodeFlagHasError,
+			flags:    nodeFlagHasError,
 			children: []*Node{{}, {}, {}},
 		},
 		parseRuntime: ParseRuntime{
@@ -417,7 +417,7 @@ func TestPreferRetryTreePrefersFurtherAcceptedProgress(t *testing.T) {
 	candidate := &Tree{
 		root: &Node{
 			endByte:  200,
-			flags: nodeFlagHasError,
+			flags:    nodeFlagHasError,
 			children: []*Node{{}, {}},
 		},
 		parseRuntime: ParseRuntime{
@@ -435,7 +435,7 @@ func TestPreferRetryTreePrefersFewerChildrenOnEqualErrorTrees(t *testing.T) {
 	incumbent := &Tree{
 		root: &Node{
 			endByte:  200,
-			flags: nodeFlagHasError,
+			flags:    nodeFlagHasError,
 			children: make([]*Node, 12),
 		},
 		parseRuntime: ParseRuntime{
@@ -447,7 +447,7 @@ func TestPreferRetryTreePrefersFewerChildrenOnEqualErrorTrees(t *testing.T) {
 	candidate := &Tree{
 		root: &Node{
 			endByte:  200,
-			flags: nodeFlagHasError,
+			flags:    nodeFlagHasError,
 			children: make([]*Node, 4),
 		},
 		parseRuntime: ParseRuntime{
@@ -740,5 +740,14 @@ func TestParseFullArenaInitialNodeCapacityScalesForLargeSources(t *testing.T) {
 	want := 1_500_000
 	if got != want {
 		t.Fatalf("parseFullArenaInitialNodeCapacity(%d) = %d, want %d", sourceLen, got, want)
+	}
+}
+
+func TestParseFullArenaHintHeadroomIsBoundedForLargeSources(t *testing.T) {
+	used := 1_500_000
+	got := parseFullArenaHintHeadroom(used)
+	want := 64 * 1024
+	if got != want {
+		t.Fatalf("parseFullArenaHintHeadroom(%d) = %d, want %d", used, got, want)
 	}
 }
