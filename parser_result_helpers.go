@@ -1,5 +1,13 @@
 package gotreesitter
 
+func isCobolLanguageName(name string) bool {
+	return name == "cobol" || name == "COBOL"
+}
+
+func isCobolLanguage(lang *Language) bool {
+	return lang != nil && isCobolLanguageName(lang.Name)
+}
+
 func cloneNodeSliceInArena(arena *nodeArena, nodes []*Node) []*Node {
 	if len(nodes) == 0 {
 		return nil

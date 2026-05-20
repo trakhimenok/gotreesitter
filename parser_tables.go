@@ -144,7 +144,7 @@ func buildSmallTokenLookup(lang *Language) [][]uint16 {
 }
 
 func compactSmallTokenRows(lang *Language) bool {
-	return lang != nil && (lang.Name == "cobol" || lang.Name == "COBOL")
+	return isCobolLanguage(lang)
 }
 
 func buildSmallTokenLookupFullRows(lang *Language, threshold int) [][]uint16 {

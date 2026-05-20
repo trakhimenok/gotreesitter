@@ -260,7 +260,7 @@ func NewParser(lang *Language) *Parser {
 			}
 			p.forceRawSpanTable[i] = true
 		}
-		if lang.Name == "cobol" || lang.Name == "COBOL" {
+		if isCobolLanguage(lang) {
 			for i, name := range lang.SymbolNames {
 				if !strings.HasSuffix(name, "_division") &&
 					!strings.Contains(name, "_statement") &&

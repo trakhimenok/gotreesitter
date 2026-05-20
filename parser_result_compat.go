@@ -28,6 +28,11 @@ func normalizeResultCompatibility(root *Node, source []byte, p *Parser) {
 }
 
 func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
+	if isCobolLanguage(ctx.lang) {
+		normalizeCobolCompatibility(ctx.root, ctx.source, ctx.lang)
+		return
+	}
+
 	switch ctx.lang.Name {
 	case "bash":
 		normalizeBashProgramVariableAssignments(ctx.root, ctx.lang)
@@ -39,8 +44,6 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeCSharpCompatibility(ctx.root, ctx.source, ctx.parser, ctx.lang)
 	case "caddy":
 		normalizeTopLevelTrailingLineBreakSpan(ctx.root, ctx.source, ctx.lang)
-	case "cobol", "COBOL":
-		normalizeCobolCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "comment":
 		normalizeCommentTrailingExtraTrivia(ctx.root, ctx.source, ctx.lang)
 	case "cooklang":

@@ -8,7 +8,7 @@ func normalizeCobolCompatibility(root *Node, source []byte, lang *Language) {
 	normalizeCobolDivisionSiblingEnds(root, source, lang)
 }
 func normalizeCobolLeadingAreaStart(root *Node, source []byte, lang *Language) {
-	if root == nil || lang == nil || (lang.Name != "cobol" && lang.Name != "COBOL") || len(source) == 0 {
+	if root == nil || !isCobolLanguage(lang) || len(source) == 0 {
 		return
 	}
 	start := firstNonWhitespaceByte(source)
@@ -58,7 +58,7 @@ func normalizeCobolLeadingAreaStart(root *Node, source []byte, lang *Language) {
 }
 
 func normalizeCobolTopLevelDefinitionEnd(root *Node, source []byte, lang *Language) {
-	if root == nil || lang == nil || (lang.Name != "cobol" && lang.Name != "COBOL") || root.Type(lang) != "start" || resultChildCount(root) == 0 {
+	if root == nil || !isCobolLanguage(lang) || root.Type(lang) != "start" || resultChildCount(root) == 0 {
 		return
 	}
 	def := (*Node)(nil)
@@ -81,7 +81,7 @@ func normalizeCobolTopLevelDefinitionEnd(root *Node, source []byte, lang *Langua
 }
 
 func normalizeCobolDivisionSiblingEnds(root *Node, source []byte, lang *Language) {
-	if root == nil || lang == nil || (lang.Name != "cobol" && lang.Name != "COBOL") || root.Type(lang) != "start" || resultChildCount(root) == 0 {
+	if root == nil || !isCobolLanguage(lang) || root.Type(lang) != "start" || resultChildCount(root) == 0 {
 		return
 	}
 	def := (*Node)(nil)
