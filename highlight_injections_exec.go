@@ -18,118 +18,175 @@ func (h *Highlighter) appendInjectedRanges(tree *Tree, source []byte, ranges []H
 			break
 		}
 
-		var contentNode *Node
-		var startNode *Node
-		langHint := ""
-		if vals := match.SetValues(h.injectionQuery, "injection.language"); len(vals) > 0 {
-			langHint = vals[0]
-		}
-		for _, c := range match.Captures {
-			switch c.Name {
-			case "injection.content":
-				contentNode = c.Node
-			case "injection.start":
-				startNode = c.Node
-			case "injection.language":
-				if langHint == "" && c.Node != nil {
-					langHint = c.Node.Text(source)
-				}
-			}
-		}
-		if contentNode == nil {
+		ctx, ok := h.injectedHighlightContext(match, source)
+		if !ok {
 			continue
 		}
-
-		normalizedHint := normalizeInjectionLanguageHint(langHint)
-		if normalizedHint == "" {
-			continue
-		}
-
-		childLang, childQueryStr, childTSFactory, ok := h.injectionResolver(normalizedHint)
-		if !ok || childLang == nil || strings.TrimSpace(childQueryStr) == "" {
-			continue
-		}
-
-		start := contentNode.StartByte()
-		if startNode != nil && startNode.StartByte() < start {
-			start = startNode.StartByte()
-		}
-		end := contentNode.EndByte()
-		if end <= start || int(end) > len(source) {
-			continue
-		}
-		childSource := source[start:end]
-
-		childParser := NewParser(childLang)
-		var childTree *Tree
-		var err error
-		if childTSFactory != nil {
-			childTree, err = childParser.ParseWithTokenSource(childSource, childTSFactory(childSource))
-		} else {
-			childTree, err = childParser.Parse(childSource)
-		}
-		if err != nil || childTree == nil || childTree.RootNode() == nil {
-			if childTree != nil {
-				childTree.Release()
-			}
-			continue
-		}
-
-		cacheKey := childLang.Name
-		if cacheKey == "" {
-			cacheKey = normalizedHint
-		}
-		childQuery := h.childQueries[cacheKey]
-		if childQuery == nil {
-			childQuery, err = NewQuery(childQueryStr, childLang)
-			if err != nil {
-				childTree.Release()
-				continue
-			}
-			h.childQueries[cacheKey] = childQuery
-		}
-
-		childRanges := collectHighlightRanges(childQuery, childTree)
-		childTree.Release()
-
-		if len(childRanges) == 0 && cacheKey == "go" {
-			const prefix = "package main\nfunc __gts_markdown_fence__() {\n"
-			const suffix = "\n}\n"
-			wrapped := make([]byte, 0, len(prefix)+len(childSource)+len(suffix))
-			wrapped = append(wrapped, []byte(prefix)...)
-			wrapped = append(wrapped, childSource...)
-			wrapped = append(wrapped, []byte(suffix)...)
-
-			wrappedTree, wrappedErr := h.parseInjectedTree(childLang, childTSFactory, wrapped)
-			if wrappedErr == nil && wrappedTree != nil && wrappedTree.RootNode() != nil {
-				offset := uint32(len(prefix))
-				endOffset := offset + uint32(len(childSource))
-				for _, r := range collectHighlightRanges(childQuery, wrappedTree) {
-					if r.StartByte < offset || r.EndByte > endOffset {
-						continue
-					}
-					childRanges = append(childRanges, HighlightRange{
-						StartByte: r.StartByte - offset,
-						EndByte:   r.EndByte - offset,
-						Capture:   r.Capture,
-					})
-				}
-				wrappedTree.Release()
-			} else if wrappedTree != nil {
-				wrappedTree.Release()
-			}
-		}
-
-		for _, r := range childRanges {
-			ranges = append(ranges, HighlightRange{
-				StartByte: r.StartByte + start,
-				EndByte:   r.EndByte + start,
-				Capture:   r.Capture,
-			})
-		}
+		childRanges := h.collectInjectedHighlightRanges(ctx)
+		ranges = appendOffsetHighlightRanges(ranges, childRanges, ctx.start)
 	}
 
 	return ranges
+}
+
+type injectionMatchCaptures struct {
+	contentNode *Node
+	startNode   *Node
+	langHint    string
+}
+
+type injectedHighlightContext struct {
+	lang               *Language
+	querySource        string
+	tokenSourceFactory func(source []byte) TokenSource
+	cacheKey           string
+	source             []byte
+	start              uint32
+}
+
+func (h *Highlighter) injectedHighlightContext(match QueryMatch, source []byte) (injectedHighlightContext, bool) {
+	captures := h.collectInjectionCaptures(match, source)
+	if captures.contentNode == nil {
+		return injectedHighlightContext{}, false
+	}
+	normalizedHint := normalizeInjectionLanguageHint(captures.langHint)
+	if normalizedHint == "" {
+		return injectedHighlightContext{}, false
+	}
+
+	childLang, childQueryStr, childTSFactory, ok := h.injectionResolver(normalizedHint)
+	if !ok || childLang == nil || strings.TrimSpace(childQueryStr) == "" {
+		return injectedHighlightContext{}, false
+	}
+
+	start, end, ok := injectedContentByteRange(captures.contentNode, captures.startNode, len(source))
+	if !ok {
+		return injectedHighlightContext{}, false
+	}
+
+	return injectedHighlightContext{
+		lang:               childLang,
+		querySource:        childQueryStr,
+		tokenSourceFactory: childTSFactory,
+		cacheKey:           injectedHighlightCacheKey(childLang, normalizedHint),
+		source:             source[start:end],
+		start:              start,
+	}, true
+}
+
+func (h *Highlighter) collectInjectionCaptures(match QueryMatch, source []byte) injectionMatchCaptures {
+	captures := injectionMatchCaptures{}
+	if vals := match.SetValues(h.injectionQuery, "injection.language"); len(vals) > 0 {
+		captures.langHint = vals[0]
+	}
+	for _, c := range match.Captures {
+		switch c.Name {
+		case "injection.content":
+			captures.contentNode = c.Node
+		case "injection.start":
+			captures.startNode = c.Node
+		case "injection.language":
+			if captures.langHint == "" && c.Node != nil {
+				captures.langHint = c.Node.Text(source)
+			}
+		}
+	}
+	return captures
+}
+
+func injectedContentByteRange(contentNode, startNode *Node, sourceLen int) (uint32, uint32, bool) {
+	start := contentNode.StartByte()
+	if startNode != nil && startNode.StartByte() < start {
+		start = startNode.StartByte()
+	}
+	end := contentNode.EndByte()
+	return start, end, end > start && int(end) <= sourceLen
+}
+
+func injectedHighlightCacheKey(lang *Language, fallback string) string {
+	if lang.Name != "" {
+		return lang.Name
+	}
+	return fallback
+}
+
+func (h *Highlighter) collectInjectedHighlightRanges(ctx injectedHighlightContext) []HighlightRange {
+	childTree, err := h.parseInjectedTree(ctx.lang, ctx.tokenSourceFactory, ctx.source)
+	if err != nil || childTree == nil || childTree.RootNode() == nil {
+		if childTree != nil {
+			childTree.Release()
+		}
+		return nil
+	}
+	defer childTree.Release()
+
+	childQuery, ok := h.childHighlightQuery(ctx.cacheKey, ctx.querySource, ctx.lang)
+	if !ok {
+		return nil
+	}
+	childRanges := collectHighlightRanges(childQuery, childTree)
+	if len(childRanges) == 0 && ctx.cacheKey == "go" {
+		childRanges = h.collectWrappedGoHighlightRanges(ctx, childQuery)
+	}
+	return childRanges
+}
+
+func (h *Highlighter) childHighlightQuery(cacheKey string, querySource string, lang *Language) (*Query, bool) {
+	childQuery := h.childQueries[cacheKey]
+	if childQuery != nil {
+		return childQuery, true
+	}
+	childQuery, err := NewQuery(querySource, lang)
+	if err != nil {
+		return nil, false
+	}
+	h.childQueries[cacheKey] = childQuery
+	return childQuery, true
+}
+
+func (h *Highlighter) collectWrappedGoHighlightRanges(ctx injectedHighlightContext, childQuery *Query) []HighlightRange {
+	const prefix = "package main\nfunc __gts_markdown_fence__() {\n"
+	const suffix = "\n}\n"
+
+	wrapped := make([]byte, 0, len(prefix)+len(ctx.source)+len(suffix))
+	wrapped = append(wrapped, []byte(prefix)...)
+	wrapped = append(wrapped, ctx.source...)
+	wrapped = append(wrapped, []byte(suffix)...)
+
+	wrappedTree, wrappedErr := h.parseInjectedTree(ctx.lang, ctx.tokenSourceFactory, wrapped)
+	if wrappedErr != nil || wrappedTree == nil || wrappedTree.RootNode() == nil {
+		if wrappedTree != nil {
+			wrappedTree.Release()
+		}
+		return nil
+	}
+	defer wrappedTree.Release()
+
+	offset := uint32(len(prefix))
+	endOffset := offset + uint32(len(ctx.source))
+	childRanges := make([]HighlightRange, 0)
+	for _, r := range collectHighlightRanges(childQuery, wrappedTree) {
+		if r.StartByte < offset || r.EndByte > endOffset {
+			continue
+		}
+		childRanges = append(childRanges, HighlightRange{
+			StartByte: r.StartByte - offset,
+			EndByte:   r.EndByte - offset,
+			Capture:   r.Capture,
+		})
+	}
+	return childRanges
+}
+
+func appendOffsetHighlightRanges(dst []HighlightRange, ranges []HighlightRange, offset uint32) []HighlightRange {
+	for _, r := range ranges {
+		dst = append(dst, HighlightRange{
+			StartByte: r.StartByte + offset,
+			EndByte:   r.EndByte + offset,
+			Capture:   r.Capture,
+		})
+	}
+	return dst
 }
 
 func (h *Highlighter) parseInjectedTree(lang *Language, tokenSourceFactory func(source []byte) TokenSource, source []byte) (*Tree, error) {
