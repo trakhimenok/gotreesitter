@@ -1189,7 +1189,8 @@ func collectPendingParentVisiblePayloadShape(parent *pendingParent, shape *pendi
 	if parent == nil || shape == nil {
 		return
 	}
-	for _, child := range parent.childEntries() {
+	for i := 0; i < parent.childEntryCount(); i++ {
+		child := parent.childEntry(i)
 		if stackEntryCompactFullLeaf(child) != nil {
 			shape.containsCompactLeaf = true
 			continue
@@ -1300,7 +1301,7 @@ func (p *Parser) tryPushPendingNoFieldParent(s *glrStack, act ParseAction, tok T
 	out := 0
 	flattenedParents := 0
 	flattenedChildRefs := 0
-	parentChildren := parent.childEntries()
+	parentChildren := parent.childRefs()
 	for i := start; i < reducedEnd; i++ {
 		next, parents, refs := fillPendingNoFieldChildren(parentChildren, out, entries[i], parentVisible, symbolMeta)
 		out = next
@@ -1417,7 +1418,8 @@ func pendingPlainHiddenVisibleDescendantCount(entry stackEntry, symbolMeta []Sym
 	}
 	if parent := stackEntryPendingParent(entry); parent != nil {
 		count := 0
-		for _, child := range parent.childEntries() {
+		for i := 0; i < parent.childEntryCount(); i++ {
+			child := parent.childEntry(i)
 			count += pendingPlainHiddenVisibleDescendantCount(child, symbolMeta)
 		}
 		return count
@@ -1446,7 +1448,8 @@ func pendingNoFieldChildCount(entry stackEntry, parentVisible bool, symbolMeta [
 	}
 	if parentVisible {
 		if parent := stackEntryPendingParent(entry); parent != nil {
-			for _, child := range parent.childEntries() {
+			for i := 0; i < parent.childEntryCount(); i++ {
+				child := parent.childEntry(i)
 				childCount, childPayload, childHasError, childOK := pendingNoFieldChildCount(child, true, symbolMeta)
 				if !childOK {
 					return 0, false, false, false
@@ -1510,7 +1513,8 @@ func pendingNoFieldFirstChild(entry stackEntry, parentVisible bool, symbolMeta [
 	}
 	if parentVisible {
 		if parent := stackEntryPendingParent(entry); parent != nil {
-			for _, child := range parent.childEntries() {
+			for i := 0; i < parent.childEntryCount(); i++ {
+				child := parent.childEntry(i)
 				if next, ok := pendingNoFieldFirstChild(child, true, symbolMeta); ok {
 					return next, true
 				}
@@ -1541,9 +1545,9 @@ func pendingNoFieldLastChild(entry stackEntry, parentVisible bool, symbolMeta []
 	}
 	if parentVisible {
 		if parent := stackEntryPendingParent(entry); parent != nil {
-			children := parent.childEntries()
-			for i := len(children) - 1; i >= 0; i-- {
-				if next, ok := pendingNoFieldLastChild(children[i], true, symbolMeta); ok {
+			for i := parent.childEntryCount() - 1; i >= 0; i-- {
+				child := parent.childEntry(i)
+				if next, ok := pendingNoFieldLastChild(child, true, symbolMeta); ok {
 					return next, true
 				}
 			}
@@ -1565,13 +1569,13 @@ func pendingNoFieldLastChild(entry stackEntry, parentVisible bool, symbolMeta []
 	return entry, true
 }
 
-func fillPendingNoFieldChildren(dst []stackEntry, out int, entry stackEntry, parentVisible bool, symbolMeta []SymbolMetadata) (next int, flattenedParents int, flattenedChildRefs int) {
+func fillPendingNoFieldChildren(dst []pendingChildEntry, out int, entry stackEntry, parentVisible bool, symbolMeta []SymbolMetadata) (next int, flattenedParents int, flattenedChildRefs int) {
 	if !stackEntryHasNode(entry) || stackEntryNodeIsMissing(entry) {
 		return out, 0, 0
 	}
 	if stackEntryVisibleForPending(entry, symbolMeta) {
 		if out < len(dst) {
-			dst[out] = entry
+			dst[out] = newPendingChildEntry(entry)
 			out++
 		}
 		return out, 0, 0
@@ -1579,8 +1583,9 @@ func fillPendingNoFieldChildren(dst []stackEntry, out int, entry stackEntry, par
 	if parentVisible {
 		if parent := stackEntryPendingParent(entry); parent != nil {
 			before := out
-			children := parent.childEntries()
-			for _, child := range children {
+			children := parent.childRefs()
+			for _, childRef := range children {
+				child := childRef.stackEntry()
 				var parents, refs int
 				out, parents, refs = fillPendingNoFieldChildren(dst, out, child, true, symbolMeta)
 				flattenedParents += parents
@@ -1611,7 +1616,7 @@ func fillPendingNoFieldChildren(dst []stackEntry, out int, entry stackEntry, par
 		return out, 0, 0
 	}
 	if out < len(dst) {
-		dst[out] = entry
+		dst[out] = newPendingChildEntry(entry)
 		out++
 	}
 	return out, 0, 0

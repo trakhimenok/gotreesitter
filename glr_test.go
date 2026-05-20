@@ -29,6 +29,78 @@ func TestPendingParentSizeBudget(t *testing.T) {
 	}
 }
 
+func TestPendingChildEntrySizeBudget(t *testing.T) {
+	if got := unsafe.Sizeof(pendingChildEntry(0)); got != 8 {
+		t.Fatalf("pendingChildEntry size = %d, want 8", got)
+	}
+	if stackEntryKindPendingParent > uint32(pendingChildEntryKindMask) {
+		t.Fatalf("pendingChildEntry kind mask = %d does not cover pending-parent kind %d", pendingChildEntryKindMask, stackEntryKindPendingParent)
+	}
+}
+
+func TestPendingChildEntryRoundTripsKindAndState(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	node := newLeafNodeInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})
+	node.parseState = 11
+	noTree := newNoTreeLeafNodeInArena(arena, 2, true, 1, 2, Point{Column: 1}, Point{Column: 2})
+	noTree.parseState = 12
+	leaf := newCompactFullLeafInArena(arena, 3, true, 2, 3, Point{Column: 2}, Point{Column: 3})
+	leaf.parseState = 13
+	parent := newPendingParentInArena(arena, 4, true, 5, nil, 3, 4, Point{Column: 3}, Point{Column: 4}, false)
+	parent.parseState = 14
+
+	for _, tc := range []struct {
+		name  string
+		entry stackEntry
+	}{
+		{name: "node", entry: newStackEntryNode(node.parseState, node)},
+		{name: "no-tree", entry: newStackEntryNoTreeNode(noTree.parseState, noTree)},
+		{name: "leaf", entry: newStackEntryCompactFullLeaf(leaf.parseState, leaf)},
+		{name: "parent", entry: newStackEntryPendingParent(parent.parseState, parent)},
+	} {
+		if low := uintptr(unsafe.Pointer(tc.entry.node)) & pendingChildEntryKindMask; low != 0 {
+			t.Fatalf("%s payload pointer low bits = %d, want 0", tc.name, low)
+		}
+		got := newPendingChildEntry(tc.entry).stackEntry()
+		if got.node != tc.entry.node {
+			t.Fatalf("%s node = %p, want %p", tc.name, got.node, tc.entry.node)
+		}
+		if got.kind != tc.entry.kind {
+			t.Fatalf("%s kind = %d, want %d", tc.name, got.kind, tc.entry.kind)
+		}
+		if got.state != tc.entry.state {
+			t.Fatalf("%s state = %d, want %d", tc.name, got.state, tc.entry.state)
+		}
+	}
+}
+
+func TestPendingParentMaterializationCachesMaterializedChildRefs(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	leaf := newCompactFullLeafInArena(arena, 3, true, 2, 3, Point{Column: 2}, Point{Column: 3})
+	leaf.parseState = 13
+	parent := newPendingParentInArena(arena, 4, true, 5, []stackEntry{newStackEntryCompactFullLeaf(leaf.parseState, leaf)}, 2, 3, Point{Column: 2}, Point{Column: 3}, false)
+	parent.parseState = 14
+
+	entry := newStackEntryPendingParent(parent.parseState, parent)
+	if node := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree); node == nil {
+		t.Fatal("first materialized node = nil")
+	}
+	if got := arena.compactFullLeafMaterialized; got != 1 {
+		t.Fatalf("compact leaf materialized after first pass = %d, want 1", got)
+	}
+
+	entry = newStackEntryPendingParent(parent.parseState, parent)
+	if node := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree); node == nil {
+		t.Fatal("second materialized node = nil")
+	}
+	if got := arena.compactFullLeafMaterialized; got != 1 {
+		t.Fatalf("compact leaf materialized after second pass = %d, want 1", got)
+	}
+	if child := parent.childEntry(0); stackEntryNode(child) == nil {
+		t.Fatal("pending child ref was not updated to materialized node")
+	}
+}
+
 func TestNoTreeNodeStackEntryKeepsBytesAndDropsPoints(t *testing.T) {
 	leaf := newNoTreeLeafNodeInArena(nil, 7, true, 11, 19, Point{Row: 3, Column: 5}, Point{Row: 3, Column: 13})
 	entry := newStackEntryNoTreeNode(2, leaf)
@@ -206,6 +278,7 @@ func TestPendingParentFieldRejectCountersClassifyShapes(t *testing.T) {
 
 func TestParentRejectPayloadMaterializedCountersClassifyPayloadKind(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
+	arena.breakdownEnabled = true
 	leaf := newCompactFullLeafInArena(arena, 9, true, 13, 21, Point{Row: 2, Column: 3}, Point{Row: 2, Column: 11})
 	leafEntry := newStackEntryCompactFullLeaf(4, leaf)
 	arena.recordParentRejectPayloadMaterialized(leafEntry, pendingParentRejectFields)

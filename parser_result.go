@@ -295,7 +295,8 @@ func stackEntryResultErrorRank(entry stackEntry, rank *int) {
 		return
 	}
 	if parent := stackEntryPendingParent(entry); parent != nil {
-		for _, child := range parent.childEntries() {
+		for i := 0; i < parent.childEntryCount(); i++ {
+			child := parent.childEntry(i)
 			stackEntryResultErrorRank(child, rank)
 			if *rank == 2 {
 				return
@@ -600,11 +601,10 @@ func stackEntryAliasChild(entry stackEntry, i int) (stackEntry, bool) {
 		return newStackEntryNode(child.parseState, child), true
 	}
 	if parent := stackEntryPendingParent(entry); parent != nil {
-		children := parent.childEntries()
-		if i < 0 || i >= len(children) {
+		if i < 0 || i >= parent.childEntryCount() {
 			return stackEntry{}, false
 		}
-		return children[i], true
+		return parent.childEntry(i), true
 	}
 	return stackEntry{}, false
 }

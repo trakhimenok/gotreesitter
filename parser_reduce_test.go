@@ -232,7 +232,7 @@ func TestTryPushPendingNoFieldParentAllowsEffectiveNoFieldProduction(t *testing.
 	if parent == nil {
 		t.Fatal("stack entry is not a pending parent")
 	}
-	if got := len(parent.childEntries()); got != 1 {
+	if got := parent.childEntryCount(); got != 1 {
 		t.Fatalf("pending parent child count = %d, want 1", got)
 	}
 }
@@ -271,7 +271,7 @@ func TestTryPushPendingNoFieldParentCountsOrdinaryHiddenNodeRefs(t *testing.T) {
 	if parent == nil {
 		t.Fatal("stack entry is not a pending parent")
 	}
-	if got := len(parent.childEntries()); got != 2 {
+	if got := parent.childEntryCount(); got != 2 {
 		t.Fatalf("pending parent child count = %d, want 2", got)
 	}
 }

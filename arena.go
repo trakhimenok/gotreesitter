@@ -1013,17 +1013,17 @@ func (a *nodeArena) allocPendingParent() *pendingParent {
 	}
 }
 
-func (a *nodeArena) allocPendingChildEntries(n int) []stackEntry {
+func (a *nodeArena) allocPendingChildEntries(n int) []pendingChildEntry {
 	if n <= 0 {
 		return nil
 	}
 	if a == nil {
-		return make([]stackEntry, n)
+		return make([]pendingChildEntry, n)
 	}
 	a.pendingChildEntriesAllocated += uint64(n)
 	if len(a.pendingChildEntrySlabs) == 0 {
 		capacity := max(defaultPendingChildEntrySlabCap(a.class), n)
-		a.pendingChildEntrySlabs = append(a.pendingChildEntrySlabs, pendingChildEntrySlab{data: make([]stackEntry, capacity)})
+		a.pendingChildEntrySlabs = append(a.pendingChildEntrySlabs, pendingChildEntrySlab{data: make([]pendingChildEntry, capacity)})
 		a.allocatedBytes += pendingChildEntryBytesForCap(capacity)
 		a.pendingChildEntrySlabCursor = 0
 	}
@@ -1034,7 +1034,7 @@ func (a *nodeArena) allocPendingChildEntries(n int) []stackEntry {
 		if i >= len(a.pendingChildEntrySlabs) {
 			lastCap := len(a.pendingChildEntrySlabs[len(a.pendingChildEntrySlabs)-1].data)
 			capacity := nextPendingChildEntrySlabCap(a.class, lastCap, n)
-			a.pendingChildEntrySlabs = append(a.pendingChildEntrySlabs, pendingChildEntrySlab{data: make([]stackEntry, capacity)})
+			a.pendingChildEntrySlabs = append(a.pendingChildEntrySlabs, pendingChildEntrySlab{data: make([]pendingChildEntry, capacity)})
 			a.allocatedBytes += pendingChildEntryBytesForCap(capacity)
 		}
 
@@ -2195,7 +2195,7 @@ func maxRetainedPendingParentCapacityForClass(class arenaClass) int {
 }
 
 func maxRetainedPendingChildEntryCapacityForClass(class arenaClass) int {
-	nodeSize := int(unsafe.Sizeof(stackEntry{}))
+	nodeSize := int(unsafe.Sizeof(pendingChildEntry(0)))
 	if nodeSize <= 0 {
 		nodeSize = 1
 	}

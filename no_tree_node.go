@@ -450,7 +450,7 @@ func stackEntryNodeChildCount(e stackEntry) int {
 		return len(n.children)
 	}
 	if n := stackEntryPendingParent(e); n != nil {
-		return len(n.childEntries())
+		return n.childEntryCount()
 	}
 	return 0
 }
@@ -531,9 +531,15 @@ func materializeStackEntryCompactFullLeaf(arena *nodeArena, entry *stackEntry, r
 	if entry == nil {
 		return nil
 	}
-	leaf := stackEntryCompactFullLeaf(*entry)
+	node, updated := materializeStackEntryCompactFullLeafEntry(arena, *entry, reason)
+	*entry = updated
+	return node
+}
+
+func materializeStackEntryCompactFullLeafEntry(arena *nodeArena, entry stackEntry, reason compactFullLeafMaterializeReason) (*Node, stackEntry) {
+	leaf := stackEntryCompactFullLeaf(entry)
 	if leaf == nil {
-		return stackEntryNode(*entry)
+		return stackEntryNode(entry), entry
 	}
 	node := newLeafNodeInArena(arena, leaf.symbol, leaf.isNamed(), leaf.startByte, leaf.endByte, leaf.startPoint, leaf.endPoint)
 	node.flags = leaf.flags
@@ -552,5 +558,5 @@ func materializeStackEntryCompactFullLeaf(arena *nodeArena, entry *stackEntry, r
 	entry.kind = stackEntryKindNode
 	entry.state = node.parseState
 	arena.recordCompactFullLeafMaterialized(reason)
-	return node
+	return node, entry
 }

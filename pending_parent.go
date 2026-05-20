@@ -6,7 +6,7 @@ type pendingParent struct {
 	noTreeNode
 	startPoint Point
 	endPoint   Point
-	firstChild *stackEntry
+	firstChild *pendingChildEntry
 	childCount uint32
 }
 
@@ -16,9 +16,14 @@ type pendingParentSlab struct {
 }
 
 type pendingChildEntrySlab struct {
-	data []stackEntry
+	data []pendingChildEntry
 	used int
 }
+
+// pendingChildEntry stores arena-owned payload pointers with the stack-entry
+// kind in the low bits. The payload parseState is the source of truth when the
+// stack entry is reconstructed.
+type pendingChildEntry uintptr
 
 type pendingParentMaterializeReason = materializeReason
 
@@ -45,7 +50,7 @@ func pendingChildEntryBytesForCap(n int) int64 {
 	if n <= 0 {
 		return 0
 	}
-	return int64(n) * int64(unsafe.Sizeof(stackEntry{}))
+	return int64(n) * int64(unsafe.Sizeof(pendingChildEntry(0)))
 }
 
 func defaultPendingParentSlabCap(class arenaClass) int {
@@ -69,7 +74,7 @@ func defaultPendingChildEntrySlabCap(class arenaClass) int {
 	if class == arenaClassFull {
 		slabBytes = fullParseArenaSlab
 	}
-	size := int(unsafe.Sizeof(stackEntry{}))
+	size := int(unsafe.Sizeof(pendingChildEntry(0)))
 	if size <= 0 {
 		return minArenaNodeCap
 	}
@@ -82,18 +87,20 @@ func defaultPendingChildEntrySlabCap(class arenaClass) int {
 
 func newPendingParentInArena(arena *nodeArena, sym Symbol, named bool, productionID uint16, children []stackEntry, startByte, endByte uint32, startPoint, endPoint Point, hasError bool) *pendingParent {
 	p := newPendingParentShellInArena(arena, sym, named, productionID, len(children), startByte, endByte, startPoint, endPoint, hasError)
-	copy(p.childEntries(), children)
+	for i, child := range children {
+		p.setChildEntry(i, child)
+	}
 	return p
 }
 
 func newPendingParentShellInArena(arena *nodeArena, sym Symbol, named bool, productionID uint16, childCount int, startByte, endByte uint32, startPoint, endPoint Point, hasError bool) *pendingParent {
 	var p *pendingParent
-	var children []stackEntry
+	var children []pendingChildEntry
 	if arena == nil {
-		p = &pendingParent{}
 		if childCount > 0 {
-			children = make([]stackEntry, childCount)
+			panic("pending parent child refs require arena-backed payloads")
 		}
+		p = &pendingParent{}
 	} else {
 		p = arena.allocPendingParent()
 		children = arena.allocPendingChildEntries(childCount)
@@ -113,7 +120,7 @@ func newPendingParentShellInArena(arena *nodeArena, sym Symbol, named bool, prod
 	return p
 }
 
-func (p *pendingParent) setChildEntries(children []stackEntry) {
+func (p *pendingParent) setChildEntries(children []pendingChildEntry) {
 	if p == nil || len(children) == 0 {
 		return
 	}
@@ -121,11 +128,63 @@ func (p *pendingParent) setChildEntries(children []stackEntry) {
 	p.childCount = uint32(len(children))
 }
 
-func (p *pendingParent) childEntries() []stackEntry {
+func (p *pendingParent) childRefs() []pendingChildEntry {
 	if p == nil || p.firstChild == nil || p.childCount == 0 {
 		return nil
 	}
 	return unsafe.Slice(p.firstChild, int(p.childCount))
+}
+
+func (p *pendingParent) childEntryCount() int {
+	if p == nil {
+		return 0
+	}
+	return int(p.childCount)
+}
+
+func (p *pendingParent) childEntry(i int) stackEntry {
+	if p == nil || i < 0 || i >= int(p.childCount) {
+		return stackEntry{}
+	}
+	return p.childRefs()[i].stackEntry()
+}
+
+func (p *pendingParent) setChildEntry(i int, entry stackEntry) {
+	if p == nil || i < 0 || i >= int(p.childCount) {
+		return
+	}
+	p.childRefs()[i] = newPendingChildEntry(entry)
+}
+
+func newPendingChildEntry(entry stackEntry) pendingChildEntry {
+	if entry.node == nil {
+		return 0
+	}
+	kind := uintptr(entry.kind)
+	if kind&^pendingChildEntryKindMask != 0 {
+		panic("pending child entry kind exceeds tag mask")
+	}
+	ptr := uintptr(unsafe.Pointer(entry.node))
+	if ptr&pendingChildEntryKindMask != 0 {
+		panic("pending child entry payload is under-aligned")
+	}
+	return pendingChildEntry(ptr | kind)
+}
+
+const pendingChildEntryKindMask = uintptr(3)
+
+func (entry pendingChildEntry) stackEntry() stackEntry {
+	if entry == 0 {
+		return stackEntry{}
+	}
+	kind := uint32(uintptr(entry) & pendingChildEntryKindMask)
+	node := (*Node)(unsafe.Pointer(uintptr(entry) &^ pendingChildEntryKindMask))
+	stack := stackEntry{
+		node: node,
+		kind: kind,
+	}
+	stack.state = stackEntryNodeParseState(stack)
+	return stack
 }
 
 func materializeStackEntryPendingParent(arena *nodeArena, entry *stackEntry, reason pendingParentMaterializeReason) *Node {
@@ -136,14 +195,24 @@ func materializeStackEntryPendingParentWithParser(p *Parser, arena *nodeArena, e
 	if entry == nil {
 		return nil
 	}
-	parent := stackEntryPendingParent(*entry)
+	node, updated := materializeStackEntryPendingParentEntryWithParser(p, arena, *entry, reason)
+	*entry = updated
+	return node
+}
+
+func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeArena, entry stackEntry, reason pendingParentMaterializeReason) (*Node, stackEntry) {
+	parent := stackEntryPendingParent(entry)
 	if parent == nil {
-		return materializeStackEntryCompactFullLeaf(arena, entry, compactFullLeafMaterializeReason(reason))
+		return materializeStackEntryCompactFullLeafEntry(arena, entry, compactFullLeafMaterializeReason(reason))
 	}
-	parentChildren := parent.childEntries()
-	children := arena.allocNodeSliceNoClear(len(parentChildren))
-	for i := range parentChildren {
-		children[i] = materializeStackEntryPayloadWithParser(p, arena, &parentChildren[i], compactFullLeafMaterializeReason(reason), reason)
+	childCount := parent.childEntryCount()
+	children := arena.allocNodeSliceNoClear(childCount)
+	for i := 0; i < childCount; i++ {
+		child := parent.childEntry(i)
+		var updatedChild stackEntry
+		children[i], updatedChild = materializeStackEntryPayloadEntryWithParser(p, arena, child, compactFullLeafMaterializeReason(reason), reason)
+		child = updatedChild
+		parent.setChildEntry(i, child)
 	}
 	node := newParentNodeInArenaNoLinksWithFieldSources(arena, parent.symbol, parent.isNamed(), children, nil, nil, parent.productionID, parent.hasError())
 	node.flags = parent.flags
@@ -157,7 +226,7 @@ func materializeStackEntryPendingParentWithParser(p *Parser, arena *nodeArena, e
 	entry.kind = stackEntryKindNode
 	entry.state = node.parseState
 	arena.recordPendingParentMaterialized(reason)
-	return node
+	return node, entry
 }
 
 func materializeStackEntryPayload(arena *nodeArena, entry *stackEntry, leafReason compactFullLeafMaterializeReason, parentReason pendingParentMaterializeReason) *Node {
@@ -168,12 +237,18 @@ func materializeStackEntryPayloadWithParser(p *Parser, arena *nodeArena, entry *
 	if entry == nil {
 		return nil
 	}
+	node, updated := materializeStackEntryPayloadEntryWithParser(p, arena, *entry, leafReason, parentReason)
+	*entry = updated
+	return node
+}
+
+func materializeStackEntryPayloadEntryWithParser(p *Parser, arena *nodeArena, entry stackEntry, leafReason compactFullLeafMaterializeReason, parentReason pendingParentMaterializeReason) (*Node, stackEntry) {
 	restoreShape := false
 	prevPayloadShape := pendingParentFieldRejectPayloadUnknown
 	if p != nil && arena != nil && arena.breakdownEnabled && arena.pendingParentActiveRejectReason == pendingParentRejectFields {
 		restoreShape = true
 		prevPayloadShape = arena.pendingParentActiveFieldPayloadShape
-		arena.pendingParentActiveFieldPayloadShape = p.pendingParentFieldRejectPayloadShape(*entry)
+		arena.pendingParentActiveFieldPayloadShape = p.pendingParentFieldRejectPayloadShape(entry)
 	}
 	if restoreShape {
 		defer func() {
@@ -181,10 +256,10 @@ func materializeStackEntryPayloadWithParser(p *Parser, arena *nodeArena, entry *
 		}()
 	}
 	if arena != nil && arena.pendingParentActiveRejectReason != pendingParentRejectUnknown {
-		arena.recordParentRejectPayloadMaterialized(*entry, arena.pendingParentActiveRejectReason)
+		arena.recordParentRejectPayloadMaterialized(entry, arena.pendingParentActiveRejectReason)
 	}
-	if stackEntryPendingParent(*entry) != nil {
-		return materializeStackEntryPendingParentWithParser(p, arena, entry, parentReason)
+	if stackEntryPendingParent(entry) != nil {
+		return materializeStackEntryPendingParentEntryWithParser(p, arena, entry, parentReason)
 	}
-	return materializeStackEntryCompactFullLeaf(arena, entry, leafReason)
+	return materializeStackEntryCompactFullLeafEntry(arena, entry, leafReason)
 }
