@@ -2489,6 +2489,9 @@ func (n *Node) Edit(edit InputEdit) {
 	if n == nil {
 		return
 	}
+	if inputEditIsNoop(edit) {
+		return
+	}
 	materializeFinalChildRefsForSubtree(n, materializeForEdit)
 	n.ensureParentLinks()
 	root := n
@@ -2496,6 +2499,13 @@ func (n *Node) Edit(edit InputEdit) {
 		root = root.parent
 	}
 	editNode(root, edit)
+}
+
+func inputEditIsNoop(edit InputEdit) bool {
+	return edit.StartByte == edit.OldEndByte &&
+		edit.OldEndByte == edit.NewEndByte &&
+		edit.StartPoint == edit.OldEndPoint &&
+		edit.OldEndPoint == edit.NewEndPoint
 }
 
 // Edit records an edit on this tree. Call this before ParseIncremental to

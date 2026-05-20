@@ -804,6 +804,37 @@ func TestTreeEditKeepsUnaffectedFinalChildRefsLazy(t *testing.T) {
 	}
 }
 
+func TestNodeEditNoopKeepsLazyFinalChildRefs(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	arena.finalChildRefs = true
+	leaf := newCompactFullLeafInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})
+	leaf.parseState = 11
+	parent := newPendingParentInArena(arena, 2, true, 4, []stackEntry{
+		newStackEntryCompactFullLeaf(leaf.parseState, leaf),
+	}, 0, 1, Point{}, Point{Column: 1}, false)
+	parent.parseState = 12
+
+	entry := newStackEntryPendingParent(parent.parseState, parent)
+	root := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree)
+	if root == nil {
+		t.Fatal("root = nil")
+	}
+	root.Edit(InputEdit{
+		StartByte:   1,
+		OldEndByte:  1,
+		NewEndByte:  1,
+		StartPoint:  Point{Column: 1},
+		OldEndPoint: Point{Column: 1},
+		NewEndPoint: Point{Column: 1},
+	})
+	if got := arena.finalChildRefsMaterializedParents; got != 0 {
+		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 0 {
+		t.Fatalf("final child ref single children after noop Node.Edit = %d, want 0", got)
+	}
+}
+
 func TestPendingParentMaterializationPreservesFieldEntries(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
 	left := newLeafNodeInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})
