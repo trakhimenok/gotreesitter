@@ -1127,8 +1127,10 @@ func (p *Parser) parseIncrementalInternal(source []byte, oldTree *Tree, ts Token
 		return tree
 	}
 	if oldTree != nil {
-		materializeFinalChildRefsForSubtree(oldTree.RootNode(), materializeForEdit)
-		oldTree.ensureExternalScannerCheckpoints()
+		if languageUsesExternalScannerCheckpoints(p.language) {
+			materializeFinalChildRefsForSubtree(oldTree.RootNode(), materializeForEdit)
+			oldTree.ensureExternalScannerCheckpoints()
+		}
 	}
 
 	p.reuseMu.Lock()

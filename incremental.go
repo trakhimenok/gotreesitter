@@ -292,13 +292,17 @@ func (c *reuseCursor) advance() *Node {
 
 		childUnderDirty := frame.underDirty || dirtyHere
 
-		children := cur.children
+		childCount := nodeChildCountNoMaterialize(cur)
 		if perfCountersEnabled {
-			perfRecordReusePushed(len(children))
+			perfRecordReusePushed(childCount)
 		}
-		for i := len(children) - 1; i >= 0; i-- {
+		for i := childCount - 1; i >= 0; i-- {
+			child := nodeChildAtForReason(cur, i, materializeForEdit)
+			if child == nil {
+				continue
+			}
 			c.stack = append(c.stack, reuseFrame{
-				node:       children[i],
+				node:       child,
 				underDirty: childUnderDirty,
 			})
 		}
