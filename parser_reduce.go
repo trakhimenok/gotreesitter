@@ -1034,15 +1034,23 @@ func materializePendingPayloadEntries(entries []stackEntry, start, end int, aren
 		end = len(entries)
 	}
 	rejectReason := pendingParentRejectUnknown
+	rejectShape := pendingParentFieldRejectUnknown
 	if arena != nil {
 		rejectReason = arena.pendingParentLastRejectReason
+		if rejectReason == pendingParentRejectFields {
+			rejectShape = arena.pendingParentLastFieldRejectShape
+		}
 	}
 	prevRejectReason := pendingParentRejectUnknown
+	prevRejectShape := pendingParentFieldRejectUnknown
 	if arena != nil {
 		prevRejectReason = arena.pendingParentActiveRejectReason
+		prevRejectShape = arena.pendingParentActiveFieldRejectShape
 		arena.pendingParentActiveRejectReason = rejectReason
+		arena.pendingParentActiveFieldRejectShape = rejectShape
 		defer func() {
 			arena.pendingParentActiveRejectReason = prevRejectReason
+			arena.pendingParentActiveFieldRejectShape = prevRejectShape
 		}()
 	}
 	for i := start; i < end; i++ {
@@ -1184,17 +1192,17 @@ func (p *Parser) recordPendingFieldRejectShape(arena *nodeArena, act ParseAction
 	}
 	symbolMeta := p.language.SymbolMetadata
 	if !symbolVisibleForPending(act.Symbol, symbolMeta) {
-		arena.pendingParentRejectedFieldsParentHidden++
+		arena.recordPendingParentFieldRejected(pendingParentFieldRejectParentHidden)
 		return
 	}
 	rawFieldIDs, rawInherited := p.buildFieldIDs(int(act.ChildCount), act.ProductionID, arena)
 	if len(rawFieldIDs) == 0 {
-		arena.pendingParentRejectedFieldsNoIDs++
+		arena.recordPendingParentFieldRejected(pendingParentFieldRejectNoIDs)
 		return
 	}
 	for _, inherited := range rawInherited {
 		if inherited {
-			arena.pendingParentRejectedFieldsInherited++
+			arena.recordPendingParentFieldRejected(pendingParentFieldRejectInherited)
 			return
 		}
 	}
@@ -1204,15 +1212,15 @@ func (p *Parser) recordPendingFieldRejectShape(arena *nodeArena, act ParseAction
 			continue
 		}
 		if stackEntryNodeIsMissing(entry) {
-			arena.pendingParentRejectedFieldsChild++
+			arena.recordPendingParentFieldRejected(pendingParentFieldRejectChild)
 			return
 		}
 		if !stackEntryVisibleForPending(entry, symbolMeta) {
-			arena.pendingParentRejectedFieldsHiddenChild++
+			arena.recordPendingParentFieldRejected(pendingParentFieldRejectHiddenChild)
 			return
 		}
 	}
-	arena.pendingParentRejectedFieldsAllVisibleDirect++
+	arena.recordPendingParentFieldRejected(pendingParentFieldRejectAllVisibleDirect)
 }
 
 func symbolVisibleForPending(sym Symbol, symbolMeta []SymbolMetadata) bool {

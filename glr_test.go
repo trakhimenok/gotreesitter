@@ -131,6 +131,37 @@ func TestPendingParentRejectCountersClassifyReasons(t *testing.T) {
 	}
 }
 
+func TestPendingParentFieldRejectCountersClassifyShapes(t *testing.T) {
+	cases := []struct {
+		name  string
+		shape pendingParentFieldRejectShape
+		got   func(PendingParentFieldRejectStats) uint64
+	}{
+		{"parent-hidden", pendingParentFieldRejectParentHidden, func(s PendingParentFieldRejectStats) uint64 { return s.ParentHidden }},
+		{"no-ids", pendingParentFieldRejectNoIDs, func(s PendingParentFieldRejectStats) uint64 { return s.NoIDs }},
+		{"inherited", pendingParentFieldRejectInherited, func(s PendingParentFieldRejectStats) uint64 { return s.Inherited }},
+		{"hidden-child", pendingParentFieldRejectHiddenChild, func(s PendingParentFieldRejectStats) uint64 { return s.HiddenChild }},
+		{"child", pendingParentFieldRejectChild, func(s PendingParentFieldRejectStats) uint64 { return s.Child }},
+		{"all-visible-direct", pendingParentFieldRejectAllVisibleDirect, func(s PendingParentFieldRejectStats) uint64 { return s.AllVisibleDirect }},
+		{"unknown", pendingParentFieldRejectUnknown, func(s PendingParentFieldRejectStats) uint64 { return s.Unknown }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			arena := newNodeArena(arenaClassFull)
+			arena.recordPendingParentFieldRejected(tc.shape)
+			if got := arena.pendingParentLastFieldRejectShape; got != tc.shape {
+				t.Fatalf("pendingParentLastFieldRejectShape = %d, want %d", got, tc.shape)
+			}
+			stats := PendingParentFieldRejectStats{}
+			stats.increment(tc.shape)
+			if got := tc.got(stats); got != 1 {
+				t.Fatalf("field reject stats count = %d, want 1", got)
+			}
+		})
+	}
+}
+
 func TestParentRejectPayloadMaterializedCountersClassifyPayloadKind(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
 	leaf := newCompactFullLeafInArena(arena, 9, true, 13, 21, Point{Row: 2, Column: 3}, Point{Row: 2, Column: 11})
@@ -146,6 +177,41 @@ func TestParentRejectPayloadMaterializedCountersClassifyPayloadKind(t *testing.T
 	if got := arena.pendingParentMaterializedForParentReject.Alias; got != 1 {
 		t.Fatalf("pending parent reject alias = %d, want 1", got)
 	}
+
+	arena.pendingParentActiveFieldRejectShape = pendingParentFieldRejectAllVisibleDirect
+	arena.recordParentRejectPayloadMaterialized(parentEntry, pendingParentRejectFields)
+	if got := arena.pendingParentMaterializedForFieldReject.AllVisibleDirect; got != 1 {
+		t.Fatalf("pending parent field reject all-visible-direct = %d, want 1", got)
+	}
+}
+
+func TestMaterializePendingPayloadEntriesPropagatesFieldRejectShape(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	parent := newPendingParentInArena(arena, 10, true, 7, nil, 0, 0, Point{}, Point{}, false)
+	entries := []stackEntry{newStackEntryPendingParent(5, parent)}
+
+	arena.pendingParentLastRejectReason = pendingParentRejectFields
+	arena.pendingParentLastFieldRejectShape = pendingParentFieldRejectAllVisibleDirect
+	arena.pendingParentActiveRejectReason = pendingParentRejectAlias
+	arena.pendingParentActiveFieldRejectShape = pendingParentFieldRejectHiddenChild
+
+	materializePendingPayloadEntries(entries, 0, len(entries), arena)
+
+	if got := stackEntryPendingParent(entries[0]); got != nil {
+		t.Fatalf("entry still pending parent = %p, want materialized node", got)
+	}
+	if got := arena.pendingParentMaterializedForParentReject.Fields; got != 1 {
+		t.Fatalf("pending parent materialized parent reject fields = %d, want 1", got)
+	}
+	if got := arena.pendingParentMaterializedForFieldReject.AllVisibleDirect; got != 1 {
+		t.Fatalf("pending parent materialized field reject all-visible-direct = %d, want 1", got)
+	}
+	if got := arena.pendingParentActiveRejectReason; got != pendingParentRejectAlias {
+		t.Fatalf("active reject reason restored = %d, want alias", got)
+	}
+	if got := arena.pendingParentActiveFieldRejectShape; got != pendingParentFieldRejectHiddenChild {
+		t.Fatalf("active field reject shape restored = %d, want hidden-child", got)
+	}
 }
 
 func TestMaterializeStackEntryPayloadTracksActiveParentReject(t *testing.T) {
@@ -160,6 +226,20 @@ func TestMaterializeStackEntryPayloadTracksActiveParentReject(t *testing.T) {
 	}
 	if got := arena.compactFullLeafMaterializedForParentReject.Fields; got != 1 {
 		t.Fatalf("compact leaf active parent reject fields = %d, want 1", got)
+	}
+
+	parent := newPendingParentInArena(arena, 10, true, 7, nil, 0, 0, Point{}, Point{}, false)
+	parentEntry := newStackEntryPendingParent(5, parent)
+	arena.pendingParentActiveFieldRejectShape = pendingParentFieldRejectHiddenChild
+	node = materializeStackEntryPayload(arena, &parentEntry, compactFullLeafMaterializeForParentReduce, pendingParentMaterializeForParentReduce)
+	if node == nil {
+		t.Fatal("materialized pending parent = nil")
+	}
+	if got := arena.pendingParentMaterializedForParentReject.Fields; got != 1 {
+		t.Fatalf("pending parent active parent reject fields = %d, want 1", got)
+	}
+	if got := arena.pendingParentMaterializedForFieldReject.HiddenChild; got != 1 {
+		t.Fatalf("pending parent active field reject hidden-child = %d, want 1", got)
 	}
 }
 

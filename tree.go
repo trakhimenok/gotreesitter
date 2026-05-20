@@ -138,6 +138,16 @@ type PendingParentRejectStats struct {
 	Fill       uint64
 }
 
+type PendingParentFieldRejectStats struct {
+	Unknown          uint64
+	ParentHidden     uint64
+	NoIDs            uint64
+	Inherited        uint64
+	HiddenChild      uint64
+	Child            uint64
+	AllVisibleDirect uint64
+}
+
 // ParseRuntime captures parser-loop diagnostics for a completed tree.
 type ParseRuntime struct {
 	StopReason                         ParseStopReason
@@ -234,6 +244,7 @@ type ParseRuntime struct {
 	PendingParentMaterialized                       uint64
 	PendingParentMaterializedForParentReduce        uint64
 	PendingParentMaterializedForParentReject        PendingParentRejectStats
+	PendingParentMaterializedForFieldReject         PendingParentFieldRejectStats
 	PendingParentMaterializedForFinalTree           uint64
 	PendingParentMaterializedForNormalization       uint64
 	PendingParentMaterializedForRecovery            uint64

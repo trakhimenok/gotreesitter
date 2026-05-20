@@ -127,6 +127,7 @@ type nodeArena struct {
 	pendingParentMaterializedForEdit                uint64
 	pendingParentMaterializedForCheckpointRebuild   uint64
 	pendingParentMaterializedForParentReject        PendingParentRejectStats
+	pendingParentMaterializedForFieldReject         PendingParentFieldRejectStats
 	pendingParentDropped                            uint64
 	pendingParentsFlattened                         uint64
 	pendingChildRefsFlattened                       uint64
@@ -146,7 +147,9 @@ type nodeArena struct {
 	pendingParentRejectedSpan                       uint64
 	pendingParentRejectedFill                       uint64
 	pendingParentLastRejectReason                   pendingParentRejectReason
+	pendingParentLastFieldRejectShape               pendingParentFieldRejectShape
 	pendingParentActiveRejectReason                 pendingParentRejectReason
+	pendingParentActiveFieldRejectShape             pendingParentFieldRejectShape
 	checkpointLeafFullNodesAvoided                  uint64
 	leafNodesConstructed                            uint64
 	parentNodesConstructed                          uint64
@@ -684,6 +687,7 @@ func (a *nodeArena) reset() {
 	a.pendingParentMaterializedForEdit = 0
 	a.pendingParentMaterializedForCheckpointRebuild = 0
 	a.pendingParentMaterializedForParentReject = PendingParentRejectStats{}
+	a.pendingParentMaterializedForFieldReject = PendingParentFieldRejectStats{}
 	a.pendingParentDropped = 0
 	a.pendingParentsFlattened = 0
 	a.pendingChildRefsFlattened = 0
@@ -703,7 +707,9 @@ func (a *nodeArena) reset() {
 	a.pendingParentRejectedSpan = 0
 	a.pendingParentRejectedFill = 0
 	a.pendingParentLastRejectReason = pendingParentRejectUnknown
+	a.pendingParentLastFieldRejectShape = pendingParentFieldRejectUnknown
 	a.pendingParentActiveRejectReason = pendingParentRejectUnknown
+	a.pendingParentActiveFieldRejectShape = pendingParentFieldRejectUnknown
 	a.checkpointLeafFullNodesAvoided = 0
 	a.leafNodesConstructed = 0
 	a.parentNodesConstructed = 0
@@ -1472,6 +1478,18 @@ const (
 	pendingParentRejectFill
 )
 
+type pendingParentFieldRejectShape uint8
+
+const (
+	pendingParentFieldRejectUnknown pendingParentFieldRejectShape = iota
+	pendingParentFieldRejectParentHidden
+	pendingParentFieldRejectNoIDs
+	pendingParentFieldRejectInherited
+	pendingParentFieldRejectHiddenChild
+	pendingParentFieldRejectChild
+	pendingParentFieldRejectAllVisibleDirect
+)
+
 func (s *PendingParentRejectStats) increment(reason pendingParentRejectReason) {
 	if s == nil {
 		return
@@ -1493,6 +1511,28 @@ func (s *PendingParentRejectStats) increment(reason pendingParentRejectReason) {
 		s.Span++
 	case pendingParentRejectFill:
 		s.Fill++
+	default:
+		s.Unknown++
+	}
+}
+
+func (s *PendingParentFieldRejectStats) increment(shape pendingParentFieldRejectShape) {
+	if s == nil {
+		return
+	}
+	switch shape {
+	case pendingParentFieldRejectParentHidden:
+		s.ParentHidden++
+	case pendingParentFieldRejectNoIDs:
+		s.NoIDs++
+	case pendingParentFieldRejectInherited:
+		s.Inherited++
+	case pendingParentFieldRejectHiddenChild:
+		s.HiddenChild++
+	case pendingParentFieldRejectChild:
+		s.Child++
+	case pendingParentFieldRejectAllVisibleDirect:
+		s.AllVisibleDirect++
 	default:
 		s.Unknown++
 	}
@@ -1523,6 +1563,27 @@ func (a *nodeArena) recordPendingParentRejected(reason pendingParentRejectReason
 	}
 }
 
+func (a *nodeArena) recordPendingParentFieldRejected(shape pendingParentFieldRejectShape) {
+	if a == nil {
+		return
+	}
+	a.pendingParentLastFieldRejectShape = shape
+	switch shape {
+	case pendingParentFieldRejectParentHidden:
+		a.pendingParentRejectedFieldsParentHidden++
+	case pendingParentFieldRejectNoIDs:
+		a.pendingParentRejectedFieldsNoIDs++
+	case pendingParentFieldRejectInherited:
+		a.pendingParentRejectedFieldsInherited++
+	case pendingParentFieldRejectHiddenChild:
+		a.pendingParentRejectedFieldsHiddenChild++
+	case pendingParentFieldRejectChild:
+		a.pendingParentRejectedFieldsChild++
+	case pendingParentFieldRejectAllVisibleDirect:
+		a.pendingParentRejectedFieldsAllVisibleDirect++
+	}
+}
+
 func (a *nodeArena) recordParentRejectPayloadMaterialized(entry stackEntry, reason pendingParentRejectReason) {
 	if a == nil {
 		return
@@ -1533,6 +1594,9 @@ func (a *nodeArena) recordParentRejectPayloadMaterialized(entry stackEntry, reas
 	}
 	if stackEntryPendingParent(entry) != nil {
 		a.pendingParentMaterializedForParentReject.increment(reason)
+		if reason == pendingParentRejectFields {
+			a.pendingParentMaterializedForFieldReject.increment(a.pendingParentActiveFieldRejectShape)
+		}
 	}
 }
 

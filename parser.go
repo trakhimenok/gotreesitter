@@ -1556,6 +1556,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		parseRuntime.PendingParentMaterialized = arena.pendingParentMaterialized
 		parseRuntime.PendingParentMaterializedForParentReduce = arena.pendingParentMaterializedForParentReduce
 		parseRuntime.PendingParentMaterializedForParentReject = arena.pendingParentMaterializedForParentReject
+		parseRuntime.PendingParentMaterializedForFieldReject = arena.pendingParentMaterializedForFieldReject
 		parseRuntime.PendingParentMaterializedForFinalTree = arena.pendingParentMaterializedForFinalTree
 		parseRuntime.PendingParentMaterializedForNormalization = arena.pendingParentMaterializedForNormalization
 		parseRuntime.PendingParentMaterializedForRecovery = arena.pendingParentMaterializedForRecovery
