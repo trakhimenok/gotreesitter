@@ -118,8 +118,8 @@ func walkImportTree(n *Node, lang *Language, visit func(*Node) bool) {
 	if !visit(n) {
 		return
 	}
-	for _, child := range n.Children() {
-		walkImportTree(child, lang, visit)
+	for i := 0; i < n.ChildCount(); i++ {
+		walkImportTree(n.Child(i), lang, visit)
 	}
 }
 
@@ -167,7 +167,8 @@ func extractGoImportNode(n *Node, lang *Language, source []byte, refs *[]ImportR
 }
 
 func goImportAlias(spec, pathNode *Node, lang *Language, source []byte) string {
-	for _, child := range spec.Children() {
+	for i := 0; i < spec.ChildCount(); i++ {
+		child := spec.Child(i)
 		if child == nil || child == pathNode || child.StartByte() >= pathNode.StartByte() {
 			break
 		}
@@ -690,8 +691,8 @@ func firstDescendantByType(n *Node, lang *Language, types ...string) *Node {
 			return n
 		}
 	}
-	for _, child := range n.Children() {
-		if found := firstDescendantByType(child, lang, types...); found != nil {
+	for i := 0; i < n.ChildCount(); i++ {
+		if found := firstDescendantByType(n.Child(i), lang, types...); found != nil {
 			return found
 		}
 	}
@@ -708,8 +709,8 @@ func collectDescendantsByType(n *Node, lang *Language, typ string) []*Node {
 		if cur.Type(lang) == typ {
 			out = append(out, cur)
 		}
-		for _, child := range cur.Children() {
-			walk(child)
+		for i := 0; i < cur.ChildCount(); i++ {
+			walk(cur.Child(i))
 		}
 	}
 	walk(n)
