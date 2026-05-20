@@ -139,59 +139,123 @@ func rebuildExternalScannerCheckpoints(root *Node, lang *Language) {
 	if root == nil || !languageUsesExternalScannerCheckpoints(lang) {
 		return
 	}
+	rebuildExternalScannerCheckpointForNode(root)
+}
 
-	type frame struct {
-		node    *Node
-		visited bool
+func rebuildExternalScannerCheckpointForNode(n *Node) (externalScannerCheckpointRef, bool) {
+	if n == nil || n.ownerArena == nil {
+		return externalScannerCheckpointRef{}, false
 	}
-
-	stack := []frame{{node: root}}
-	for len(stack) > 0 {
-		last := len(stack) - 1
-		f := stack[last]
-		stack = stack[:last]
-		n := f.node
-		if n == nil {
-			continue
-		}
-		if !f.visited {
-			stack = append(stack, frame{node: n, visited: true})
-			for i := len(n.children) - 1; i >= 0; i-- {
-				stack = append(stack, frame{node: n.children[i]})
-			}
-			continue
-		}
-		if len(n.children) == 0 {
-			continue
-		}
-
-		var start []byte
-		var end []byte
-		var startRef externalScannerSnapshotRef
-		var endRef externalScannerSnapshotRef
-		for _, child := range n.children {
-			cp, ok := externalScannerCheckpointRefForNode(child)
-			if !ok {
-				continue
-			}
+	childCount := nodeChildCountNoMaterialize(n)
+	if childCount == 0 {
+		return externalScannerCheckpointRefForNode(n)
+	}
+	var startRef externalScannerSnapshotRef
+	var endRef externalScannerSnapshotRef
+	startOK := false
+	endOK := false
+	for i := 0; i < childCount; i++ {
+		cp, ok := externalScannerCheckpointRefForChild(n, i)
+		if ok {
 			startRef = cp.start
-			start = n.ownerArena.externalScannerSnapshotBytes(cp.start)
+			startOK = true
 			break
 		}
-		for i := len(n.children) - 1; i >= 0; i-- {
-			cp, ok := externalScannerCheckpointRefForNode(n.children[i])
-			if !ok {
-				continue
-			}
-			endRef = cp.end
-			end = n.ownerArena.externalScannerSnapshotBytes(cp.end)
-			break
-		}
-		if start == nil && end == nil {
-			continue
-		}
-		n.ownerArena.setExternalScannerCheckpoint(n, externalScannerCheckpointRef{start: startRef, end: endRef})
 	}
+	for i := childCount - 1; i >= 0; i-- {
+		cp, ok := externalScannerCheckpointRefForChild(n, i)
+		if ok {
+			endRef = cp.end
+			endOK = true
+			break
+		}
+	}
+	if !startOK && !endOK {
+		return externalScannerCheckpointRef{}, false
+	}
+	cp := externalScannerCheckpointRef{start: startRef, end: endRef}
+	n.ownerArena.setExternalScannerCheckpoint(n, cp)
+	return cp, true
+}
+
+func externalScannerCheckpointRefForChild(parent *Node, childIndex int) (externalScannerCheckpointRef, bool) {
+	if parent == nil || parent.ownerArena == nil {
+		return externalScannerCheckpointRef{}, false
+	}
+	entry, ok := nodeChildEntryAtNoMaterialize(parent, childIndex)
+	if !ok {
+		child := nodeChildAtForReason(parent, childIndex, materializeForCheckpointRebuild)
+		return rebuildExternalScannerCheckpointForNode(child)
+	}
+	return externalScannerCheckpointRefForStackEntry(parent.ownerArena, entry)
+}
+
+func externalScannerCheckpointRefForStackEntry(arena *nodeArena, entry stackEntry) (externalScannerCheckpointRef, bool) {
+	if !stackEntryHasNode(entry) {
+		return externalScannerCheckpointRef{}, false
+	}
+	if node := stackEntryNode(entry); node != nil {
+		return rebuildExternalScannerCheckpointForNode(node)
+	}
+	if leaf := stackEntryCompactFullLeaf(entry); leaf != nil {
+		if !leaf.hasCheckpoint {
+			return externalScannerCheckpointRef{}, false
+		}
+		return leaf.checkpoint, true
+	}
+	if parent := stackEntryPendingParent(entry); parent != nil {
+		return externalScannerCheckpointRefForPendingParent(arena, parent)
+	}
+	return externalScannerCheckpointRef{}, false
+}
+
+func externalScannerCheckpointRefForPendingParent(arena *nodeArena, parent *pendingParent) (externalScannerCheckpointRef, bool) {
+	if arena == nil || parent == nil {
+		return externalScannerCheckpointRef{}, false
+	}
+	childCount := parent.childEntryCount()
+	if childCount == 0 {
+		return externalScannerCheckpointRef{}, false
+	}
+	var startRef externalScannerSnapshotRef
+	var endRef externalScannerSnapshotRef
+	startOK := false
+	endOK := false
+	for i := 0; i < childCount; i++ {
+		cp, ok := externalScannerCheckpointRefForStackEntry(arena, parent.childEntry(arena, i))
+		if ok {
+			startRef = cp.start
+			startOK = true
+			break
+		}
+	}
+	for i := childCount - 1; i >= 0; i-- {
+		cp, ok := externalScannerCheckpointRefForStackEntry(arena, parent.childEntry(arena, i))
+		if ok {
+			endRef = cp.end
+			endOK = true
+			break
+		}
+	}
+	if !startOK && !endOK {
+		return externalScannerCheckpointRef{}, false
+	}
+	return externalScannerCheckpointRef{start: startRef, end: endRef}, true
+}
+
+func rebuildExternalScannerCheckpointForMaterializedParent(n *Node, reason materializeReason) {
+	if n == nil || n.ownerArena == nil {
+		return
+	}
+	switch reason {
+	case materializeForEdit, materializeForCheckpointRebuild:
+	default:
+		return
+	}
+	if nodeChildCountNoMaterialize(n) == 0 {
+		return
+	}
+	rebuildExternalScannerCheckpointForNode(n)
 }
 
 func currentExternalScannerCheckpoint(ts TokenSource) (externalScannerCheckpoint, uint32, uint32, bool) {

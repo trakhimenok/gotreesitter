@@ -393,6 +393,7 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 	node.endPoint = parent.endPoint
 	node.parseState = parent.parseState
 	node.preGotoState = parent.preGotoState
+	rebuildExternalScannerCheckpointForMaterializedParent(node, reason)
 	entry.node = node
 	entry.kind = stackEntryKindNode
 	entry.state = node.parseState

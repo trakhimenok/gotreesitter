@@ -188,3 +188,74 @@ func TestExternalScannerCheckpointSparseLookupHandlesOutOfOrderWrites(t *testing
 		t.Fatalf("second checkpoint = (%v, %v, %v), want ([2], [3], true)", gotSecond.start, gotSecond.end, ok)
 	}
 }
+
+func TestRebuildExternalScannerCheckpointsUsesLazyFinalChildRefs(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	arena.finalChildRefs = true
+	leftCP := arena.recordExternalScannerCompactCheckpoint([]byte{1}, []byte{2})
+	rightCP := arena.recordExternalScannerCompactCheckpoint([]byte{3}, []byte{4})
+	left := newCompactFullLeafInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})
+	left.parseState = 11
+	left.checkpoint = leftCP
+	left.hasCheckpoint = true
+	right := newCompactFullLeafInArena(arena, 1, true, 1, 2, Point{Column: 1}, Point{Column: 2})
+	right.parseState = 12
+	right.checkpoint = rightCP
+	right.hasCheckpoint = true
+	inner := newPendingParentInArena(arena, 2, true, 4, []stackEntry{
+		newStackEntryCompactFullLeaf(left.parseState, left),
+		newStackEntryCompactFullLeaf(right.parseState, right),
+	}, 0, 2, Point{}, Point{Column: 2}, false)
+	inner.parseState = 13
+	outer := newPendingParentInArena(arena, 3, true, 5, []stackEntry{
+		newStackEntryPendingParent(inner.parseState, inner),
+	}, 0, 2, Point{}, Point{Column: 2}, false)
+	outer.parseState = 14
+
+	entry := newStackEntryPendingParent(outer.parseState, outer)
+	root := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree)
+	if root == nil {
+		t.Fatal("root = nil")
+	}
+	rebuildExternalScannerCheckpoints(root, &Language{Name: "python", ExternalScanner: parserTestSafeExternalScanner{}})
+
+	got, ok := externalScannerCheckpointForNode(root)
+	if !ok {
+		t.Fatal("missing rebuilt checkpoint for lazy final-child parent")
+	}
+	if !bytes.Equal(got.start, []byte{1}) || !bytes.Equal(got.end, []byte{4}) {
+		t.Fatalf("checkpoint = (%v, %v), want ([1], [4])", got.start, got.end)
+	}
+	if got := arena.finalChildRefsMaterializedParents; got != 0 {
+		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 0 {
+		t.Fatalf("final child ref single children materialized = %d, want 0", got)
+	}
+}
+
+func TestEditMaterializedPendingParentRebuildsExternalScannerCheckpoint(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	cp := arena.recordExternalScannerCompactCheckpoint([]byte{5}, []byte{6})
+	leaf := newCompactFullLeafInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})
+	leaf.parseState = 11
+	leaf.checkpoint = cp
+	leaf.hasCheckpoint = true
+	parent := newPendingParentInArena(arena, 2, true, 4, []stackEntry{
+		newStackEntryCompactFullLeaf(leaf.parseState, leaf),
+	}, 0, 1, Point{}, Point{Column: 1}, false)
+	parent.parseState = 12
+
+	entry := newStackEntryPendingParent(parent.parseState, parent)
+	node := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForEdit)
+	if node == nil {
+		t.Fatal("node = nil")
+	}
+	got, ok := externalScannerCheckpointForNode(node)
+	if !ok {
+		t.Fatal("missing checkpoint for edit-materialized pending parent")
+	}
+	if !bytes.Equal(got.start, []byte{5}) || !bytes.Equal(got.end, []byte{6}) {
+		t.Fatalf("checkpoint = (%v, %v), want ([5], [6])", got.start, got.end)
+	}
+}
