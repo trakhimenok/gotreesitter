@@ -3,6 +3,7 @@ package gotreesitter
 import (
 	"errors"
 	"fmt"
+	"unsafe"
 )
 
 type parseConfig struct {
@@ -394,10 +395,10 @@ type parserStateTokenSource interface {
 }
 
 // stackEntry is a single parser LR-stack entry. The hot path stores real
-// public tree nodes directly; no-tree benchmark reductions can tag the same
-// 16-byte slot as a compact noTreeNode payload.
+// public tree nodes directly; compact parse modes can tag the same 16-byte slot
+// as a noTreeNode, compact leaf, or pending-parent payload.
 type stackEntry struct {
-	node  *Node
+	node  unsafe.Pointer
 	state StateID
 	kind  uint32
 }

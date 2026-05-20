@@ -968,7 +968,7 @@ func computeReduceRange(entries []stackEntry, childCount int) (reduceRange, bool
 	nonExtraFound := 0
 	for nonExtraFound < childCount && start > 1 {
 		start--
-		if entries[start].node != nil && !entries[start].node.isExtra() {
+		if n := stackEntryNode(entries[start]); n != nil && !n.isExtra() {
 			nonExtraFound++
 		}
 	}
@@ -979,7 +979,7 @@ func computeReduceRange(entries []stackEntry, childCount int) (reduceRange, bool
 	actualEnd := len(entries)
 	reducedEnd := actualEnd
 	for i := actualEnd - 1; i >= start; i-- {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil || !n.isExtra() {
 			break
 		}
@@ -1377,7 +1377,7 @@ func computeReduceRawSpan(entries []stackEntry, start, end int) reduceRawSpan {
 
 	foundStart := false
 	for i := start; i < end; i++ {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n != nil && !n.isExtra() {
 			span.startByte = n.startByte
 			span.startPoint = n.startPoint
@@ -1388,7 +1388,7 @@ func computeReduceRawSpan(entries []stackEntry, start, end int) reduceRawSpan {
 
 	foundEnd := false
 	for i := end - 1; i >= start; i-- {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n != nil && !n.isExtra() {
 			span.endByte = n.endByte
 			span.endPoint = n.endPoint
@@ -1397,8 +1397,8 @@ func computeReduceRawSpan(entries []stackEntry, start, end int) reduceRawSpan {
 		}
 	}
 
-	firstRaw := entries[start].node
-	lastRaw := entries[end-1].node
+	firstRaw := stackEntryNode(entries[start])
+	lastRaw := stackEntryNode(entries[end-1])
 	if !foundStart && firstRaw != nil {
 		span.startByte = firstRaw.startByte
 		span.startPoint = firstRaw.startPoint
@@ -1415,7 +1415,7 @@ func extendRawSpanToTrailingEntries(span *reduceRawSpan, entries []stackEntry, s
 		return
 	}
 	for i := end - 1; i >= start; i-- {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil {
 			continue
 		}
@@ -1458,7 +1458,7 @@ func shouldUseRawSpanForReduction(sym Symbol, children []*Node, symbolMeta []Sym
 func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reducedEnd int, symbolMeta []SymbolMetadata, symbolNames []string) {
 	// Leading extras: extend startByte backward until the first structural child.
 	for i := start; i < reducedEnd; i++ {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil {
 			continue
 		}
@@ -1480,7 +1480,7 @@ func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reduced
 	// The same reverse scan is still safe for endByte growth because the
 	// contiguity checks below prevent phantom gaps from inflating the span.
 	for i := reducedEnd - 1; i >= start; i-- {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil || n.isExtra() {
 			continue
 		}
@@ -1514,7 +1514,7 @@ func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reduced
 	// Follow with a forward pass for endByte growth so contiguous hidden tails
 	// can chain (for example interpolated multiline string middle -> string end).
 	for i := start; i < reducedEnd; i++ {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil || n.isExtra() {
 			continue
 		}
@@ -1902,7 +1902,7 @@ func (p *Parser) buildReduceChildrenAllVisible(entries []stackEntry, start, end,
 	visibleCount := 0
 	structuralChildIndex := 0
 	for i := start; i < end; i++ {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil {
 			continue
 		}
@@ -1943,7 +1943,7 @@ func (p *Parser) buildReduceChildrenAllVisible(entries []stackEntry, start, end,
 	out := 0
 	structuralChildIndex = 0
 	for i := start; i < end; i++ {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil {
 			continue
 		}
@@ -2005,7 +2005,7 @@ func (p *Parser) buildReduceChildrenWithPath(entries []stackEntry, start, end, c
 	preserveHiddenFields := false
 	if parentVisible {
 		for i := start; i < end; i++ {
-			n := entries[i].node
+			n := stackEntryNode(entries[i])
 			if n == nil {
 				continue
 			}
@@ -2045,7 +2045,7 @@ func (p *Parser) buildReduceChildrenWithPath(entries []stackEntry, start, end, c
 
 	structuralChildIndex := 0
 	for i := start; i < end; i++ {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil {
 			continue
 		}
@@ -2199,7 +2199,7 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 	visibleCount := 0
 	allVisible := true
 	for i := start; i < end; i++ {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil {
 			continue
 		}
@@ -2224,7 +2224,7 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 		}
 		out := 0
 		for i := start; i < end; i++ {
-			n := entries[i].node
+			n := stackEntryNode(entries[i])
 			if n == nil {
 				continue
 			}
@@ -2247,7 +2247,7 @@ func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntr
 		parentVisible = symbolMeta[parentSymbol].Visible
 	}
 	for i := start; i < end; i++ {
-		n := entries[i].node
+		n := stackEntryNode(entries[i])
 		if n == nil {
 			continue
 		}
@@ -2814,7 +2814,7 @@ func (p *Parser) applyReduceAction(s *glrStack, act ParseAction, tok Token, anyR
 	parent.parseState = targetState
 	p.pushStackNode(s, targetState, parent, entryScratch, gssScratch)
 	for i := trailingStart; i < trailingEnd; i++ {
-		extra := entries[i].node
+		extra := stackEntryNode(entries[i])
 		if extra == nil {
 			continue
 		}
@@ -2929,7 +2929,7 @@ func (p *Parser) applyReduceActionTransientParents(s *glrStack, act ParseAction,
 	parent.parseState = targetState
 	p.pushStackNode(s, targetState, parent, entryScratch, gssScratch)
 	for i := trailingStart; i < trailingEnd; i++ {
-		extra := entries[i].node
+		extra := stackEntryNode(entries[i])
 		if extra == nil {
 			continue
 		}
@@ -3058,7 +3058,7 @@ func (p *Parser) pushCollapsedUnaryReduceNode(s *glrStack, act ParseAction, tok 
 	nodeBumpEquivVersion(child)
 	p.pushStackNode(s, targetState, child, entryScratch, gssScratch)
 	for i := trailingStart; i < trailingEnd; i++ {
-		extra := entries[i].node
+		extra := stackEntryNode(entries[i])
 		if extra == nil {
 			continue
 		}
@@ -3256,7 +3256,7 @@ func (p *Parser) collapsibleRawUnarySelfReduction(act ParseAction, tok Token, ar
 		}
 		return nil
 	}
-	child := entries[start].node
+	child := stackEntryNode(entries[start])
 	if child == nil || child.ownerArena != arena || child.parent != nil {
 		if diag {
 			arena.collapseRawUnaryMissChild++
@@ -3316,7 +3316,7 @@ func (p *Parser) collapsibleUnarySelfReduction(act ParseAction, tok Token, arena
 		}
 		return nil
 	}
-	if start < 0 || start >= len(entries) || entries[start].node != child {
+	if start < 0 || start >= len(entries) || stackEntryNode(entries[start]) != child {
 		if diag {
 			arena.collapseUnaryMissChild++
 		}

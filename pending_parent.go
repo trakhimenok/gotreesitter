@@ -142,9 +142,7 @@ func materializeStackEntryPendingParent(arena *nodeArena, entry *stackEntry, rea
 	node.endPoint = parent.endPoint
 	node.parseState = parent.parseState
 	node.preGotoState = parent.preGotoState
-	entry.node = node
-	entry.kind = stackEntryKindNode
-	entry.state = node.parseState
+	setStackEntryNode(entry, node)
 	if arena != nil {
 		arena.pendingParentMaterialized++
 		switch reason {

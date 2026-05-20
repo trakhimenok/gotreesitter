@@ -496,18 +496,6 @@ func (l *Language) buildSymbolMaps() {
 			if _, exists := l.symbolNameNamedMap[key]; !exists {
 				l.symbolNameNamedMap[key] = sym
 			}
-			// Map each symbol to the canonical (first) symbol with its name.
-			l.publicSymbolMap[i] = l.symbolNameMap[sn]
-			if namedSym, exists := l.symbolNameNamedMap[symbolNameNamedKey{name: sn, named: true}]; exists {
-				l.publicNamedSymbolMap[i] = namedSym
-			} else {
-				l.publicNamedSymbolMap[i] = l.symbolNameMap[sn]
-			}
-			if anonSym, exists := l.symbolNameNamedMap[symbolNameNamedKey{name: sn, named: false}]; exists {
-				l.publicAnonymousSymbolMap[i] = anonSym
-			} else {
-				l.publicAnonymousSymbolMap[i] = l.symbolNameMap[sn]
-			}
 			if i < tokenCount {
 				l.tokenSymbolNameMap[sn] = append(l.tokenSymbolNameMap[sn], sym)
 			}

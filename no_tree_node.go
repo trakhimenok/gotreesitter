@@ -56,7 +56,7 @@ const (
 
 func newStackEntryNode(state StateID, node *Node) stackEntry {
 	return stackEntry{
-		node:  node,
+		node:  unsafe.Pointer(node),
 		state: state,
 		kind:  stackEntryKindNode,
 	}
@@ -64,7 +64,7 @@ func newStackEntryNode(state StateID, node *Node) stackEntry {
 
 func newStackEntryNoTreeNode(state StateID, node *noTreeNode) stackEntry {
 	return stackEntry{
-		node:  (*Node)(unsafe.Pointer(node)),
+		node:  unsafe.Pointer(node),
 		state: state,
 		kind:  stackEntryKindNoTreeNode,
 	}
@@ -72,7 +72,7 @@ func newStackEntryNoTreeNode(state StateID, node *noTreeNode) stackEntry {
 
 func newStackEntryCompactCheckpointLeaf(state StateID, leaf *compactCheckpointLeaf) stackEntry {
 	return stackEntry{
-		node:  (*Node)(unsafe.Pointer(leaf)),
+		node:  unsafe.Pointer(leaf),
 		state: state,
 		kind:  stackEntryKindNoTreeNode,
 	}
@@ -80,7 +80,7 @@ func newStackEntryCompactCheckpointLeaf(state StateID, leaf *compactCheckpointLe
 
 func newStackEntryCompactFullLeaf(state StateID, leaf *compactFullLeaf) stackEntry {
 	return stackEntry{
-		node:  (*Node)(unsafe.Pointer(leaf)),
+		node:  unsafe.Pointer(leaf),
 		state: state,
 		kind:  stackEntryKindCompactFullLeaf,
 	}
@@ -88,7 +88,7 @@ func newStackEntryCompactFullLeaf(state StateID, leaf *compactFullLeaf) stackEnt
 
 func newStackEntryPendingParent(state StateID, parent *pendingParent) stackEntry {
 	return stackEntry{
-		node:  (*Node)(unsafe.Pointer(parent)),
+		node:  unsafe.Pointer(parent),
 		state: state,
 		kind:  stackEntryKindPendingParent,
 	}
@@ -98,28 +98,39 @@ func stackEntryNode(e stackEntry) *Node {
 	if e.kind != stackEntryKindNode || e.node == nil {
 		return nil
 	}
-	return e.node
+	return (*Node)(e.node)
 }
 
 func stackEntryNoTreeNode(e stackEntry) *noTreeNode {
 	if e.kind != stackEntryKindNoTreeNode || e.node == nil {
 		return nil
 	}
-	return (*noTreeNode)(unsafe.Pointer(e.node))
+	return (*noTreeNode)(e.node)
 }
 
 func stackEntryCompactFullLeaf(e stackEntry) *compactFullLeaf {
 	if e.kind != stackEntryKindCompactFullLeaf || e.node == nil {
 		return nil
 	}
-	return (*compactFullLeaf)(unsafe.Pointer(e.node))
+	return (*compactFullLeaf)(e.node)
 }
 
 func stackEntryPendingParent(e stackEntry) *pendingParent {
 	if e.kind != stackEntryKindPendingParent || e.node == nil {
 		return nil
 	}
-	return (*pendingParent)(unsafe.Pointer(e.node))
+	return (*pendingParent)(e.node)
+}
+
+func setStackEntryNode(entry *stackEntry, node *Node) {
+	if entry == nil {
+		return
+	}
+	entry.node = unsafe.Pointer(node)
+	entry.kind = stackEntryKindNode
+	if node != nil {
+		entry.state = node.parseState
+	}
 }
 
 func (n *noTreeNode) hasFlag(flag nodeFlags) bool {
@@ -541,9 +552,7 @@ func materializeStackEntryCompactFullLeaf(arena *nodeArena, entry *stackEntry, r
 			}
 		}
 	}
-	entry.node = node
-	entry.kind = stackEntryKindNode
-	entry.state = node.parseState
+	setStackEntryNode(entry, node)
 	if arena != nil {
 		arena.compactFullLeafMaterialized++
 		switch reason {

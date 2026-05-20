@@ -710,59 +710,107 @@ func (p *queryParser) parsePredicate() (QueryPredicate, error) {
 func compileLuaPattern(pattern string) (*regexp.Regexp, error) {
 	var out strings.Builder
 	inClass := false
+	classContentStart := false
 
-	writeLuaClass := func(ch byte, inClass bool) bool {
+	writeLuaClass := func(ch byte, inClass bool, classContentStart bool) bool {
+		inClassText := ""
+		outsideText := ""
 		if inClass {
 			switch ch {
 			case 'a':
-				out.WriteString("A-Za-z")
+				inClassText = "A-Za-z"
+			case 'A':
+				inClassText = "^A-Za-z"
 			case 'c':
-				out.WriteString("[:cntrl:]")
+				inClassText = "[:cntrl:]"
+			case 'C':
+				inClassText = "^[:cntrl:]"
 			case 'd':
-				out.WriteString("0-9")
+				inClassText = "0-9"
+			case 'D':
+				inClassText = "^0-9"
 			case 'l':
-				out.WriteString("a-z")
+				inClassText = "a-z"
+			case 'L':
+				inClassText = "^a-z"
 			case 'p':
-				out.WriteString("[:punct:]")
+				inClassText = "[:punct:]"
+			case 'P':
+				inClassText = "^[:punct:]"
 			case 's':
-				out.WriteString("\\s")
+				inClassText = "\\s"
+			case 'S':
+				inClassText = "^\\s"
 			case 'u':
-				out.WriteString("A-Z")
+				inClassText = "A-Z"
+			case 'U':
+				inClassText = "^A-Z"
 			case 'w':
-				out.WriteString("A-Za-z0-9")
+				inClassText = "A-Za-z0-9"
+			case 'W':
+				inClassText = "^A-Za-z0-9"
 			case 'x':
-				out.WriteString("A-Fa-f0-9")
+				inClassText = "A-Fa-f0-9"
+			case 'X':
+				inClassText = "^A-Fa-f0-9"
 			case 'z':
-				out.WriteString("\\x00")
+				inClassText = "\\x00"
+			case 'Z':
+				inClassText = "^\\x00"
 			default:
 				return false
 			}
+			if strings.HasPrefix(inClassText, "^") && !classContentStart {
+				return false
+			}
+			out.WriteString(inClassText)
 			return true
 		}
 		switch ch {
 		case 'a':
-			out.WriteString("[A-Za-z]")
+			outsideText = "[A-Za-z]"
+		case 'A':
+			outsideText = "[^A-Za-z]"
 		case 'c':
-			out.WriteString("[[:cntrl:]]")
+			outsideText = "[[:cntrl:]]"
+		case 'C':
+			outsideText = "[^[:cntrl:]]"
 		case 'd':
-			out.WriteString("[0-9]")
+			outsideText = "[0-9]"
+		case 'D':
+			outsideText = "[^0-9]"
 		case 'l':
-			out.WriteString("[a-z]")
+			outsideText = "[a-z]"
+		case 'L':
+			outsideText = "[^a-z]"
 		case 'p':
-			out.WriteString("[[:punct:]]")
+			outsideText = "[[:punct:]]"
+		case 'P':
+			outsideText = "[^[:punct:]]"
 		case 's':
-			out.WriteString("\\s")
+			outsideText = "\\s"
+		case 'S':
+			outsideText = "\\S"
 		case 'u':
-			out.WriteString("[A-Z]")
+			outsideText = "[A-Z]"
+		case 'U':
+			outsideText = "[^A-Z]"
 		case 'w':
-			out.WriteString("[A-Za-z0-9]")
+			outsideText = "[A-Za-z0-9]"
+		case 'W':
+			outsideText = "[^A-Za-z0-9]"
 		case 'x':
-			out.WriteString("[A-Fa-f0-9]")
+			outsideText = "[A-Fa-f0-9]"
+		case 'X':
+			outsideText = "[^A-Fa-f0-9]"
 		case 'z':
-			out.WriteString("\\x00")
+			outsideText = "\\x00"
+		case 'Z':
+			outsideText = "[^\\x00]"
 		default:
 			return false
 		}
+		out.WriteString(outsideText)
 		return true
 	}
 
@@ -771,9 +819,11 @@ func compileLuaPattern(pattern string) (*regexp.Regexp, error) {
 		switch ch {
 		case '[':
 			inClass = true
+			classContentStart = true
 			out.WriteByte(ch)
 		case ']':
 			inClass = false
+			classContentStart = false
 			out.WriteByte(ch)
 		case '%':
 			if i+1 >= len(pattern) {
@@ -782,12 +832,28 @@ func compileLuaPattern(pattern string) (*regexp.Regexp, error) {
 			}
 			i++
 			next := pattern[i]
-			if writeLuaClass(next, inClass) {
+			if writeLuaClass(next, inClass, classContentStart) {
+				if inClass {
+					classContentStart = false
+				}
 				continue
 			}
 			out.WriteString(regexp.QuoteMeta(string(next)))
+			if inClass {
+				classContentStart = false
+			}
+		case '-':
+			if inClass {
+				out.WriteByte(ch)
+				classContentStart = false
+				continue
+			}
+			out.WriteString("*?")
 		default:
 			out.WriteByte(ch)
+			if inClass {
+				classContentStart = false
+			}
 		}
 	}
 

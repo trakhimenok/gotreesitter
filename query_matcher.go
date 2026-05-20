@@ -125,7 +125,7 @@ func (q *Query) matchPatternAll(pat *Pattern, node *Node, lang *Language, source
 		return nil
 	}
 	if pat.steps[0].quantifier == queryQuantifierZeroOrMore {
-		return q.matchRootRepetitionPatternAll(pat, node, lang, source)
+		return q.matchRootZeroOrMorePatternAll(pat, node, lang, source)
 	}
 	if pat.steps[0].quantifier == queryQuantifierOneOrMore {
 		return nil
@@ -142,63 +142,10 @@ func (q *Query) matchPatternAll(pat *Pattern, node *Node, lang *Language, source
 	return matches
 }
 
-func (q *Query) matchRootRepetitionPatternAll(pat *Pattern, node *Node, lang *Language, source []byte) [][]QueryCapture {
+func (q *Query) matchRootZeroOrMorePatternAll(pat *Pattern, node *Node, lang *Language, source []byte) [][]QueryCapture {
 	if node == nil {
 		return nil
 	}
-	if pat.steps[0].quantifier == queryQuantifierZeroOrMore {
-		return q.matchRootZeroOrMorePatternAll(pat, node, lang, source)
-	}
-
-	parent := node.Parent()
-	childIdx := nodeChildIndexInParent(node, parent)
-	if prev := node.PrevSibling(); prev != nil {
-		prevParent := prev.Parent()
-		prevChildIdx := nodeChildIndexInParent(prev, prevParent)
-		if len(q.matchPatternOnceAll(pat, prev, prevParent, prevChildIdx, lang, source, nil)) > 0 {
-			return nil
-		}
-	}
-
-	partials := [][]QueryCapture{nil}
-	count := 0
-	for current := node; current != nil; current = current.NextSibling() {
-		currentParent := parent
-		currentChildIdx := childIdx
-		if current != node {
-			currentParent = current.Parent()
-			currentChildIdx = nodeChildIndexInParent(current, currentParent)
-		}
-
-		var nextPartials [][]QueryCapture
-		for _, captures := range partials {
-			for _, next := range q.matchPatternOnceAll(pat, current, currentParent, currentChildIdx, lang, source, captures) {
-				nextPartials = append(nextPartials, next)
-			}
-		}
-		if len(nextPartials) == 0 {
-			break
-		}
-		count++
-		partials = nextPartials
-		childIdx++
-	}
-	if count == 0 {
-		return nil
-	}
-
-	var matches [][]QueryCapture
-	for _, captures := range partials {
-		if !q.matchesPredicates(pat.predicates, captures, lang, source) {
-			continue
-		}
-		captures = q.applyDirectives(pat.predicates, captures, source)
-		matches = append(matches, cloneQueryCaptures(captures))
-	}
-	return matches
-}
-
-func (q *Query) matchRootZeroOrMorePatternAll(pat *Pattern, node *Node, lang *Language, source []byte) [][]QueryCapture {
 	if q.matchesPredicates(pat.predicates, nil, lang, source) {
 		captures := q.applyDirectives(pat.predicates, nil, source)
 		return [][]QueryCapture{cloneQueryCaptures(captures)}
