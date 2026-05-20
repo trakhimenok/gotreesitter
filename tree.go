@@ -132,11 +132,15 @@ func (a *nodeArena) attachFinalChildRefs(parent *Node, childRange pendingChildRa
 	if len(a.finalChildSidecars) >= int(^uint32(0)>>1) {
 		return
 	}
+	oldCap := cap(a.finalChildSidecars)
 	id := len(a.finalChildSidecars)
 	a.finalChildSidecars = append(a.finalChildSidecars, finalChildSidecar{
 		childRange:       childRange,
 		parentChildIndex: -1,
 	})
+	if newCap := cap(a.finalChildSidecars); newCap != oldCap {
+		a.allocatedBytes += finalChildSidecarBytesForCap(newCap) - finalChildSidecarBytesForCap(oldCap)
+	}
 	parent.childIndex = -int32(id) - 2
 	a.finalChildRefParents++
 	a.finalChildRefsCreated += uint64(childRange.count())
@@ -653,6 +657,7 @@ type ArenaBreakdown struct {
 	CompactFullLeafBytesAllocated   int64
 	PendingParentBytesAllocated     int64
 	PendingChildEntryBytesAllocated int64
+	FinalChildSidecarBytesAllocated int64
 	PendingChildEntriesAllocated    uint64
 	PendingChildEntryCapacity       uint64
 	PendingChildEntryWaste          uint64

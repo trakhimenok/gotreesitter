@@ -1452,6 +1452,20 @@ func (a *nodeArena) pendingChildEntryWaste() uint64 {
 	return capacity - a.pendingChildEntriesAllocated
 }
 
+func finalChildSidecarBytesForCap(n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	return int64(n) * int64(unsafe.Sizeof(finalChildSidecar{}))
+}
+
+func (a *nodeArena) finalChildSidecarBytesAllocated() int64 {
+	if a == nil {
+		return 0
+	}
+	return finalChildSidecarBytesForCap(cap(a.finalChildSidecars))
+}
+
 func (a *nodeArena) compactCheckpointLeafBytesAllocated() int64 {
 	if a == nil {
 		return 0
@@ -1472,6 +1486,7 @@ func (a *nodeArena) recomputeAllocatedBytes() {
 		a.compactFullLeafBytesAllocated() +
 		a.pendingParentBytesAllocated() +
 		a.pendingChildEntryBytesAllocated() +
+		a.finalChildSidecarBytesAllocated() +
 		a.compactCheckpointLeafBytesAllocated() +
 		a.childSliceBytesAllocated() +
 		a.fieldIDBytesAllocated() +
@@ -1826,6 +1841,7 @@ func (a *nodeArena) collectArenaBreakdown() *ArenaBreakdown {
 		CompactFullLeafBytesAllocated:     a.compactFullLeafBytesAllocated(),
 		PendingParentBytesAllocated:       a.pendingParentBytesAllocated(),
 		PendingChildEntryBytesAllocated:   a.pendingChildEntryBytesAllocated(),
+		FinalChildSidecarBytesAllocated:   a.finalChildSidecarBytesAllocated(),
 		PendingChildEntriesAllocated:      a.pendingChildEntriesAllocated,
 		PendingChildEntryCapacity:         a.pendingChildEntryCapacity(),
 		PendingChildEntryWaste:            a.pendingChildEntryWaste(),

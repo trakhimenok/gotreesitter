@@ -285,9 +285,17 @@ func TestArenaByteBreakdownMatchesAllocatedBytes(t *testing.T) {
 	children[0] = left
 	children[1] = right
 	_ = newParentNodeInArenaNoLinksWithFieldSources(arena, Symbol(3), true, children, nil, nil, 0, false)
+	childRange, childEntries := arena.allocPendingChildEntries(1)
+	childEntries[0] = newPendingChildEntry(newStackEntryNode(left.parseState, left))
+	_ = newParentNodeInArenaWithFinalChildRefs(arena, Symbol(4), true, childRange, 0, false)
 
 	want := arena.nodeStructBytesAllocated() +
 		arena.noTreeNodeBytesAllocated() +
+		arena.compactFullLeafBytesAllocated() +
+		arena.pendingParentBytesAllocated() +
+		arena.pendingChildEntryBytesAllocated() +
+		arena.finalChildSidecarBytesAllocated() +
+		arena.compactCheckpointLeafBytesAllocated() +
 		arena.childSliceBytesAllocated() +
 		arena.fieldIDBytesAllocated() +
 		arena.fieldSourceBytesAllocated() +
@@ -296,6 +304,9 @@ func TestArenaByteBreakdownMatchesAllocatedBytes(t *testing.T) {
 		t.Fatalf("allocatedBytes = %d, breakdown sum = %d", got, want)
 	}
 	breakdown := arena.collectArenaBreakdown()
+	if got := breakdown.FinalChildSidecarBytesAllocated; got == 0 {
+		t.Fatal("FinalChildSidecarBytesAllocated = 0, want > 0")
+	}
 	if got, want := breakdown.NodeLiveCount, uint64(arena.used); got != want {
 		t.Fatalf("NodeLiveCount = %d, want %d", got, want)
 	}

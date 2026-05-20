@@ -122,6 +122,7 @@ type pythonRuntimeBenchStats struct {
 	arenaCompactFullLeafBytesAllocated   int64
 	arenaPendingParentBytesAllocated     int64
 	arenaPendingChildEntryBytesAllocated int64
+	arenaFinalChildSidecarBytesAllocated int64
 	arenaChildSliceBytesAllocated        int64
 	arenaFieldIDBytesAllocated           int64
 	arenaFieldSourceBytesAllocated       int64
@@ -521,6 +522,7 @@ func (s *pythonRuntimeBenchStats) add(rt gotreesitter.ParseRuntime, breakdown go
 		s.arenaCompactFullLeafBytesAllocated += breakdown.CompactFullLeafBytesAllocated
 		s.arenaPendingParentBytesAllocated += breakdown.PendingParentBytesAllocated
 		s.arenaPendingChildEntryBytesAllocated += breakdown.PendingChildEntryBytesAllocated
+		s.arenaFinalChildSidecarBytesAllocated += breakdown.FinalChildSidecarBytesAllocated
 		s.arenaChildSliceBytesAllocated += breakdown.ChildSliceBytesAllocated
 		s.arenaFieldIDBytesAllocated += breakdown.FieldIDBytesAllocated
 		s.arenaFieldSourceBytesAllocated += breakdown.FieldSourceBytesAllocated
@@ -816,6 +818,8 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 		b.ReportMetric(float64(s.arenaCompactFullLeafBytesAllocated)/tokens, "arena_compact_full_leaf_B/token")
 		b.ReportMetric(float64(s.arenaPendingParentBytesAllocated)/tokens, "arena_pending_parent_B/token")
 		b.ReportMetric(float64(s.arenaPendingChildEntryBytesAllocated)/tokens, "arena_pending_child_entry_B/token")
+		b.ReportMetric(float64(s.arenaFinalChildSidecarBytesAllocated)/tokens, "arena_final_child_sidecar_B/token")
+		b.ReportMetric(float64(s.arenaFinalChildSidecarBytesAllocated)/tokens, "final_child_sidecar_B/token")
 		b.ReportMetric(float64(s.arenaChildSliceBytesAllocated)/tokens, "arena_child_B/token")
 		b.ReportMetric(float64(s.arenaChildSliceBytesAllocated)/tokens, "child_slice_B/token")
 		b.ReportMetric(float64(s.arenaFieldIDBytesAllocated)/tokens, "arena_field_id_B/token")
