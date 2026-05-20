@@ -255,37 +255,53 @@ func stackResultErrorRank(s *glrStack) int {
 	if s == nil {
 		return 2
 	}
-	nodes := resultNodesFromStack(*s)
-	if len(nodes) == 0 {
-		return 0
-	}
 	rank := 0
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil || rank == 2 {
-			return
-		}
-		if n.IsError() {
-			rank = 2
-			return
-		}
-		if n.HasError() && rank == 0 {
-			rank = 1
-		}
-		for _, child := range n.children {
-			walk(child)
+	if len(s.entries) > 0 {
+		for i := range s.entries {
+			stackEntryResultErrorRank(s.entries[i], &rank)
 			if rank == 2 {
-				return
+				break
 			}
 		}
+		return rank
 	}
-	for _, node := range nodes {
-		walk(node)
+	for n := s.gss.head; n != nil; n = n.prev {
+		stackEntryResultErrorRank(n.entry, &rank)
 		if rank == 2 {
 			break
 		}
 	}
 	return rank
+}
+
+func stackEntryResultErrorRank(entry stackEntry, rank *int) {
+	if rank == nil || *rank == 2 || !stackEntryMaterializesForResult(entry) {
+		return
+	}
+	if stackEntryNodeSymbol(entry) == errorSymbol {
+		*rank = 2
+		return
+	}
+	if stackEntryNodeHasError(entry) && *rank == 0 {
+		*rank = 1
+	}
+	if n := stackEntryNode(entry); n != nil {
+		for _, child := range n.children {
+			stackEntryResultErrorRank(newStackEntryNode(child.parseState, child), rank)
+			if *rank == 2 {
+				return
+			}
+		}
+		return
+	}
+	if parent := stackEntryPendingParent(entry); parent != nil {
+		for _, child := range parent.childEntries() {
+			stackEntryResultErrorRank(child, rank)
+			if *rank == 2 {
+				return
+			}
+		}
+	}
 }
 
 func compareAcceptedStackAliasPreference(p *Parser, a, b glrStack) int {
@@ -303,6 +319,10 @@ func compareAcceptedStackAliasPreference(p *Parser, a, b glrStack) int {
 		}
 	}
 	return 0
+}
+
+func stackEntryMaterializesForResult(entry stackEntry) bool {
+	return stackEntryNode(entry) != nil || stackEntryCompactFullLeaf(entry) != nil || stackEntryPendingParent(entry) != nil
 }
 
 func resultNodesFromStack(s glrStack) []*Node {

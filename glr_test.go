@@ -412,6 +412,22 @@ func TestMaterializePendingParentRecursionClassifiesNestedCompactLeafPayloadShap
 	}
 }
 
+func TestStackResultErrorRankIncludesCompactRefs(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	errorLeaf := newCompactFullLeafInArena(arena, errorSymbol, false, 0, 1, Point{}, Point{Column: 1})
+	leafStack := &glrStack{entries: []stackEntry{newStackEntryCompactFullLeaf(2, errorLeaf)}}
+	if got := stackResultErrorRank(leafStack); got != 2 {
+		t.Fatalf("compact leaf error rank = %d, want 2", got)
+	}
+
+	child := newLeafNodeInArena(arena, errorSymbol, false, 0, 1, Point{}, Point{Column: 1})
+	parent := newPendingParentInArena(arena, 10, true, 7, []stackEntry{newStackEntryNode(3, child)}, 0, 1, Point{}, Point{Column: 1}, false)
+	parentStack := &glrStack{entries: []stackEntry{newStackEntryPendingParent(4, parent)}}
+	if got := stackResultErrorRank(parentStack); got != 2 {
+		t.Fatalf("pending parent child error rank = %d, want 2", got)
+	}
+}
+
 func TestCompactCheckpointLeafStackEntryUsesNoTreePrefix(t *testing.T) {
 	leaf := newCompactCheckpointLeafInArena(nil, 9, true, 13, 21, externalScannerCheckpointRef{})
 	entry := newStackEntryCompactCheckpointLeaf(4, leaf)

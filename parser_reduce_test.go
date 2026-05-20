@@ -166,11 +166,18 @@ func TestReduceProductionHasEffectiveFieldsIgnoresConflictedZeroFields(t *testin
 	p := NewParser(lang)
 	arena := newNodeArena(arenaClassFull)
 
-	if !p.reduceProductionHasFields(0) {
-		t.Fatal("reduceProductionHasFields = false, want true")
+	if p.reduceProductionHasFields(0) {
+		t.Fatal("reduceProductionHasFields = true, want false for conflicted zero field IDs")
 	}
 	if p.reduceProductionHasEffectiveFields(1, 0, arena) {
 		t.Fatal("reduceProductionHasEffectiveFields = true, want false for conflicted zero field IDs")
+	}
+	fieldIDs, _ := p.buildFieldIDs(1, 0, arena)
+	if got := len(fieldIDs); got != 1 {
+		t.Fatalf("buildFieldIDs len = %d, want 1", got)
+	}
+	if got := fieldIDs[0]; got != 0 {
+		t.Fatalf("buildFieldIDs[0] = %d, want 0", got)
 	}
 }
 

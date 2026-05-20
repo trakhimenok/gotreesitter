@@ -57,15 +57,6 @@ func buildReduceFieldPresence(lang *Language) []bool {
 	for i, fm := range lang.FieldMapSlices {
 		out[i] = fm[1] != 0
 	}
-	return out
-}
-
-func buildReduceEffectiveFieldPresence(lang *Language) []bool {
-	if lang == nil || len(lang.FieldMapSlices) == 0 {
-		return nil
-	}
-	out := make([]bool, len(lang.FieldMapSlices))
-	seenReduce := make([]bool, len(lang.FieldMapSlices))
 	for _, entry := range lang.ParseActions {
 		for _, act := range entry.Actions {
 			if act.Type != ParseActionReduce {
@@ -75,15 +66,13 @@ func buildReduceEffectiveFieldPresence(lang *Language) []bool {
 			if pid < 0 || pid >= len(out) {
 				continue
 			}
-			seenReduce[pid] = true
-			if fieldMapHasEffectiveFields(lang, int(act.ChildCount), act.ProductionID) {
-				out[pid] = true
+			if !out[pid] {
+				continue
 			}
-		}
-	}
-	for pid, fm := range lang.FieldMapSlices {
-		if fm[1] != 0 && !seenReduce[pid] {
-			out[pid] = true
+			if fieldMapHasEffectiveFields(lang, int(act.ChildCount), act.ProductionID) {
+				continue
+			}
+			out[pid] = false
 		}
 	}
 	return out
@@ -3878,14 +3867,7 @@ func (p *Parser) reduceProductionHasFields(productionID uint16) bool {
 }
 
 func (p *Parser) reduceProductionHasEffectiveFields(_ int, productionID uint16, _ *nodeArena) bool {
-	if !p.reduceProductionHasFields(productionID) {
-		return false
-	}
-	pid := int(productionID)
-	if pid < 0 || pid >= len(p.reduceHasEffectiveFields) {
-		return true
-	}
-	return p.reduceHasEffectiveFields[pid]
+	return p.reduceProductionHasFields(productionID)
 }
 
 func fieldIDSliceHasAny(fieldIDs []FieldID) bool {
@@ -4069,10 +4051,6 @@ func (p *Parser) buildFieldIDs(childCount int, productionID uint16, _ *nodeArena
 	if pid >= len(p.language.FieldMapSlices) {
 		return nil, nil
 	}
-	if pid >= len(p.reduceHasFields) || !p.reduceHasFields[pid] {
-		return nil, nil
-	}
-
 	fm := p.language.FieldMapSlices[pid]
 	count := int(fm[1])
 	if count == 0 {
