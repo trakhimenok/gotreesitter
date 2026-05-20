@@ -1593,11 +1593,16 @@ func fillPendingNoFieldChildren(dst []stackEntry, out int, entry stackEntry, par
 			return out, flattenedParents, flattenedChildRefs
 		}
 		if node := stackEntryNode(entry); node != nil {
-			for _, child := range node.children {
+			before := out
+			children := node.children
+			for _, child := range children {
 				var parents, refs int
 				out, parents, refs = fillPendingNoFieldChildren(dst, out, newStackEntryNode(child.parseState, child), true, symbolMeta)
 				flattenedParents += parents
 				flattenedChildRefs += refs
+			}
+			if out > before {
+				flattenedChildRefs += len(children)
 			}
 		}
 		return out, flattenedParents, flattenedChildRefs

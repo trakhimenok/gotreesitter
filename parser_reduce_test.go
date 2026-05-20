@@ -237,6 +237,45 @@ func TestTryPushPendingNoFieldParentAllowsEffectiveNoFieldProduction(t *testing.
 	}
 }
 
+func TestTryPushPendingNoFieldParentCountsOrdinaryHiddenNodeRefs(t *testing.T) {
+	lang := &Language{
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF"},
+			{Name: "expr", Visible: true, Named: true},
+			{Name: "_hidden", Visible: false, Named: false},
+			{Name: "identifier", Visible: true, Named: true},
+		},
+	}
+	p := NewParser(lang)
+	p.pendingFullParents = true
+	arena := newNodeArena(arenaClassFull)
+	first := newLeafNodeInArena(arena, 3, true, 1, 2, Point{Column: 1}, Point{Column: 2})
+	second := newLeafNodeInArena(arena, 3, true, 3, 4, Point{Column: 3}, Point{Column: 4})
+	hidden := newParentNodeInArena(arena, 2, false, []*Node{first, second}, nil, 0)
+	entry := newStackEntryNode(4, hidden)
+	stack := &glrStack{entries: []stackEntry{entry}}
+	act := ParseAction{Symbol: 1, ChildCount: 1, ProductionID: 0}
+	anyReduced := false
+	nodeCount := 0
+
+	if !p.tryPushPendingNoFieldParent(stack, act, Token{}, &anyReduced, &nodeCount, arena, nil, nil, []stackEntry{entry}, 0, 1, 1, 0, 0) {
+		t.Fatal("tryPushPendingNoFieldParent = false, want true")
+	}
+	if got := arena.pendingParentsFlattened; got != 0 {
+		t.Fatalf("pendingParentsFlattened = %d, want 0 for ordinary hidden node", got)
+	}
+	if got := arena.pendingChildRefsFlattened; got != 2 {
+		t.Fatalf("pendingChildRefsFlattened = %d, want 2", got)
+	}
+	parent := stackEntryPendingParent(stack.entries[0])
+	if parent == nil {
+		t.Fatal("stack entry is not a pending parent")
+	}
+	if got := len(parent.childEntries()); got != 2 {
+		t.Fatalf("pending parent child count = %d, want 2", got)
+	}
+}
+
 func TestCollapsibleRawUnarySelfReductionEntryCollapsesPendingParentSameSymbol(t *testing.T) {
 	lang := &Language{
 		SymbolMetadata: []SymbolMetadata{
