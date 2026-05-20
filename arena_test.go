@@ -371,6 +371,21 @@ func TestPendingChildEntrySlabsUseFixedFullGrowth(t *testing.T) {
 	}
 }
 
+func TestPendingChildEntrySlabsKeepGeometricIncrementalGrowth(t *testing.T) {
+	arena := newNodeArena(arenaClassIncremental)
+	slabCap := defaultPendingChildEntrySlabCap(arena.class)
+	for i := 0; i < slabCap+1; i++ {
+		_ = arena.allocPendingChildEntries(1)
+	}
+
+	if got := len(arena.pendingChildEntrySlabs); got != 2 {
+		t.Fatalf("pending child entry slabs = %d, want 2", got)
+	}
+	if got, want := len(arena.pendingChildEntrySlabs[1].data), slabCap*2; got != want {
+		t.Fatalf("second incremental pending child entry slab cap = %d, want %d", got, want)
+	}
+}
+
 // TestArenaNodeSlabClearsWrittenSlotsOnReset verifies that reset() zeros every
 // node slot written during the parse. Node contains pointer fields (children,
 // parent, ownerArena), and stale pointers in retained arena slabs prevent GC

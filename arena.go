@@ -1032,7 +1032,8 @@ func (a *nodeArena) allocPendingChildEntries(n int) []stackEntry {
 	}
 	for i := a.pendingChildEntrySlabCursor; ; i++ {
 		if i >= len(a.pendingChildEntrySlabs) {
-			capacity := nextPendingChildEntrySlabCap(a.class, n)
+			lastCap := len(a.pendingChildEntrySlabs[len(a.pendingChildEntrySlabs)-1].data)
+			capacity := nextPendingChildEntrySlabCap(a.class, lastCap, n)
 			a.pendingChildEntrySlabs = append(a.pendingChildEntrySlabs, pendingChildEntrySlab{data: make([]stackEntry, capacity)})
 			a.allocatedBytes += pendingChildEntryBytesForCap(capacity)
 		}
@@ -1048,7 +1049,10 @@ func (a *nodeArena) allocPendingChildEntries(n int) []stackEntry {
 	}
 }
 
-func nextPendingChildEntrySlabCap(class arenaClass, min int) int {
+func nextPendingChildEntrySlabCap(class arenaClass, lastCap, min int) int {
+	if class != arenaClassFull {
+		return max(lastCap*2, min)
+	}
 	return max(defaultPendingChildEntrySlabCap(class), min)
 }
 
