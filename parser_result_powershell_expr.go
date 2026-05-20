@@ -244,7 +244,7 @@ func buildPowerShellExpressionCore(arena *nodeArena, source []byte, lang *Langua
 		if !ok {
 			return nil
 		}
-		if bytes.IndexAny(source[start:end], " \t") >= 0 {
+		if bytes.ContainsAny(source[start:end], " \t") {
 			genericSym, genericNamed, ok := symbolMeta(lang, "generic_token")
 			if !ok {
 				return nil

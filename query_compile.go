@@ -458,9 +458,7 @@ func (p *queryParser) parseAlternationPattern(depth int, parentSymbolHint Symbol
 			alt.predicates = make([]QueryPredicate, len(branchPat.predicates))
 			copy(alt.predicates, branchPat.predicates)
 		} else {
-			for _, capID := range root.captureIDs {
-				alt.captureIDs = append(alt.captureIDs, capID)
-			}
+			alt.captureIDs = append(alt.captureIDs, root.captureIDs...)
 		}
 		alts = append(alts, alt)
 	}

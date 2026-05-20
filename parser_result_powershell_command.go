@@ -151,7 +151,7 @@ func powerShellLooksLikeCommandText(source []byte, start, end int) bool {
 	if !((source[start] >= 'a' && source[start] <= 'z') || (source[start] >= 'A' && source[start] <= 'Z') || source[start] == '_') {
 		return false
 	}
-	return bytes.IndexAny(source[start:end], " \t") >= 0
+	return bytes.ContainsAny(source[start:end], " \t")
 }
 
 func findMatchingDelimitedByte(source []byte, openPos, limit int, open, close byte) int {

@@ -1233,8 +1233,5 @@ func rustFragmentSpecifierFollowsColon(meta, colon, frag *Node, source []byte) b
 		return false
 	}
 	betweenMetaAndFrag := strings.TrimSpace(string(source[meta.endByte:frag.startByte]))
-	if !strings.Contains(betweenMetaAndFrag, ":") {
-		return false
-	}
-	return true
+	return strings.Contains(betweenMetaAndFrag, ":")
 }

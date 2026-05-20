@@ -2062,7 +2062,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			}
 			cullIn := len(stacks)
 			cullLang := stackCullLanguageForArena(p.language, arenaClass)
-			stacks = retainTopStacksForLanguageWithScratch(stacks, maxStacks, cullLang, &scratch.stackPick, &scratch.stackKeep, &scratch.stackCull, &scratch.stateKeep)
+			stacks = retainTopStacksForLanguageWithScratch(stacks, maxStacks, cullLang, &scratch.stackPick, &scratch.stackKeep, &scratch.stackCull)
 			scratch.audit.recordGlobalCull(cullIn, len(stacks))
 			if p.glrTrace {
 				fmt.Printf("[GLR] after cull:\n")
@@ -3226,10 +3226,10 @@ func retainTopStacks(stacks []glrStack, keep int) []glrStack {
 }
 
 func retainTopStacksForLanguage(stacks []glrStack, keep int, lang *Language) []glrStack {
-	return retainTopStacksForLanguageWithScratch(stacks, keep, lang, nil, nil, nil, nil)
+	return retainTopStacksForLanguageWithScratch(stacks, keep, lang, nil, nil, nil)
 }
 
-func retainTopStacksForLanguageWithScratch(stacks []glrStack, keep int, lang *Language, selectedBuf *[]int, chosenBuf *[]bool, keyBuf *[]stackCullKey, stateBuf *[]StateID) []glrStack {
+func retainTopStacksForLanguageWithScratch(stacks []glrStack, keep int, lang *Language, selectedBuf *[]int, chosenBuf *[]bool, keyBuf *[]stackCullKey) []glrStack {
 	if keep <= 0 {
 		return stacks[:0]
 	}
@@ -3237,7 +3237,7 @@ func retainTopStacksForLanguageWithScratch(stacks []glrStack, keep int, lang *La
 		return stacks
 	}
 	compareLang := lang
-	if keyBuf == nil || stateBuf == nil {
+	if keyBuf == nil {
 		// Preserve the former no-key fallback semantics. That path used the
 		// C#-specific comparator, but all other languages followed the generic
 		// stack comparator even if the keyed full-parse path has language
@@ -3247,10 +3247,10 @@ func retainTopStacksForLanguageWithScratch(stacks []glrStack, keep int, lang *La
 		}
 	}
 	keys := buildStackCullKeys(stacks, compareLang, keyBuf)
-	return retainTopStacksByKeys(stacks, keep, compareLang, keys, selectedBuf, chosenBuf, stateBuf)
+	return retainTopStacksByKeys(stacks, keep, compareLang, keys, selectedBuf, chosenBuf)
 }
 
-func retainTopStacksByKeys(stacks []glrStack, keep int, lang *Language, keys []stackCullKey, selectedBuf *[]int, chosenBuf *[]bool, stateBuf *[]StateID) []glrStack {
+func retainTopStacksByKeys(stacks []glrStack, keep int, lang *Language, keys []stackCullKey, selectedBuf *[]int, chosenBuf *[]bool) []glrStack {
 	// Preserve one strong representative per top state before filling the
 	// remaining cap. Otherwise a burst of near-duplicate stacks from one state
 	// can crowd out a shallower but semantically distinct branch.
@@ -3263,20 +3263,11 @@ func retainTopStacksByKeys(stacks []glrStack, keep int, lang *Language, keys []s
 	} else {
 		selected = make([]int, 0, len(stacks))
 	}
-	var states []StateID
-	if stateBuf != nil {
-		if cap(*stateBuf) < len(stacks) {
-			*stateBuf = make([]StateID, 0, len(stacks))
-		}
-		states = (*stateBuf)[:0]
-	} else {
-		states = make([]StateID, 0, len(stacks))
-	}
 	for i := range stacks {
 		state := keys[i].state
 		bestIdx := -1
-		for j := range states {
-			if states[j] == state {
+		for j, selectedIdx := range selected {
+			if keys[selectedIdx].state == state {
 				bestIdx = j
 				break
 			}
@@ -3287,7 +3278,6 @@ func retainTopStacksByKeys(stacks []glrStack, keep int, lang *Language, keys []s
 			}
 			continue
 		}
-		states = append(states, state)
 		selected = append(selected, i)
 	}
 	for i := 0; i < len(selected); i++ {
@@ -3299,12 +3289,10 @@ func retainTopStacksByKeys(stacks []glrStack, keep int, lang *Language, keys []s
 		}
 		if best != i {
 			selected[i], selected[best] = selected[best], selected[i]
-			states[i], states[best] = states[best], states[i]
 		}
 	}
 	if len(selected) > keep {
 		selected = selected[:keep]
-		states = states[:keep]
 	}
 
 	var chosen []bool

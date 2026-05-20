@@ -13,7 +13,6 @@ type parserScratch struct {
 	stackPick           []int
 	stackKeep           []bool
 	stackCull           []stackCullKey
-	stateKeep           []StateID
 	reduce              reduceBuildScratch
 	transientChildren   transientChildScratch
 	transientParents    transientParentScratch
@@ -111,11 +110,6 @@ func releaseParserScratch(s *parserScratch, skipGSSClear bool) {
 		s.stackCull = nil
 	} else if len(s.stackCull) > 0 {
 		s.stackCull = s.stackCull[:0]
-	}
-	if cap(s.stateKeep) > maxRetainedStackCullScratch {
-		s.stateKeep = nil
-	} else if len(s.stateKeep) > 0 {
-		s.stateKeep = s.stateKeep[:0]
 	}
 	const maxRetainedReduceBuildScratch = 256 * 1024
 	if cap(s.reduce.nodes) > maxRetainedReduceBuildScratch {

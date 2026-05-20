@@ -3975,11 +3975,6 @@ func (p *Parser) collapsibleUnarySelfReduction(act ParseAction, tok Token, arena
 	return collapsed
 }
 
-func (p *Parser) collapseUnaryChildForReduction(act ParseAction, arena *nodeArena, child *Node) *Node {
-	collapsed, _ := p.collapseUnaryChildForReductionWithRule(act, arena, child)
-	return collapsed
-}
-
 func (p *Parser) collapseUnaryChildForReductionWithRule(act ParseAction, arena *nodeArena, child *Node) (*Node, collapseUnaryRule) {
 	if child.symbol != act.Symbol {
 		if p.canCollapseInvisibleUnaryWrapper(act.Symbol, child) {
@@ -4007,11 +4002,7 @@ func (p *Parser) canCollapseInvisibleUnaryWrapper(parentSym Symbol, child *Node)
 	if int(parentSym) >= len(meta) {
 		return false
 	}
-	parent := meta[parentSym]
-	if parent.Visible {
-		return false
-	}
-	return true
+	return !meta[parentSym].Visible
 }
 
 func (p *Parser) shouldPreserveVisibleUnaryTokenWrapper(parentSym Symbol) bool {

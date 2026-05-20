@@ -47,7 +47,6 @@ func TestRetainTopStacksForPythonKeepsShallowerBranch(t *testing.T) {
 		selected []int
 		chosen   []bool
 		keys     []stackCullKey
-		states   []StateID
 	)
 
 	kept := retainTopStacksForLanguageWithScratch(
@@ -57,7 +56,6 @@ func TestRetainTopStacksForPythonKeepsShallowerBranch(t *testing.T) {
 		&selected,
 		&chosen,
 		&keys,
-		&states,
 	)
 	if len(kept) != 1 {
 		t.Fatalf("len(kept) = %d, want 1", len(kept))

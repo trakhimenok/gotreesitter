@@ -18,12 +18,12 @@ func normalizePHPSingletonTypeWrappers(root *Node, lang *Language) {
 			case "intersection_type", "union_type":
 				if len(child.children) == 1 && child.children[0] != nil && child.children[0].IsNamed() {
 					n.children[i] = child.children[0]
-					child = n.children[i]
 				}
 			}
 		}
 	})
 }
+
 func normalizePHPStaticFunctionFragments(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "php" || len(root.children) == 0 {
 		return

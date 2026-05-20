@@ -15,8 +15,8 @@ for tags and release notes while still in `0.x`.
   path available.
 - Removed the legacy host-side race wrapper in favor of CI or Docker-scoped
   race validation.
-- Removed the unused Ferrous Wheel variant of the scoped Canopy Docker runner;
-  the shell runner is now the single maintained entry point.
+- Removed the obsolete scoped Canopy Docker runner; Canopy now runs directly on
+  host for structural analysis.
 - Removed the undocumented `grammarlsp` side package and its LSP/SegmentIO
   dependencies from the root module.
 - Collapsed stale internal aliases/helpers around token-source reparsing,

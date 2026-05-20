@@ -111,11 +111,6 @@ func parseCompactFullLeavesEnv() (configured bool, enabled bool) {
 	return true, raw != "0" && !strings.EqualFold(raw, "false")
 }
 
-func parsePendingParentsEnabled() bool {
-	_, enabled := parsePendingParentsEnv()
-	return enabled
-}
-
 func parsePendingParentsEnv() (configured bool, enabled bool) {
 	raw := strings.TrimSpace(os.Getenv("GOT_GLR_V2_PENDING_PARENTS"))
 	if raw == "" {
