@@ -164,7 +164,7 @@ func parseTransientReduceLanguageEnabled(lang *Language, envName string) bool {
 		raw = strings.TrimSpace(os.Getenv("GOT_TRANSIENT_REDUCE_LANGS"))
 	}
 	if raw == "" {
-		return strings.EqualFold(lang.Name, "python")
+		return false
 	}
 	return transientReduceLanguageListMatches(raw, lang.Name)
 }

@@ -2,15 +2,15 @@ package gotreesitter
 
 import "testing"
 
-func TestTransientReduceLanguageDefaultsToPython(t *testing.T) {
+func TestTransientReduceLanguageDefaultsToDisabled(t *testing.T) {
 	t.Setenv("GOT_TRANSIENT_REDUCE_CHILDREN", "")
 	t.Setenv("GOT_TRANSIENT_REDUCE_PARENTS", "")
 	t.Setenv("GOT_TRANSIENT_REDUCE_LANGS", "")
 	t.Setenv("GOT_TRANSIENT_REDUCE_CHILDREN_LANGS", "")
 	t.Setenv("GOT_TRANSIENT_REDUCE_PARENTS_LANGS", "")
 
-	if !parseTransientReduceChildrenLanguageEnabled(&Language{Name: "python"}) {
-		t.Fatal("python transient reduce children disabled by default")
+	if parseTransientReduceChildrenLanguageEnabled(&Language{Name: "python"}) {
+		t.Fatal("python transient reduce children enabled by default")
 	}
 	if parseTransientReduceChildrenLanguageEnabled(&Language{Name: "java"}) {
 		t.Fatal("java transient reduce children enabled by default")
