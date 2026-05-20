@@ -583,9 +583,7 @@ func materializeStackEntryCompactFullLeafEntry(arena *nodeArena, entry stackEntr
 			}
 		}
 	}
-	entry.node = node
-	entry.kind = stackEntryKindNode
-	entry.state = node.parseState
+	setStackEntryNode(&entry, node)
 	arena.recordCompactFullLeafMaterialized(reason)
 	return node, entry
 }

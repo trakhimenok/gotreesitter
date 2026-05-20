@@ -312,7 +312,7 @@ func (entry pendingChildEntry) stackEntry() stackEntry {
 	kind := uint32(uintptr(entry) & pendingChildEntryKindMask)
 	node := (*Node)(unsafe.Pointer(uintptr(entry) &^ pendingChildEntryKindMask))
 	stack := stackEntry{
-		node: node,
+		node: unsafe.Pointer(node),
 		kind: kind,
 	}
 	stack.state = stackEntryNodeParseState(stack)
@@ -352,9 +352,7 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 		node.endPoint = parent.endPoint
 		node.parseState = parent.parseState
 		node.preGotoState = parent.preGotoState
-		entry.node = node
-		entry.kind = stackEntryKindNode
-		entry.state = node.parseState
+		setStackEntryNode(&entry, node)
 		arena.recordPendingParentMaterialized(reason)
 		return node, entry
 	}
@@ -394,9 +392,7 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 	node.parseState = parent.parseState
 	node.preGotoState = parent.preGotoState
 	rebuildExternalScannerCheckpointForMaterializedParent(node, reason)
-	entry.node = node
-	entry.kind = stackEntryKindNode
-	entry.state = node.parseState
+	setStackEntryNode(&entry, node)
 	arena.recordPendingParentMaterialized(reason)
 	return node, entry
 }

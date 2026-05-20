@@ -213,8 +213,8 @@ func TestQueryMatcherUsesLazyFinalChildRefs(t *testing.T) {
 	}
 	query := &Query{}
 	steps := []QueryStep{
-		{symbol: 2, captureID: -1, isNamed: true, depth: 0, quantifier: queryQuantifierOne},
-		{symbol: 1, captureID: -1, isNamed: true, depth: 1, quantifier: queryQuantifierOne},
+		{symbol: 2, isNamed: true, depth: 0, quantifier: queryQuantifierOne},
+		{symbol: 1, isNamed: true, depth: 1, quantifier: queryQuantifierOne},
 	}
 	var captures []QueryCapture
 	if !query.matchStepsWithPredicates(steps, 0, node, lang, nil, nil, &captures) {
