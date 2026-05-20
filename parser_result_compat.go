@@ -69,8 +69,12 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeHTMLCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "ini":
 		normalizeIniSectionStarts(ctx.root, ctx.lang)
+	case "java":
+		normalizeJavaCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "javascript":
 		normalizeJavaScriptCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "kotlin":
+		normalizeKotlinCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "lua":
 		normalizeLuaChunkLocalDeclarationFields(ctx.root, ctx.source, ctx.lang)
 	case "make":
@@ -88,6 +92,7 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizePHPCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "powershell":
 		normalizePowerShellProgramShape(ctx.root, ctx.source, ctx.lang)
+		normalizePowerShellAssignmentOperatorTokens(ctx.root, ctx.source, ctx.lang)
 	case "pug":
 		normalizeTopLevelTrailingLineBreakSpan(ctx.root, ctx.source, ctx.lang)
 	case "python":

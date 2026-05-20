@@ -14,9 +14,14 @@ type Query struct {
 	captures []string // capture name by index
 	strings  []string // string literals by index
 
-	rootCandidatesBySymbol map[Symbol][]int
-	rootCandidatesDense    [][]int
-	rootFallbackCandidates []int
+	rootCandidatesBySymbol     map[Symbol][]int
+	rootCandidatesDense        [][]int
+	rootFallbackCandidates     []int
+	postCandidatesBySymbol     map[Symbol][]int
+	postCandidatesDense        [][]int
+	postFallbackCandidates     []int
+	rootZeroOrMorePatterns     []int
+	rootRepetitionPostPatterns []int
 
 	disabledPatternIdx  map[int]struct{}
 	disabledCaptureName map[string]struct{}
@@ -209,12 +214,16 @@ type QueryCursor struct {
 
 	currentNode       *Node
 	currentNodeDepth  uint32
+	currentNodePost   bool
 	currentCandidates []int
 	candidateIdx      int
 
 	// Pending captures from the last match returned by NextMatch.
 	pendingCaptures   []QueryCapture
 	pendingCaptureIdx int
+
+	pendingMatches  []QueryMatch
+	pendingMatchIdx int
 
 	matchLimit        uint32
 	matchCount        uint32
@@ -230,11 +239,11 @@ type QueryCursor struct {
 type queryCursorWorkItem struct {
 	node  *Node
 	depth uint32
+	post  bool
 }
 
 type queryExecBuffer struct {
 	matches  []QueryMatch
-	captures []QueryCapture
 	worklist []queryCursorWorkItem
 }
 
@@ -473,7 +482,6 @@ func (q *Query) executeNodeIntoBuffer(root *Node, lang *Language, source []byte,
 			return nil
 		}
 		buf.matches = buf.matches[:0]
-		buf.captures = buf.captures[:0]
 		buf.worklist = buf.worklist[:0]
 		return buf.matches
 	}
@@ -485,7 +493,6 @@ func (q *Query) executeNodeIntoBuffer(root *Node, lang *Language, source []byte,
 	}
 
 	buf.matches = buf.matches[:0]
-	buf.captures = buf.captures[:0]
 	buf.worklist = append(buf.worklist[:0], queryCursorWorkItem{node: root, depth: 0})
 
 	for len(buf.worklist) > 0 {
@@ -496,6 +503,37 @@ func (q *Query) executeNodeIntoBuffer(root *Node, lang *Language, source []byte,
 		n := item.node
 		if n == nil {
 			continue
+		}
+		if item.post {
+			candidates := q.postorderPatternCandidates(lang.PublicSymbolForNamedness(n.Symbol(), n.IsNamed()))
+			candidates = mergePatternIndexLists(q.rootRepetitionPostPatterns, candidates)
+			for _, pi := range candidates {
+				if q.isPatternDisabled(pi) {
+					continue
+				}
+				pat := q.patterns[pi]
+				var captureSets [][]QueryCapture
+				if pat.steps[0].quantifier == queryQuantifierZeroOrMore || pat.steps[0].quantifier == queryQuantifierOneOrMore {
+					captureSets = q.matchPatternPostorderAll(&pat, n, lang, source)
+				} else {
+					captureSets = q.matchPatternAll(&pat, n, lang, source)
+				}
+				for _, captures := range captureSets {
+					buf.matches = append(buf.matches, QueryMatch{
+						PatternIndex: pi,
+						Captures:     captures,
+					})
+				}
+			}
+			continue
+		}
+
+		if q.hasPostorderPatterns() {
+			buf.worklist = append(buf.worklist, queryCursorWorkItem{
+				node:  n,
+				depth: item.depth,
+				post:  true,
+			})
 		}
 
 		for i := nodeChildCountNoMaterialize(n) - 1; i >= 0; i-- {
@@ -509,22 +547,22 @@ func (q *Query) executeNodeIntoBuffer(root *Node, lang *Language, source []byte,
 			})
 		}
 
-		candidates := q.rootPatternCandidates(lang.PublicSymbol(n.Symbol()))
+		candidates := q.rootPatternCandidates(lang.PublicSymbolForNamedness(n.Symbol(), n.IsNamed()))
 		for _, pi := range candidates {
 			if q.isPatternDisabled(pi) {
 				continue
 			}
 			pat := q.patterns[pi]
-			nextCaptures, ok := q.matchPatternIntoBuffer(&pat, n, lang, source, buf.captures)
-			if !ok {
+			captureSets := q.matchPatternAll(&pat, n, lang, source)
+			if len(captureSets) == 0 {
 				continue
 			}
-			start := len(buf.captures)
-			buf.captures = nextCaptures
-			buf.matches = append(buf.matches, QueryMatch{
-				PatternIndex: pi,
-				Captures:     buf.captures[start:len(buf.captures):len(buf.captures)],
-			})
+			for _, captures := range captureSets {
+				buf.matches = append(buf.matches, QueryMatch{
+					PatternIndex: pi,
+					Captures:     captures,
+				})
+			}
 		}
 	}
 
@@ -541,6 +579,24 @@ func (q *Query) rootPatternCandidates(sym Symbol) []int {
 		return cands
 	}
 	return q.rootFallbackCandidates
+}
+
+func (q *Query) postorderPatternCandidates(sym Symbol) []int {
+	if int(sym) < len(q.postCandidatesDense) {
+		if cands := q.postCandidatesDense[sym]; cands != nil {
+			return cands
+		}
+	}
+	if cands, ok := q.postCandidatesBySymbol[sym]; ok {
+		return cands
+	}
+	return q.postFallbackCandidates
+}
+
+func (q *Query) hasPostorderPatterns() bool {
+	return len(q.rootRepetitionPostPatterns) > 0 ||
+		len(q.postFallbackCandidates) > 0 ||
+		len(q.postCandidatesBySymbol) > 0
 }
 
 func mergePatternIndexLists(a, b []int) []int {
@@ -595,8 +651,13 @@ func mergePatternIndexLists(a, b []int) []int {
 
 func (q *Query) buildRootPatternIndex() {
 	bySymbolExact := make(map[Symbol][]int)
+	postBySymbolExact := make(map[Symbol][]int)
 	var wildcard []int
 	var complex []int
+	var postWildcard []int
+	var postComplex []int
+	q.rootZeroOrMorePatterns = q.rootZeroOrMorePatterns[:0]
+	q.rootRepetitionPostPatterns = q.rootRepetitionPostPatterns[:0]
 
 	for pi, pat := range q.patterns {
 		if len(pat.steps) == 0 {
@@ -604,40 +665,22 @@ func (q *Query) buildRootPatternIndex() {
 		}
 		step := pat.steps[0]
 
-		if len(step.alternatives) > 0 {
-			complexAlt := false
-			for _, alt := range step.alternatives {
-				if alt.textMatch != "" || alt.symbol == 0 {
-					complexAlt = true
-					break
-				}
-			}
-			if complexAlt {
-				complex = append(complex, pi)
-				continue
-			}
-
-			seen := make(map[Symbol]struct{}, len(step.alternatives))
-			for _, alt := range step.alternatives {
-				if _, ok := seen[alt.symbol]; ok {
-					continue
-				}
-				seen[alt.symbol] = struct{}{}
-				bySymbolExact[alt.symbol] = append(bySymbolExact[alt.symbol], pi)
-			}
-			continue
-		}
-
-		if step.textMatch != "" {
+		if step.quantifier == queryQuantifierZeroOrMore {
 			complex = append(complex, pi)
+			q.rootZeroOrMorePatterns = append(q.rootZeroOrMorePatterns, pi)
+			q.rootRepetitionPostPatterns = append(q.rootRepetitionPostPatterns, pi)
 			continue
 		}
-		if step.symbol == 0 {
-			wildcard = append(wildcard, pi)
+		if step.quantifier == queryQuantifierOneOrMore {
+			q.rootRepetitionPostPatterns = append(q.rootRepetitionPostPatterns, pi)
+		}
+
+		if patternHasPostorderChildRepetition(pat) {
+			addRootPatternCandidate(pi, step, postBySymbolExact, &postWildcard, &postComplex)
 			continue
 		}
 
-		bySymbolExact[step.symbol] = append(bySymbolExact[step.symbol], pi)
+		addRootPatternCandidate(pi, step, bySymbolExact, &wildcard, &complex)
 	}
 
 	fallback := mergePatternIndexLists(wildcard, complex)
@@ -654,6 +697,71 @@ func (q *Query) buildRootPatternIndex() {
 	for sym, candidates := range q.rootCandidatesBySymbol {
 		q.rootCandidatesDense[sym] = candidates
 	}
+
+	postFallback := mergePatternIndexLists(postWildcard, postComplex)
+	q.postFallbackCandidates = postFallback
+	q.postCandidatesBySymbol = make(map[Symbol][]int, len(postBySymbolExact))
+	maxPostSymbol := Symbol(0)
+	for sym, exact := range postBySymbolExact {
+		if sym > maxPostSymbol {
+			maxPostSymbol = sym
+		}
+		q.postCandidatesBySymbol[sym] = mergePatternIndexLists(exact, postFallback)
+	}
+	q.postCandidatesDense = make([][]int, int(maxPostSymbol)+1)
+	for sym, candidates := range q.postCandidatesBySymbol {
+		q.postCandidatesDense[sym] = candidates
+	}
+}
+
+func addRootPatternCandidate(pi int, step QueryStep, bySymbolExact map[Symbol][]int, wildcard *[]int, complex *[]int) {
+	if len(step.alternatives) > 0 {
+		complexAlt := false
+		for _, alt := range step.alternatives {
+			if alt.textMatch != "" || alt.symbol == 0 {
+				complexAlt = true
+				break
+			}
+		}
+		if complexAlt {
+			*complex = append(*complex, pi)
+			return
+		}
+
+		seen := make(map[Symbol]struct{}, len(step.alternatives))
+		for _, alt := range step.alternatives {
+			if _, ok := seen[alt.symbol]; ok {
+				continue
+			}
+			seen[alt.symbol] = struct{}{}
+			bySymbolExact[alt.symbol] = append(bySymbolExact[alt.symbol], pi)
+		}
+		return
+	}
+
+	if step.textMatch != "" {
+		*complex = append(*complex, pi)
+		return
+	}
+	if step.symbol == 0 {
+		*wildcard = append(*wildcard, pi)
+		return
+	}
+
+	bySymbolExact[step.symbol] = append(bySymbolExact[step.symbol], pi)
+}
+
+func patternHasPostorderChildRepetition(pat Pattern) bool {
+	for i := 1; i < len(pat.steps); i++ {
+		step := pat.steps[i]
+		if step.depth == 0 {
+			continue
+		}
+		if step.quantifier == queryQuantifierZeroOrMore || step.quantifier == queryQuantifierOneOrMore {
+			return true
+		}
+	}
+	return false
 }
 
 // NextMatch yields the next query match from the cursor.
@@ -696,6 +804,15 @@ func (c *QueryCursor) nextMatchRaw() (QueryMatch, bool) {
 	if c == nil || c.done || c.query == nil || c.lang == nil {
 		return QueryMatch{}, false
 	}
+	if c.pendingMatchIdx < len(c.pendingMatches) {
+		m := c.pendingMatches[c.pendingMatchIdx]
+		c.pendingMatchIdx++
+		if c.pendingMatchIdx >= len(c.pendingMatches) {
+			c.pendingMatches = nil
+			c.pendingMatchIdx = 0
+		}
+		return m, true
+	}
 	q := c.query
 	if q.rootCandidatesBySymbol == nil && q.rootFallbackCandidates == nil {
 		q.buildRootPatternIndex()
@@ -716,6 +833,15 @@ func (c *QueryCursor) nextMatchRaw() (QueryMatch, bool) {
 			if !c.nodeIntersectsRanges(n) {
 				continue
 			}
+			if item.post {
+				c.currentNode = n
+				c.currentNodeDepth = depth
+				c.currentNodePost = true
+				postCandidates := q.postorderPatternCandidates(c.lang.PublicSymbolForNamedness(n.Symbol(), n.IsNamed()))
+				c.currentCandidates = mergePatternIndexLists(q.rootRepetitionPostPatterns, postCandidates)
+				c.candidateIdx = 0
+				continue
+			}
 
 			if c.hasMaxStartDepth && depth > c.maxStartDepth {
 				continue
@@ -723,7 +849,8 @@ func (c *QueryCursor) nextMatchRaw() (QueryMatch, bool) {
 
 			c.currentNode = n
 			c.currentNodeDepth = depth
-			c.currentCandidates = q.rootPatternCandidates(c.lang.PublicSymbol(n.Symbol()))
+			c.currentNodePost = false
+			c.currentCandidates = q.rootPatternCandidates(c.lang.PublicSymbolForNamedness(n.Symbol(), n.IsNamed()))
 			c.candidateIdx = 0
 		}
 
@@ -734,18 +861,40 @@ func (c *QueryCursor) nextMatchRaw() (QueryMatch, bool) {
 				continue
 			}
 			pat := q.patterns[pi]
-			if caps, ok := q.matchPattern(&pat, c.currentNode, c.lang, c.source); ok {
-				return QueryMatch{
-					PatternIndex: pi,
-					Captures:     caps,
-				}, true
+			var captureSets [][]QueryCapture
+			if c.currentNodePost {
+				if pat.steps[0].quantifier == queryQuantifierZeroOrMore || pat.steps[0].quantifier == queryQuantifierOneOrMore {
+					captureSets = q.matchPatternPostorderAll(&pat, c.currentNode, c.lang, c.source)
+				} else {
+					captureSets = q.matchPatternAll(&pat, c.currentNode, c.lang, c.source)
+				}
+			} else {
+				captureSets = q.matchPatternAll(&pat, c.currentNode, c.lang, c.source)
 			}
+			if len(captureSets) == 0 {
+				continue
+			}
+			first := QueryMatch{
+				PatternIndex: pi,
+				Captures:     captureSets[0],
+			}
+			if len(captureSets) > 1 {
+				c.pendingMatches = make([]QueryMatch, len(captureSets)-1)
+				for i := 1; i < len(captureSets); i++ {
+					c.pendingMatches[i-1] = QueryMatch{
+						PatternIndex: pi,
+						Captures:     captureSets[i],
+					}
+				}
+			}
+			return first, true
 		}
 
 		// Exhausted candidates for this node; advance to the next node.
 		c.pushCurrentNodeChildren()
 		c.currentNode = nil
 		c.currentNodeDepth = 0
+		c.currentNodePost = false
 		c.currentCandidates = nil
 		c.candidateIdx = 0
 	}
@@ -753,7 +902,17 @@ func (c *QueryCursor) nextMatchRaw() (QueryMatch, bool) {
 
 func (c *QueryCursor) pushCurrentNodeChildren() {
 	n := c.currentNode
-	if n == nil || (c.hasMaxStartDepth && c.currentNodeDepth >= c.maxStartDepth) {
+	if n == nil {
+		return
+	}
+	if c.query != nil && c.query.hasPostorderPatterns() {
+		c.worklist = append(c.worklist, queryCursorWorkItem{
+			node:  n,
+			depth: c.currentNodeDepth,
+			post:  true,
+		})
+	}
+	if c.hasMaxStartDepth && c.currentNodeDepth >= c.maxStartDepth {
 		return
 	}
 	nextDepth := c.currentNodeDepth + 1
@@ -817,25 +976,6 @@ func (q *Query) matchPattern(pat *Pattern, node *Node, lang *Language, source []
 	}
 	captures = q.applyDirectives(pat.predicates, captures, source)
 	return captures, true
-}
-
-func (q *Query) matchPatternIntoBuffer(pat *Pattern, node *Node, lang *Language, source []byte, captures []QueryCapture) ([]QueryCapture, bool) {
-	if len(pat.steps) == 0 {
-		return captures, false
-	}
-
-	start := len(captures)
-	if !q.matchStepsWithPredicates(pat.steps, 0, node, lang, source, pat.predicates, &captures) {
-		return captures[:start], false
-	}
-
-	matchCaptures := captures[start:]
-	if !q.matchesPredicates(pat.predicates, matchCaptures, lang, source) {
-		return captures[:start], false
-	}
-
-	matchCaptures = q.applyDirectives(pat.predicates, matchCaptures, source)
-	return captures[:start+len(matchCaptures)], true
 }
 
 func (q *Query) matchStepWithRollbackPredicates(steps []QueryStep, stepIdx int, node *Node, lang *Language, source []byte, predicates []QueryPredicate, captures *[]QueryCapture) bool {

@@ -1151,15 +1151,16 @@ func TestMatchAlternationFieldShorthandRespectsField(t *testing.T) {
 	}
 
 	matches := q.Execute(tree)
-	if len(matches) != 1 {
-		t.Fatalf("matches: got %d, want 1", len(matches))
-	}
-	if len(matches[0].Captures) != 2 {
-		t.Fatalf("captures: got %d, want 2", len(matches[0].Captures))
+	if len(matches) != 2 {
+		t.Fatalf("matches: got %d, want 2", len(matches))
 	}
 
 	got := map[string]bool{}
-	for _, c := range matches[0].Captures {
+	for _, m := range matches {
+		if len(m.Captures) != 1 {
+			t.Fatalf("captures per match: got %d, want 1", len(m.Captures))
+		}
+		c := m.Captures[0]
 		got[c.Node.Text(tree.Source())] = true
 	}
 
@@ -1901,16 +1902,15 @@ func TestMatchNamedWildcardSkipsAnonymousNodes(t *testing.T) {
 	}
 
 	matches := q.Execute(tree)
-	if len(matches) != 1 || len(matches[0].Captures) == 0 {
-		t.Fatalf("captures: got %d matches / %d captures, want 1/non-zero", len(matches), func() int {
-			if len(matches) == 0 {
-				return 0
-			}
-			return len(matches[0].Captures)
-		}())
+	if len(matches) != 3 {
+		t.Fatalf("matches: got %d, want 3", len(matches))
 	}
 	foundMain := false
-	for _, c := range matches[0].Captures {
+	for _, m := range matches {
+		if len(m.Captures) != 1 {
+			t.Fatalf("captures per match: got %d, want 1", len(m.Captures))
+		}
+		c := m.Captures[0]
 		if got := c.Node.Text(tree.Source()); got == "func" {
 			t.Fatalf("named wildcard matched anonymous token %q", got)
 		}
@@ -2084,6 +2084,201 @@ func TestMatchQuantifierPlusRequiresAtLeastOne(t *testing.T) {
 	matches := q.Execute(tree)
 	if len(matches) != 0 {
 		t.Fatalf("matches: got %d, want 0", len(matches))
+	}
+}
+
+func TestMatchRootQuantifierGroupsAdjacentSiblings(t *testing.T) {
+	lang := queryTestLanguage()
+	source := []byte("a b 1 c")
+	id0 := leaf(Symbol(1), true, 0, 1)
+	id1 := leaf(Symbol(1), true, 2, 3)
+	num := leaf(Symbol(2), true, 4, 5)
+	id2 := leaf(Symbol(1), true, 6, 7)
+	program := parent(Symbol(7), true, []*Node{id0, id1, num, id2}, []FieldID{0, 0, 0, 0})
+	tree := NewTree(program, source, lang)
+
+	q, err := NewQuery(`(identifier)+ @id`, lang)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	assertRootQuantifierGroups := func(t *testing.T, matches []QueryMatch) {
+		t.Helper()
+		if len(matches) != 2 {
+			t.Fatalf("matches: got %d, want 2", len(matches))
+		}
+		if len(matches[0].Captures) != 2 {
+			t.Fatalf("match[0] captures: got %d, want 2", len(matches[0].Captures))
+		}
+		if got := matches[0].Captures[0].Node.Text(source); got != "a" {
+			t.Fatalf("match[0] capture[0]: got %q, want %q", got, "a")
+		}
+		if got := matches[0].Captures[1].Node.Text(source); got != "b" {
+			t.Fatalf("match[0] capture[1]: got %q, want %q", got, "b")
+		}
+		if len(matches[1].Captures) != 1 {
+			t.Fatalf("match[1] captures: got %d, want 1", len(matches[1].Captures))
+		}
+		if got := matches[1].Captures[0].Node.Text(source); got != "c" {
+			t.Fatalf("match[1] capture[0]: got %q, want %q", got, "c")
+		}
+	}
+
+	assertRootQuantifierGroups(t, q.Execute(tree))
+	assertRootQuantifierGroups(t, q.executeNodeIntoBuffer(tree.RootNode(), lang, source, &queryExecBuffer{}))
+}
+
+func TestMatchRootStarEmitsEmptyMatchesBeforeRunEnd(t *testing.T) {
+	lang := queryTestLanguage()
+	source := []byte("a b 1 c")
+	id0 := leaf(Symbol(1), true, 0, 1)
+	id1 := leaf(Symbol(1), true, 2, 3)
+	num := leaf(Symbol(2), true, 4, 5)
+	id2 := leaf(Symbol(1), true, 6, 7)
+	program := parent(Symbol(7), true, []*Node{id0, id1, num, id2}, []FieldID{0, 0, 0, 0})
+	tree := NewTree(program, source, lang)
+
+	q, err := NewQuery(`(identifier)* @id`, lang)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	assertRootStarMatches := func(t *testing.T, matches []QueryMatch) {
+		t.Helper()
+		want := [][]string{
+			nil,
+			nil,
+			nil,
+			{"a", "b"},
+			nil,
+			nil,
+			{"c"},
+		}
+		if len(matches) != len(want) {
+			t.Fatalf("matches: got %d, want %d", len(matches), len(want))
+		}
+		for i, wantCaptures := range want {
+			if len(matches[i].Captures) != len(wantCaptures) {
+				t.Fatalf("match[%d] captures: got %d, want %d", i, len(matches[i].Captures), len(wantCaptures))
+			}
+			for j, wantText := range wantCaptures {
+				if got := matches[i].Captures[j].Node.Text(source); got != wantText {
+					t.Fatalf("match[%d] capture[%d]: got %q, want %q", i, j, got, wantText)
+				}
+			}
+		}
+	}
+
+	assertRootStarMatches(t, q.Execute(tree))
+	assertRootStarMatches(t, q.executeNodeIntoBuffer(tree.RootNode(), lang, source, &queryExecBuffer{}))
+}
+
+func TestMatchNamedNodeDoesNotMatchAnonymousTokenWithSameName(t *testing.T) {
+	lang := &Language{
+		Name:       "test_query_name_collision",
+		TokenCount: 2,
+		SymbolNames: []string{
+			"",
+			"module",
+			"module",
+			"module_id",
+			"source",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "", Visible: false, Named: false},
+			{Name: "module", Visible: true, Named: false},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "module_id", Visible: true, Named: true},
+			{Name: "source", Visible: true, Named: true},
+		},
+	}
+	source := []byte("module Main")
+	keyword := leaf(Symbol(1), false, 0, 6)
+	moduleID := leaf(Symbol(3), true, 7, 11)
+	moduleNode := parent(Symbol(2), true, []*Node{moduleID}, []FieldID{0})
+	root := parent(Symbol(4), true, []*Node{keyword, moduleNode}, []FieldID{0, 0})
+	tree := NewTree(root, source, lang)
+
+	nodeQuery, err := NewQuery(`(module (module_id) @id)`, lang)
+	if err != nil {
+		t.Fatalf("node query parse error: %v", err)
+	}
+	nodeMatches := nodeQuery.Execute(tree)
+	if len(nodeMatches) != 1 {
+		t.Fatalf("node matches: got %d, want 1", len(nodeMatches))
+	}
+	if got := nodeMatches[0].Captures[0].Node.Text(source); got != "Main" {
+		t.Fatalf("node capture text: got %q, want %q", got, "Main")
+	}
+
+	tokenQuery, err := NewQuery(`"module" @kw`, lang)
+	if err != nil {
+		t.Fatalf("token query parse error: %v", err)
+	}
+	tokenMatches := tokenQuery.Execute(tree)
+	if len(tokenMatches) != 1 {
+		t.Fatalf("token matches: got %d, want 1", len(tokenMatches))
+	}
+	if got := tokenMatches[0].Captures[0].Node.Text(source); got != "module" {
+		t.Fatalf("token capture text: got %q, want %q", got, "module")
+	}
+}
+
+func TestMatchChildQuantifierUsesFirstContiguousNamedRun(t *testing.T) {
+	lang := queryTestLanguage()
+	source := []byte("a b 1 c")
+	id0 := leaf(Symbol(1), true, 0, 1)
+	id1 := leaf(Symbol(1), true, 2, 3)
+	num := leaf(Symbol(2), true, 4, 5)
+	id2 := leaf(Symbol(1), true, 6, 7)
+	program := parent(Symbol(7), true, []*Node{id0, id1, num, id2}, []FieldID{0, 0, 0, 0})
+	tree := NewTree(program, source, lang)
+
+	q, err := NewQuery(`(program (identifier)+ @id)`, lang)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	matches := q.Execute(tree)
+	if len(matches) != 1 {
+		t.Fatalf("matches: got %d, want 1", len(matches))
+	}
+	if len(matches[0].Captures) != 2 {
+		t.Fatalf("captures: got %d, want 2", len(matches[0].Captures))
+	}
+	if got := matches[0].Captures[0].Node.Text(source); got != "a" {
+		t.Fatalf("capture[0]: got %q, want %q", got, "a")
+	}
+	if got := matches[0].Captures[1].Node.Text(source); got != "b" {
+		t.Fatalf("capture[1]: got %q, want %q", got, "b")
+	}
+}
+
+func TestMatchChildQuantifierStopsAtAnonymousSiblingAfterRunStarts(t *testing.T) {
+	lang := queryTestLanguage()
+	source := []byte("a,b,c")
+	id0 := leaf(Symbol(1), true, 0, 1)
+	comma0 := leaf(Symbol(11), false, 1, 2)
+	id1 := leaf(Symbol(1), true, 2, 3)
+	comma1 := leaf(Symbol(11), false, 3, 4)
+	id2 := leaf(Symbol(1), true, 4, 5)
+	program := parent(Symbol(7), true, []*Node{id0, comma0, id1, comma1, id2}, []FieldID{0, 0, 0, 0, 0})
+	tree := NewTree(program, source, lang)
+
+	q, err := NewQuery(`(program (identifier)+ @id)`, lang)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	matches := q.Execute(tree)
+	if len(matches) != 1 {
+		t.Fatalf("matches: got %d, want 1", len(matches))
+	}
+	if len(matches[0].Captures) != 1 {
+		t.Fatalf("captures: got %d, want 1", len(matches[0].Captures))
+	}
+	if got := matches[0].Captures[0].Node.Text(source); got != "a" {
+		t.Fatalf("capture[0]: got %q, want %q", got, "a")
 	}
 }
 
@@ -2353,6 +2548,40 @@ func TestQueryCursorNextCapture(t *testing.T) {
 	}
 	if got[0] != "main" || got[1] != "42" {
 		t.Fatalf("cursor capture texts: got %v, want [main 42]", got)
+	}
+}
+
+func TestQueryChildRepetitionMatchesPostorder(t *testing.T) {
+	lang := queryTestLanguage()
+	source := []byte("a b c")
+	outerA := leaf(Symbol(1), true, 0, 1)
+	outerB := leaf(Symbol(1), true, 2, 3)
+	innerC := leaf(Symbol(1), true, 4, 5)
+	innerBlock := parent(Symbol(14), true, []*Node{innerC}, []FieldID{0})
+	outerBlock := parent(Symbol(14), true, []*Node{outerA, outerB, innerBlock}, []FieldID{0, 0, 0})
+	program := parent(Symbol(7), true, []*Node{outerBlock}, []FieldID{0})
+	tree := NewTree(program, source, lang)
+
+	q, err := NewQuery(`(block (identifier)+ @id)`, lang)
+	if err != nil {
+		t.Fatalf("parse query: %v", err)
+	}
+	matches := q.Execute(tree)
+	if len(matches) != 2 {
+		t.Fatalf("matches: got %d, want 2", len(matches))
+	}
+
+	got := make([][]string, len(matches))
+	for i, match := range matches {
+		for _, capture := range match.Captures {
+			got[i] = append(got[i], capture.Node.Text(source))
+		}
+	}
+	if got[0][0] != "c" {
+		t.Fatalf("first match captures = %v, want nested [c] first", got)
+	}
+	if len(got[1]) != 2 || got[1][0] != "a" || got[1][1] != "b" {
+		t.Fatalf("second match captures = %v, want outer [a b] second", got)
 	}
 }
 

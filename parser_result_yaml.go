@@ -216,7 +216,12 @@ func yamlWrapDocumentBlockCollections(root *Node, lang *Language) {
 		if blockNode == nil {
 			continue
 		}
+		blockNode.startByte = child.startByte
+		blockNode.startPoint = child.startPoint
+		blockNode.endByte = doc.endByte
+		blockNode.endPoint = doc.endPoint
 		replaceNodeChildrenUnfielded(doc, cloneNodeSliceInArena(doc.ownerArena, []*Node{blockNode}))
+		doc.setHasError(false)
 	}
 }
 
