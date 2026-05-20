@@ -1574,6 +1574,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		parseRuntime.PendingParentDropped = arena.pendingParentDropped
 		parseRuntime.PendingParentsFlattened = arena.pendingParentsFlattened
 		parseRuntime.PendingChildRefsFlattened = arena.pendingChildRefsFlattened
+		parseRuntime.PendingChildEntriesAllocated = arena.pendingChildEntriesAllocated
+		parseRuntime.PendingChildEntryCapacity = arena.pendingChildEntryCapacity()
+		parseRuntime.PendingChildEntryWaste = arena.pendingChildEntryWaste()
 		parseRuntime.PendingParentCandidates = arena.pendingParentCandidates
 		parseRuntime.PendingParentRejectedEmpty = arena.pendingParentRejectedEmpty
 		parseRuntime.PendingParentRejectedChildLimit = arena.pendingParentRejectedChildLimit

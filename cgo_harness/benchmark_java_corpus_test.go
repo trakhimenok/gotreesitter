@@ -320,6 +320,9 @@ type javaRuntimeStats struct {
 	pendingParentDropped      uint64
 	pendingParentFlattened    uint64
 	pendingChildRefsFlattened uint64
+	pendingChildEntriesAlloc  uint64
+	pendingChildEntryCapacity uint64
+	pendingChildEntryWaste    uint64
 	pendingParentCandidates   uint64
 	pendingParentRejects      gotreesitter.PendingParentRejectStats
 	pendingParentFieldRejects gotreesitter.PendingParentFieldRejectStats
@@ -577,6 +580,9 @@ func (s *javaRuntimeStats) add(rt gotreesitter.ParseRuntime) {
 	s.pendingParentDropped += rt.PendingParentDropped
 	s.pendingParentFlattened += rt.PendingParentsFlattened
 	s.pendingChildRefsFlattened += rt.PendingChildRefsFlattened
+	s.pendingChildEntriesAlloc += rt.PendingChildEntriesAllocated
+	s.pendingChildEntryCapacity += rt.PendingChildEntryCapacity
+	s.pendingChildEntryWaste += rt.PendingChildEntryWaste
 	s.pendingParentCandidates += rt.PendingParentCandidates
 	if rt.MaxStacksSeen > s.maxStacksSeen {
 		s.maxStacksSeen = rt.MaxStacksSeen
@@ -597,7 +603,7 @@ func (s *javaRuntimeStats) add(rt gotreesitter.ParseRuntime) {
 
 func (s javaRuntimeStats) summary() string {
 	return fmt.Sprintf(
-		"tokens=%d nodes=%d parent_alloc=%d parent_retained=%d parent_dropped_same_token=%d leaf_alloc=%d leaf_retained=%d leaf_dropped_same_token=%d transient_child_slices_alloc=%d transient_child_slices_materialized=%d transient_child_ptrs_alloc=%d transient_child_ptrs_materialized=%d transient_parent_alloc=%d transient_parent_materialized=%d transient_parent_dropped=%d gss_alloc=%d gss_retained=%d gss_dropped_same_token=%d single_gss=%d multi_gss=%d single_iters=%d multi_iters=%d merge_in=%d merge_out=%d merge_slots=%d global_cull_in=%d global_cull_out=%d pending_created=%d pending_materialized=%d pending_materialized_parent=%d pending_materialized_parent_reject_fields=%d pending_materialized_field_hidden_child=%d pending_materialized_field_hidden_child_plain=%d pending_materialized_field_hidden_child_with_fields=%d pending_materialized_field_all_visible_direct=%d pending_dropped=%d pending_flattened=%d pending_child_refs_flattened=%d pending_candidates=%d max_stacks=%d max_arena_bytes=%d max_scratch_bytes=%d max_gss_bytes=%d max_entry_scratch_bytes=%d",
+		"tokens=%d nodes=%d parent_alloc=%d parent_retained=%d parent_dropped_same_token=%d leaf_alloc=%d leaf_retained=%d leaf_dropped_same_token=%d transient_child_slices_alloc=%d transient_child_slices_materialized=%d transient_child_ptrs_alloc=%d transient_child_ptrs_materialized=%d transient_parent_alloc=%d transient_parent_materialized=%d transient_parent_dropped=%d gss_alloc=%d gss_retained=%d gss_dropped_same_token=%d single_gss=%d multi_gss=%d single_iters=%d multi_iters=%d merge_in=%d merge_out=%d merge_slots=%d global_cull_in=%d global_cull_out=%d pending_created=%d pending_materialized=%d pending_materialized_parent=%d pending_materialized_parent_reject_fields=%d pending_materialized_field_hidden_child=%d pending_materialized_field_hidden_child_plain=%d pending_materialized_field_hidden_child_with_fields=%d pending_materialized_field_all_visible_direct=%d pending_dropped=%d pending_flattened=%d pending_child_refs_flattened=%d pending_child_entries=%d pending_child_entry_capacity=%d pending_child_entry_waste=%d pending_candidates=%d max_stacks=%d max_arena_bytes=%d max_scratch_bytes=%d max_gss_bytes=%d max_entry_scratch_bytes=%d",
 		s.tokensConsumed,
 		s.nodesAllocated,
 		s.parentNodesAllocated,
@@ -636,6 +642,9 @@ func (s javaRuntimeStats) summary() string {
 		s.pendingParentDropped,
 		s.pendingParentFlattened,
 		s.pendingChildRefsFlattened,
+		s.pendingChildEntriesAlloc,
+		s.pendingChildEntryCapacity,
+		s.pendingChildEntryWaste,
 		s.pendingParentCandidates,
 		s.maxStacksSeen,
 		s.maxArenaBytesAllocated,
@@ -952,6 +961,9 @@ func benchmarkJavaCorpusGoTreeSitter(b *testing.B, mode javaParseMode) {
 		b.ReportMetric(float64(runtime.pendingParentDropped)/tokens, "pending_parent_dropped/token")
 		b.ReportMetric(float64(runtime.pendingParentFlattened)/tokens, "pending_parent_flattened/token")
 		b.ReportMetric(float64(runtime.pendingChildRefsFlattened)/tokens, "pending_child_refs_flattened/token")
+		b.ReportMetric(float64(runtime.pendingChildEntriesAlloc)/tokens, "pending_child_entries_allocated/token")
+		b.ReportMetric(float64(runtime.pendingChildEntryCapacity)/tokens, "pending_child_entry_capacity/token")
+		b.ReportMetric(float64(runtime.pendingChildEntryWaste)/tokens, "pending_child_entry_waste/token")
 		b.ReportMetric(float64(runtime.pendingParentCandidates)/tokens, "pending_parent_candidate/token")
 	}
 }

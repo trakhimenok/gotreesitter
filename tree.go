@@ -276,6 +276,9 @@ type ParseRuntime struct {
 	PendingParentDropped                             uint64
 	PendingParentsFlattened                          uint64
 	PendingChildRefsFlattened                        uint64
+	PendingChildEntriesAllocated                     uint64
+	PendingChildEntryCapacity                        uint64
+	PendingChildEntryWaste                           uint64
 	PendingParentCandidates                          uint64
 	PendingParentRejectedEmpty                       uint64
 	PendingParentRejectedChildLimit                  uint64
@@ -356,6 +359,9 @@ type ArenaBreakdown struct {
 	CompactFullLeafBytesAllocated   int64
 	PendingParentBytesAllocated     int64
 	PendingChildEntryBytesAllocated int64
+	PendingChildEntriesAllocated    uint64
+	PendingChildEntryCapacity       uint64
+	PendingChildEntryWaste          uint64
 	ChildSliceBytesAllocated        int64
 	FieldIDBytesAllocated           int64
 	FieldSourceBytesAllocated       int64

@@ -133,6 +133,7 @@ type nodeArena struct {
 	pendingParentDropped                             uint64
 	pendingParentsFlattened                          uint64
 	pendingChildRefsFlattened                        uint64
+	pendingChildEntriesAllocated                     uint64
 	pendingParentCandidates                          uint64
 	pendingParentRejectedEmpty                       uint64
 	pendingParentRejectedChildLimit                  uint64
@@ -703,6 +704,7 @@ func (a *nodeArena) reset() {
 	a.pendingParentDropped = 0
 	a.pendingParentsFlattened = 0
 	a.pendingChildRefsFlattened = 0
+	a.pendingChildEntriesAllocated = 0
 	a.pendingParentCandidates = 0
 	a.pendingParentRejectedEmpty = 0
 	a.pendingParentRejectedChildLimit = 0
@@ -1018,6 +1020,7 @@ func (a *nodeArena) allocPendingChildEntries(n int) []stackEntry {
 	if a == nil {
 		return make([]stackEntry, n)
 	}
+	a.pendingChildEntriesAllocated += uint64(n)
 	if len(a.pendingChildEntrySlabs) == 0 {
 		capacity := max(defaultPendingChildEntrySlabCap(a.class), n)
 		a.pendingChildEntrySlabs = append(a.pendingChildEntrySlabs, pendingChildEntrySlab{data: make([]stackEntry, capacity)})
@@ -1397,6 +1400,25 @@ func (a *nodeArena) pendingChildEntryBytesAllocated() int64 {
 	return total
 }
 
+func (a *nodeArena) pendingChildEntryCapacity() uint64 {
+	if a == nil {
+		return 0
+	}
+	var total uint64
+	for i := range a.pendingChildEntrySlabs {
+		total += uint64(len(a.pendingChildEntrySlabs[i].data))
+	}
+	return total
+}
+
+func (a *nodeArena) pendingChildEntryWaste() uint64 {
+	capacity := a.pendingChildEntryCapacity()
+	if capacity < a.pendingChildEntriesAllocated {
+		return 0
+	}
+	return capacity - a.pendingChildEntriesAllocated
+}
+
 func (a *nodeArena) compactCheckpointLeafBytesAllocated() int64 {
 	if a == nil {
 		return 0
@@ -1771,6 +1793,9 @@ func (a *nodeArena) collectArenaBreakdown() *ArenaBreakdown {
 		CompactFullLeafBytesAllocated:     a.compactFullLeafBytesAllocated(),
 		PendingParentBytesAllocated:       a.pendingParentBytesAllocated(),
 		PendingChildEntryBytesAllocated:   a.pendingChildEntryBytesAllocated(),
+		PendingChildEntriesAllocated:      a.pendingChildEntriesAllocated,
+		PendingChildEntryCapacity:         a.pendingChildEntryCapacity(),
+		PendingChildEntryWaste:            a.pendingChildEntryWaste(),
 		ChildSliceBytesAllocated:          a.childSliceBytesAllocated(),
 		FieldIDBytesAllocated:             a.fieldIDBytesAllocated(),
 		FieldSourceBytesAllocated:         a.fieldSourceBytesAllocated(),

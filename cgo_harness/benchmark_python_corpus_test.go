@@ -147,6 +147,9 @@ type pythonRuntimeBenchStats struct {
 	pendingParentDropped                 uint64
 	pendingParentsFlattened              uint64
 	pendingChildRefsFlattened            uint64
+	pendingChildEntriesAllocated         uint64
+	pendingChildEntryCapacity            uint64
+	pendingChildEntryWaste               uint64
 	pendingParentCandidates              uint64
 	pendingParentRejects                 pythonPendingParentRejectStats
 	preMatFieldRejectCandidates          uint64
@@ -457,6 +460,9 @@ func (s *pythonRuntimeBenchStats) add(rt gotreesitter.ParseRuntime, breakdown go
 	s.pendingParentDropped += rt.PendingParentDropped
 	s.pendingParentsFlattened += rt.PendingParentsFlattened
 	s.pendingChildRefsFlattened += rt.PendingChildRefsFlattened
+	s.pendingChildEntriesAllocated += rt.PendingChildEntriesAllocated
+	s.pendingChildEntryCapacity += rt.PendingChildEntryCapacity
+	s.pendingChildEntryWaste += rt.PendingChildEntryWaste
 	s.pendingParentCandidates += rt.PendingParentCandidates
 	s.preMatFieldRejectCandidates += rt.PreMaterializationFieldRejectCandidates
 	s.preMatFieldRejectSameKey += rt.PreMaterializationFieldRejectSameKeyCandidates
@@ -854,6 +860,9 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 		b.ReportMetric(float64(s.pendingParentDropped)/tokens, "pending_parent_dropped/token")
 		b.ReportMetric(float64(s.pendingParentsFlattened)/tokens, "pending_parent_flattened/token")
 		b.ReportMetric(float64(s.pendingChildRefsFlattened)/tokens, "pending_child_refs_flattened/token")
+		b.ReportMetric(float64(s.pendingChildEntriesAllocated)/tokens, "pending_child_entries_allocated/token")
+		b.ReportMetric(float64(s.pendingChildEntryCapacity)/tokens, "pending_child_entry_capacity/token")
+		b.ReportMetric(float64(s.pendingChildEntryWaste)/tokens, "pending_child_entry_waste/token")
 		b.ReportMetric(float64(s.pendingParentCandidates)/tokens, "pending_parent_candidate/token")
 		if s.preMatFieldRejectCandidates != 0 {
 			b.ReportMetric(float64(s.preMatFieldRejectCandidates)/tokens, "pre_materialization_field_reject_candidate/token")

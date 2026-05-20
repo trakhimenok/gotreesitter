@@ -336,6 +336,26 @@ func TestArenaByteBreakdownMatchesAllocatedBytes(t *testing.T) {
 	}
 }
 
+func TestPendingChildEntryBreakdownReportsUsedCapacityAndWaste(t *testing.T) {
+	arena := newNodeArena(arenaClassIncremental)
+	first := arena.allocPendingChildEntries(3)
+	second := arena.allocPendingChildEntries(5)
+	if len(first) != 3 || len(second) != 5 {
+		t.Fatalf("pending child entries len = (%d,%d), want (3,5)", len(first), len(second))
+	}
+
+	breakdown := arena.collectArenaBreakdown()
+	if got, want := breakdown.PendingChildEntriesAllocated, uint64(8); got != want {
+		t.Fatalf("PendingChildEntriesAllocated = %d, want %d", got, want)
+	}
+	if breakdown.PendingChildEntryCapacity < breakdown.PendingChildEntriesAllocated {
+		t.Fatalf("PendingChildEntryCapacity = %d, allocated = %d", breakdown.PendingChildEntryCapacity, breakdown.PendingChildEntriesAllocated)
+	}
+	if got, want := breakdown.PendingChildEntryWaste, breakdown.PendingChildEntryCapacity-breakdown.PendingChildEntriesAllocated; got != want {
+		t.Fatalf("PendingChildEntryWaste = %d, want %d", got, want)
+	}
+}
+
 // TestArenaNodeSlabClearsWrittenSlotsOnReset verifies that reset() zeros every
 // node slot written during the parse. Node contains pointer fields (children,
 // parent, ownerArena), and stale pointers in retained arena slabs prevent GC
