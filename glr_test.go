@@ -623,6 +623,62 @@ func TestTreeCursorRangeSearchUsesLazyFinalChildHeaders(t *testing.T) {
 	}
 }
 
+func TestDescendantRangeUsesLazyFinalChildHeaders(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	arena.finalChildRefs = true
+	children := make([]stackEntry, 3)
+	for i := range children {
+		leaf := newCompactFullLeafInArena(arena, 1, true, uint32(i), uint32(i+1), Point{Column: uint32(i)}, Point{Column: uint32(i + 1)})
+		leaf.parseState = StateID(10 + i)
+		children[i] = newStackEntryCompactFullLeaf(leaf.parseState, leaf)
+	}
+	parent := newPendingParentInArena(arena, 2, true, 4, children, 0, 3, Point{}, Point{Column: 3}, false)
+	parent.parseState = 15
+
+	entry := newStackEntryPendingParent(parent.parseState, parent)
+	root := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree)
+	if root == nil {
+		t.Fatal("root = nil")
+	}
+	if got := root.DescendantForByteRange(1, 2); got == nil || got.StartByte() != 1 {
+		t.Fatalf("DescendantForByteRange = %#v, want middle child", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 1 {
+		t.Fatalf("final child ref single children after byte descendant = %d, want 1", got)
+	}
+	if got := arena.finalChildRefsMaterializedParents; got != 0 {
+		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
+	}
+}
+
+func TestDescendantPointRangeUsesLazyFinalChildHeaders(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	arena.finalChildRefs = true
+	children := make([]stackEntry, 3)
+	for i := range children {
+		leaf := newCompactFullLeafInArena(arena, 1, true, uint32(i), uint32(i+1), Point{Column: uint32(i)}, Point{Column: uint32(i + 1)})
+		leaf.parseState = StateID(10 + i)
+		children[i] = newStackEntryCompactFullLeaf(leaf.parseState, leaf)
+	}
+	parent := newPendingParentInArena(arena, 2, true, 4, children, 0, 3, Point{}, Point{Column: 3}, false)
+	parent.parseState = 15
+
+	entry := newStackEntryPendingParent(parent.parseState, parent)
+	root := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree)
+	if root == nil {
+		t.Fatal("root = nil")
+	}
+	if got := root.DescendantForPointRange(Point{Column: 1}, Point{Column: 2}); got == nil || got.StartByte() != 1 {
+		t.Fatalf("DescendantForPointRange = %#v, want middle child", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 1 {
+		t.Fatalf("final child ref single children after point descendant = %d, want 1", got)
+	}
+	if got := arena.finalChildRefsMaterializedParents; got != 0 {
+		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
+	}
+}
+
 func TestTreeEditKeepsUnaffectedFinalChildRefsLazy(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
 	arena.finalChildRefs = true

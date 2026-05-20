@@ -1114,6 +1114,14 @@ func (n *Node) containsPointRange(startPoint, endPoint Point) bool {
 	return pointLessOrEqual(n.startPoint, startPoint) && pointLessOrEqual(endPoint, n.endPoint)
 }
 
+func stackEntryContainsByteRange(entry stackEntry, startByte, endByte uint32) bool {
+	return startByte >= stackEntryNodeStartByte(entry) && endByte <= stackEntryNodeEndByte(entry)
+}
+
+func stackEntryContainsPointRange(entry stackEntry, startPoint, endPoint Point) bool {
+	return pointLessOrEqual(stackEntryNodeStartPoint(entry), startPoint) && pointLessOrEqual(endPoint, stackEntryNodeEndPoint(entry))
+}
+
 func (n *Node) descendantForByteRange(startByte, endByte uint32, namedOnly bool) *Node {
 	if n == nil || endByte < startByte || !n.containsByteRange(startByte, endByte) {
 		return nil
@@ -1125,6 +1133,10 @@ func (n *Node) descendantForByteRange(startByte, endByte uint32, namedOnly bool)
 	}
 	childCount := nodeChildCountNoMaterialize(n)
 	for i := 0; i < childCount; i++ {
+		entry, ok := nodeChildEntryAtNoMaterialize(n, i)
+		if !ok || !stackEntryContainsByteRange(entry, startByte, endByte) {
+			continue
+		}
 		child := nodeChildAtForReason(n, i, materializeForParentAPI)
 		if child == nil {
 			continue
@@ -1150,6 +1162,10 @@ func (n *Node) descendantForPointRange(startPoint, endPoint Point, namedOnly boo
 	}
 	childCount := nodeChildCountNoMaterialize(n)
 	for i := 0; i < childCount; i++ {
+		entry, ok := nodeChildEntryAtNoMaterialize(n, i)
+		if !ok || !stackEntryContainsPointRange(entry, startPoint, endPoint) {
+			continue
+		}
 		child := nodeChildAtForReason(n, i, materializeForParentAPI)
 		if child == nil {
 			continue
