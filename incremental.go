@@ -19,8 +19,9 @@ type reuseCursor struct {
 	stack []reuseFrame
 	next  *Node
 
-	topLevel      []*Node
-	topLevelIndex int
+	topLevelParent *Node
+	topLevelIndex  int
+	topLevelEnd    int
 
 	cachedStart      uint32
 	cachedStartValid bool
@@ -77,21 +78,26 @@ func (c *reuseCursor) reset(oldTree *Tree, source []byte, scratch *reuseScratch)
 
 	root := oldTree.RootNode()
 	c.stack = append(c.stack, reuseFrame{node: root})
-	c.topLevel = nil
+	c.topLevelParent = nil
 	c.topLevelIndex = 0
-	if c.hasEdits && root != nil && len(root.children) > 0 {
+	c.topLevelEnd = 0
+	childCount := nodeChildCountNoMaterialize(root)
+	if c.hasEdits && root != nil && childCount > 0 {
 		firstAffected := -1
-		for i, child := range root.children {
-			if child == nil {
+		for i := 0; i < childCount; i++ {
+			entry, ok := nodeChildEntryAtNoMaterialize(root, i)
+			if !ok {
 				continue
 			}
-			if child.endByte > c.minEditAt {
+			if stackEntryNodeEndByte(entry) > c.minEditAt {
 				firstAffected = i
 				break
 			}
 		}
-		if firstAffected >= 0 && firstAffected+1 < len(root.children) {
-			c.topLevel = root.children[firstAffected+1:]
+		if firstAffected >= 0 && firstAffected+1 < childCount {
+			c.topLevelParent = root
+			c.topLevelIndex = firstAffected + 1
+			c.topLevelEnd = childCount
 		}
 	}
 	return c
@@ -111,7 +117,7 @@ func (c *reuseCursor) commitScratch(scratch *reuseScratch) {
 // Backing arrays (stack, cached) are kept to avoid re-allocation next parse.
 func (c *reuseCursor) releaseNodeRefs() {
 	c.next = nil
-	c.topLevel = nil
+	c.topLevelParent = nil
 	c.oldSource = nil
 	c.newSource = nil
 	if cap(c.stack) > 0 {
@@ -181,11 +187,11 @@ func (c *reuseCursor) candidates(start uint32) []*Node {
 }
 
 func (c *reuseCursor) collectTopLevelCandidates(start uint32) bool {
-	if c == nil || len(c.topLevel) == 0 {
+	if c == nil || c.topLevelParent == nil || c.topLevelIndex >= c.topLevelEnd {
 		return false
 	}
-	for c.topLevelIndex < len(c.topLevel) {
-		n := c.topLevel[c.topLevelIndex]
+	for c.topLevelIndex < c.topLevelEnd {
+		n := nodeChildAtForReason(c.topLevelParent, c.topLevelIndex, materializeForEdit)
 		if n == nil {
 			c.topLevelIndex++
 			continue
@@ -197,8 +203,8 @@ func (c *reuseCursor) collectTopLevelCandidates(start uint32) bool {
 		if n.startByte > start {
 			return false
 		}
-		for c.topLevelIndex < len(c.topLevel) {
-			n = c.topLevel[c.topLevelIndex]
+		for c.topLevelIndex < c.topLevelEnd {
+			n = nodeChildAtForReason(c.topLevelParent, c.topLevelIndex, materializeForEdit)
 			if n == nil {
 				c.topLevelIndex++
 				continue

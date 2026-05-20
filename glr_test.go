@@ -716,6 +716,50 @@ func TestReuseCursorWalksLazyFinalChildRefs(t *testing.T) {
 	}
 }
 
+func TestReuseCursorTopLevelUsesLazyFinalChildRefs(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	arena.finalChildRefs = true
+	left := newCompactFullLeafInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})
+	left.parseState = 11
+	right := newCompactFullLeafInArena(arena, 1, true, 1, 2, Point{Column: 1}, Point{Column: 2})
+	right.parseState = 12
+	parent := newPendingParentInArena(arena, 2, true, 4, []stackEntry{
+		newStackEntryCompactFullLeaf(left.parseState, left),
+		newStackEntryCompactFullLeaf(right.parseState, right),
+	}, 0, 2, Point{}, Point{Column: 2}, false)
+	parent.parseState = 13
+
+	entry := newStackEntryPendingParent(parent.parseState, parent)
+	root := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree)
+	if root == nil {
+		t.Fatal("root = nil")
+	}
+	oldTree := &Tree{
+		root:   root,
+		source: []byte("ab"),
+		arena:  arena,
+		edits: []InputEdit{{
+			StartByte: 0,
+		}},
+	}
+
+	var scratch reuseScratch
+	reuse := (&reuseCursor{}).reset(oldTree, []byte("ab"), &scratch)
+	if reuse == nil {
+		t.Fatal("reuse cursor reset returned nil")
+	}
+	candidates := reuse.candidates(1)
+	if len(candidates) != 1 || candidates[0].StartByte() != 1 {
+		t.Fatalf("top-level candidates = %#v, want right child at byte 1", candidates)
+	}
+	if got := arena.finalChildRefsMaterializedParents; got != 0 {
+		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 1 {
+		t.Fatalf("final child ref single children = %d, want only top-level candidate materialized", got)
+	}
+}
+
 func TestTreeEditKeepsUnaffectedFinalChildRefsLazy(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
 	arena.finalChildRefs = true
