@@ -39,6 +39,7 @@ func normalizeYAMLRecoveredRoot(root *Node, source []byte, lang *Language) {
 		}
 	}
 	yamlNormalizeRecoveredSubtrees(root, source, lang)
+	yamlWrapDocumentBlockCollections(root, lang)
 	yamlExtendExplicitDocumentRangesToLeadingComments(root, lang)
 	yamlUnwrapCommentLedSequenceDocuments(root, lang)
 	root.startByte = 0
@@ -196,6 +197,39 @@ func yamlWrapYAMLCollection(name string, children []*Node, endByte uint32, endPo
 
 func yamlWrapYAMLBlockNode(children []*Node, endByte uint32, endPoint Point, arena *nodeArena, lang *Language) *Node {
 	return yamlWrapYAMLNode("block_node", children, endByte, endPoint, arena, lang)
+}
+
+func yamlWrapDocumentBlockCollections(root *Node, lang *Language) {
+	if root == nil || lang == nil || root.Type(lang) != "stream" {
+		return
+	}
+	for _, doc := range root.children {
+		if doc == nil || doc.Type(lang) != "document" || len(doc.children) != 1 {
+			continue
+		}
+		child := doc.children[0]
+		if child == nil {
+			continue
+		}
+		switch child.Type(lang) {
+		case "block_mapping":
+		default:
+			continue
+		}
+		blockNode := yamlWrapYAMLBlockNode([]*Node{child}, doc.endByte, doc.endPoint, doc.ownerArena, lang)
+		if blockNode == nil {
+			continue
+		}
+		blockNode.startByte = child.startByte
+		blockNode.startPoint = child.startPoint
+		blockNode.endByte = doc.endByte
+		blockNode.endPoint = doc.endPoint
+		doc.children = cloneNodeSliceInArena(doc.ownerArena, []*Node{blockNode})
+		doc.fieldIDs = nil
+		doc.fieldSources = nil
+		doc.setHasError(false)
+		populateParentNode(doc, doc.children)
+	}
 }
 
 func yamlWrapPlainScalarFlowNodes(node *Node, lang *Language) {

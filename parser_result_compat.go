@@ -36,7 +36,9 @@ var resultCompatibilityStrutLanguageNames = []string{
 	"hcl",
 	"html",
 	"ini",
+	"java",
 	"javascript",
+	"kotlin",
 	"lua",
 	"make",
 	"nginx",
@@ -95,8 +97,12 @@ func resultCompatibilityStrutForLanguage(name string) resultCompatibilityStrut {
 		return normalizeHTMLResultStrut
 	case "ini":
 		return normalizeIniResultStrut
+	case "java":
+		return normalizeJavaResultStrut
 	case "javascript":
 		return normalizeJavaScriptResultStrut
+	case "kotlin":
+		return normalizeKotlinResultStrut
 	case "lua":
 		return normalizeLuaResultStrut
 	case "make":
@@ -232,8 +238,16 @@ func normalizeIniResultStrut(ctx resultCompatibilityContext) {
 	normalizeIniSectionStarts(ctx.root, ctx.lang)
 }
 
+func normalizeJavaResultStrut(ctx resultCompatibilityContext) {
+	normalizeJavaCompatibility(ctx.root, ctx.source, ctx.lang)
+}
+
 func normalizeJavaScriptResultStrut(ctx resultCompatibilityContext) {
 	normalizeJavaScriptCompatibility(ctx.root, ctx.source, ctx.lang)
+}
+
+func normalizeKotlinResultStrut(ctx resultCompatibilityContext) {
+	normalizeKotlinCompatibility(ctx.root, ctx.source, ctx.lang)
 }
 
 func normalizeLuaResultStrut(ctx resultCompatibilityContext) {
@@ -267,6 +281,7 @@ func normalizePHPResultStrut(ctx resultCompatibilityContext) {
 
 func normalizePowerShellResultStrut(ctx resultCompatibilityContext) {
 	normalizePowerShellProgramShape(ctx.root, ctx.source, ctx.lang)
+	normalizePowerShellAssignmentOperatorTokens(ctx.root, ctx.source, ctx.lang)
 }
 
 func normalizePugResultStrut(ctx resultCompatibilityContext) {

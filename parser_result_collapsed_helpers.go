@@ -13,13 +13,19 @@ func normalizeCollapsedNamedLeafChildrenWithStats(root *Node, lang *Language, pa
 	if root == nil || lang == nil {
 		return counters
 	}
-	parentSym, ok := symbolByName(lang, parentName)
+	parentSym, ok := lang.symbolByNameAndNamed(parentName, true)
+	if !ok {
+		parentSym, ok = symbolByName(lang, parentName)
+	}
 	if !ok {
 		return counters
 	}
-	childSym, childOk := symbolByName(lang, childName)
+	childSym, childOk := lang.symbolByNameAndNamed(childName, false)
 	if !childOk {
-		return counters
+		childSym, childOk = symbolByName(lang, childName)
+		if !childOk {
+			return counters
+		}
 	}
 	childNamed := false
 	if int(childSym) < len(lang.SymbolMetadata) {
@@ -33,6 +39,8 @@ func normalizeCollapsedNamedLeafChildrenWithStats(root *Node, lang *Language, pa
 		counters.nodesVisited++
 		if n.symbol == parentSym && len(n.children) == 0 {
 			child := newLeafNodeInArena(n.ownerArena, childSym, childNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
+			child.parent = n
+			child.childIndex = 0
 			n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
 			counters.nodesRewritten++
 		}

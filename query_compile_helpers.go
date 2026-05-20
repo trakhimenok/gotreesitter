@@ -117,12 +117,12 @@ func (p *queryParser) resolveSymbol(name string) (Symbol, bool, error) {
 		return 0, false, nil
 	}
 
-	sym, ok := p.lang.SymbolByName(name)
+	sym, ok := p.lang.symbolByNamePreferNamed(name)
 	if !ok {
 		// Some highlight queries use supertype-like names such as
 		// "pattern/wildcard". Fall back to the rightmost segment when needed.
 		if idx := strings.LastIndex(name, "/"); idx >= 0 && idx+1 < len(name) {
-			if fallback, fallbackOK := p.lang.SymbolByName(name[idx+1:]); fallbackOK {
+			if fallback, fallbackOK := p.lang.symbolByNamePreferNamed(name[idx+1:]); fallbackOK {
 				sym = fallback
 				ok = true
 			}

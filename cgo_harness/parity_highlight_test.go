@@ -4,6 +4,7 @@ package cgoharness
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -132,6 +133,9 @@ func collectCHighlightCaptures(t *testing.T, cLang *sitter.Language, cTree *sitt
 		if m == nil {
 			break
 		}
+		if !cQueryMatchSatisfiesGeneralPredicates(m, cQuery, source) {
+			continue
+		}
 		for _, c := range m.Captures {
 			name := ""
 			if int(c.Index) < len(captureNames) {
@@ -148,6 +152,132 @@ func collectCHighlightCaptures(t *testing.T, cLang *sitter.Language, cTree *sitt
 		}
 	}
 	return deduplicateCaptures(caps)
+}
+
+func cQueryMatchSatisfiesGeneralPredicates(m *sitter.QueryMatch, query *sitter.Query, source []byte) bool {
+	if m == nil || query == nil {
+		return true
+	}
+	for _, pred := range query.GeneralPredicates(m.PatternIndex) {
+		switch pred.Operator {
+		case "lua-match?":
+			if len(pred.Args) != 2 || pred.Args[0].CaptureId == nil || pred.Args[1].String == nil {
+				return false
+			}
+			text, ok := cFirstCaptureTextForID(m, *pred.Args[0].CaptureId, source)
+			if !ok {
+				return false
+			}
+			rx, err := compileHighlightLuaPattern(*pred.Args[1].String)
+			if err != nil || !rx.MatchString(text) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func cFirstCaptureTextForID(m *sitter.QueryMatch, captureID uint, source []byte) (string, bool) {
+	for _, c := range m.Captures {
+		if uint(c.Index) != captureID {
+			continue
+		}
+		start := uint32(c.Node.StartByte())
+		end := uint32(c.Node.EndByte())
+		if start > end || end > uint32(len(source)) {
+			return "", false
+		}
+		return string(source[start:end]), true
+	}
+	return "", false
+}
+
+func compileHighlightLuaPattern(pattern string) (*regexp.Regexp, error) {
+	var out strings.Builder
+	inClass := false
+
+	writeLuaClass := func(ch byte, inClass bool) bool {
+		if inClass {
+			switch ch {
+			case 'a':
+				out.WriteString("A-Za-z")
+			case 'c':
+				out.WriteString("[:cntrl:]")
+			case 'd':
+				out.WriteString("0-9")
+			case 'l':
+				out.WriteString("a-z")
+			case 'p':
+				out.WriteString("[:punct:]")
+			case 's':
+				out.WriteString("\\s")
+			case 'u':
+				out.WriteString("A-Z")
+			case 'w':
+				out.WriteString("A-Za-z0-9")
+			case 'x':
+				out.WriteString("A-Fa-f0-9")
+			case 'z':
+				out.WriteString("\\x00")
+			default:
+				return false
+			}
+			return true
+		}
+
+		switch ch {
+		case 'a':
+			out.WriteString("[A-Za-z]")
+		case 'c':
+			out.WriteString("[[:cntrl:]]")
+		case 'd':
+			out.WriteString("[0-9]")
+		case 'l':
+			out.WriteString("[a-z]")
+		case 'p':
+			out.WriteString("[[:punct:]]")
+		case 's':
+			out.WriteString("\\s")
+		case 'u':
+			out.WriteString("[A-Z]")
+		case 'w':
+			out.WriteString("[A-Za-z0-9]")
+		case 'x':
+			out.WriteString("[A-Fa-f0-9]")
+		case 'z':
+			out.WriteString("\\x00")
+		default:
+			return false
+		}
+		return true
+	}
+
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		switch ch {
+		case '[':
+			inClass = true
+			out.WriteByte(ch)
+		case ']':
+			inClass = false
+			out.WriteByte(ch)
+		case '%':
+			if i+1 >= len(pattern) {
+				out.WriteString("%")
+				continue
+			}
+			i++
+			next := pattern[i]
+			if writeLuaClass(next, inClass) {
+				continue
+			}
+			out.WriteString(regexp.QuoteMeta(string(next)))
+		default:
+			out.WriteByte(ch)
+		}
+	}
+
+	return regexp.Compile(out.String())
 }
 
 // deduplicateCaptures sorts captures by (start, end, name) and removes exact duplicates.
