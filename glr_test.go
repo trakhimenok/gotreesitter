@@ -369,18 +369,23 @@ func TestQueryMatcherSkipsNonCandidateLazyFinalChildRefs(t *testing.T) {
 func TestAlternativeFieldMatchesUsesLazyFinalChildRefs(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
 	arena.finalChildRefs = true
+	other := newCompactFullLeafInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})
+	other.parseState = 13
 	leaf := newCompactFullLeafInArena(arena, 1, true, 2, 3, Point{Column: 2}, Point{Column: 3})
-	leaf.parseState = 13
-	parent := newPendingParentInArena(arena, 2, true, 5, []stackEntry{newStackEntryCompactFullLeaf(leaf.parseState, leaf)}, 2, 3, Point{Column: 2}, Point{Column: 3}, false)
-	parent.parseState = 14
+	leaf.parseState = 14
+	parent := newPendingParentInArena(arena, 2, true, 5, []stackEntry{
+		newStackEntryCompactFullLeaf(other.parseState, other),
+		newStackEntryCompactFullLeaf(leaf.parseState, leaf),
+	}, 0, 3, Point{}, Point{Column: 3}, false)
+	parent.parseState = 15
 
 	entry := newStackEntryPendingParent(parent.parseState, parent)
 	node := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree)
 	if node == nil {
 		t.Fatal("materialized parent = nil")
 	}
-	node.fieldIDs = []FieldID{1}
-	child := nodeChildAtForReason(node, 0, materializeForQuery)
+	node.fieldIDs = []FieldID{0, 1}
+	child := nodeChildAtForReason(node, 1, materializeForQuery)
 	if child == nil {
 		t.Fatal("nodeChildAtForReason = nil")
 	}
@@ -391,6 +396,9 @@ func TestAlternativeFieldMatchesUsesLazyFinalChildRefs(t *testing.T) {
 	}
 	if got := arena.finalChildRefsMaterializedParents; got != 0 {
 		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 1 {
+		t.Fatalf("final child ref single children materialized = %d, want 1", got)
 	}
 }
 

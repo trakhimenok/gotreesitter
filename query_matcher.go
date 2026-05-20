@@ -515,21 +515,26 @@ func (q *Query) alternativeFieldMatches(alt *alternativeSymbol, node *Node, pare
 		// Root-level field-constrained patterns (for example `field: (node)`) are
 		// matched against each candidate node and must resolve the real parent
 		// relationship at match time.
-		parent = node.Parent()
-		if parent == nil {
-			return false
-		}
-		childIdx = -1
-		childCount := nodeChildCountNoMaterialize(parent)
-		for i := 0; i < childCount; i++ {
-			child := nodeChildAtForReason(parent, i, materializeForQuery)
-			if child == node {
-				childIdx = i
-				break
+		if linkedParent, linkedIdx, ok := nodeParentLink(node); linkedParent != nil && ok && linkedIdx >= 0 {
+			parent = linkedParent
+			childIdx = linkedIdx
+		} else {
+			parent = node.Parent()
+			if parent == nil {
+				return false
 			}
-		}
-		if childIdx < 0 {
-			return false
+			childIdx = -1
+			childCount := nodeChildCountNoMaterialize(parent)
+			for i := 0; i < childCount; i++ {
+				child := nodeChildAtForReason(parent, i, materializeForQuery)
+				if child == node {
+					childIdx = i
+					break
+				}
+			}
+			if childIdx < 0 {
+				return false
+			}
 		}
 	}
 	if int(alt.field) <= 0 || int(alt.field) >= len(lang.FieldNames) {
