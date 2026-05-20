@@ -1032,8 +1032,7 @@ func (a *nodeArena) allocPendingChildEntries(n int) []stackEntry {
 	}
 	for i := a.pendingChildEntrySlabCursor; ; i++ {
 		if i >= len(a.pendingChildEntrySlabs) {
-			lastCap := len(a.pendingChildEntrySlabs[len(a.pendingChildEntrySlabs)-1].data)
-			capacity := max(lastCap*2, n)
+			capacity := nextPendingChildEntrySlabCap(a.class, n)
 			a.pendingChildEntrySlabs = append(a.pendingChildEntrySlabs, pendingChildEntrySlab{data: make([]stackEntry, capacity)})
 			a.allocatedBytes += pendingChildEntryBytesForCap(capacity)
 		}
@@ -1047,6 +1046,10 @@ func (a *nodeArena) allocPendingChildEntries(n int) []stackEntry {
 		a.pendingChildEntrySlabCursor = i
 		return slab.data[start:slab.used]
 	}
+}
+
+func nextPendingChildEntrySlabCap(class arenaClass, min int) int {
+	return max(defaultPendingChildEntrySlabCap(class), min)
 }
 
 func (a *nodeArena) allocCompactCheckpointLeaf() *compactCheckpointLeaf {
