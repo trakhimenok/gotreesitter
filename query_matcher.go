@@ -682,153 +682,216 @@ func (q *Query) matchChildStepsRecursive(
 		return true
 	}
 
-	cs := childSteps[childPos]
-	step := &steps[cs.stepIdx]
-	minCount, maxCount, ok := quantifierBounds(step.quantifier)
+	var candidateIndicesBuf [32]int
+	matcher := childStepMatcher{
+		q:                  q,
+		parent:             parent,
+		children:           children,
+		namedPosByIndex:    namedPosByIndex,
+		parentLastNamedPos: parentLastNamedPos,
+		steps:              steps,
+		childSteps:         childSteps,
+		childPos:           childPos,
+		nextChildIdx:       nextChildIdx,
+		prevHasNamed:       prevHasNamed,
+		prevLastNamedPos:   prevLastNamedPos,
+		lang:               lang,
+		source:             source,
+		predicates:         predicates,
+		captures:           captures,
+		candidateIndices:   candidateIndicesBuf[:0],
+	}
+	if !matcher.prepare() {
+		return false
+	}
+	return matcher.match()
+}
+
+type childStepMatcher struct {
+	q                  *Query
+	parent             *Node
+	children           []*Node
+	namedPosByIndex    []int
+	parentLastNamedPos int
+	steps              []QueryStep
+	childSteps         []queryChildStepInfo
+	childPos           int
+	nextChildIdx       int
+	prevHasNamed       bool
+	prevLastNamedPos   int
+	lang               *Language
+	source             []byte
+	predicates         []QueryPredicate
+	captures           *[]QueryCapture
+
+	cs               queryChildStepInfo
+	step             *QueryStep
+	minCount         int
+	maxCount         int
+	candidateIndices []int
+}
+
+type childStepNamedSpan struct {
+	hasNamed bool
+	first    int
+	last     int
+}
+
+func (m *childStepMatcher) prepare() bool {
+	m.cs = m.childSteps[m.childPos]
+	m.step = &m.steps[m.cs.stepIdx]
+	minCount, maxCount, ok := quantifierBounds(m.step.quantifier)
 	if !ok {
 		return false
 	}
 
-	var candidateIndicesBuf [32]int
-	candidateIndices := candidateIndicesBuf[:0]
 	var candidatesOK bool
-	candidateIndices, candidatesOK = q.collectChildCandidateIndices(parent, children, step, cs.field, nextChildIdx, lang, candidateIndices)
+	m.candidateIndices, candidatesOK = m.q.collectChildCandidateIndices(
+		m.parent, m.children, m.step, m.cs.field, m.nextChildIdx, m.lang, m.candidateIndices,
+	)
 	if !candidatesOK {
 		return false
 	}
 
-	if maxCount < 0 || maxCount > len(candidateIndices) {
-		maxCount = len(candidateIndices)
+	if maxCount < 0 || maxCount > len(m.candidateIndices) {
+		maxCount = len(m.candidateIndices)
 	}
-	if minCount > len(candidateIndices) {
+	if minCount > len(m.candidateIndices) {
 		return false
 	}
+	m.minCount = minCount
+	m.maxCount = maxCount
+	return true
+}
 
-	// Final child steps without match predicates intentionally aggregate
-	// structurally matching siblings into one match; predicate-bearing patterns
-	// need normal backtracking so invalid candidates do not leak captures or
-	// block later ones.
-	if !predicatesCanRejectMatch(predicates) && childPos == len(childSteps)-1 && minCount == 1 && maxCount == 1 && !step.anchorBefore && !step.anchorAfter {
-		any := false
-		checkpoint := len(*captures)
-		for _, childIdx := range candidateIndices {
-			child := children[childIdx]
-			childCheckpoint := len(*captures)
-			if !q.matchStepWithRollbackAtParentPredicates(steps, cs.stepIdx, child, parent, childIdx, lang, source, nil, captures) {
-				*captures = (*captures)[:childCheckpoint]
-				continue
-			}
-			hasNamed := false
-			firstNamedPos := -1
-			lastNamedPos := -1
-			if namedPos := namedPosByIndex[childIdx]; namedPos >= 0 {
-				hasNamed = true
-				firstNamedPos = namedPos
-				lastNamedPos = namedPos
-			}
-			if !q.stepAnchorsSatisfied(
-				step, childPos, hasNamed, firstNamedPos, lastNamedPos,
-				prevHasNamed, prevLastNamedPos, parentLastNamedPos,
-			) {
-				*captures = (*captures)[:childCheckpoint]
-				continue
-			}
-			any = true
+func (m *childStepMatcher) match() bool {
+	if m.canAggregateFinalStep() {
+		return m.matchAggregatedFinalStep()
+	}
+	return m.matchQuantifierChoices()
+}
+
+func (m *childStepMatcher) canAggregateFinalStep() bool {
+	return !predicatesCanRejectMatch(m.predicates) &&
+		m.childPos == len(m.childSteps)-1 &&
+		m.minCount == 1 &&
+		m.maxCount == 1 &&
+		!m.step.anchorBefore &&
+		!m.step.anchorAfter
+}
+
+func (m *childStepMatcher) matchAggregatedFinalStep() bool {
+	any := false
+	checkpoint := len(*m.captures)
+	for _, childIdx := range m.candidateIndices {
+		child := m.children[childIdx]
+		childCheckpoint := len(*m.captures)
+		if !m.q.matchStepWithRollbackAtParentPredicates(
+			m.steps, m.cs.stepIdx, child, m.parent, childIdx, m.lang, m.source, nil, m.captures,
+		) {
+			*m.captures = (*m.captures)[:childCheckpoint]
+			continue
 		}
-		if any {
+		span := childStepNamedSpanForIndex(m.namedPosByIndex, childIdx)
+		if !m.anchorsSatisfied(span) {
+			*m.captures = (*m.captures)[:childCheckpoint]
+			continue
+		}
+		any = true
+	}
+	if any {
+		return true
+	}
+	*m.captures = (*m.captures)[:checkpoint]
+	return false
+}
+
+func (m *childStepMatcher) matchQuantifierChoices() bool {
+	for count := m.maxCount; count >= m.minCount; count-- {
+		checkpoint := len(*m.captures)
+		if m.matchChoiceCombinations(count, 0, 0, m.nextChildIdx, emptyChildStepNamedSpan()) {
 			return true
 		}
-		*captures = (*captures)[:checkpoint]
-		return false
+
+		*m.captures = (*m.captures)[:checkpoint]
 	}
+	return false
+}
 
-	// Greedy-first for consistency with prior quantifier behavior; backtrack as needed.
-	for count := maxCount; count >= minCount; count-- {
-		checkpoint := len(*captures)
-		var tryCombinations func(
-			candidatePos int,
-			chosen int,
-			nextIdx int,
-			hasNamed bool,
-			firstNamedPos int,
-			lastNamedPos int,
-		) bool
-
-		tryCombinations = func(
-			candidatePos int,
-			chosen int,
-			nextIdx int,
-			hasNamed bool,
-			firstNamedPos int,
-			lastNamedPos int,
-		) bool {
-			if chosen == count {
-				if !q.stepAnchorsSatisfied(
-					step, childPos, hasNamed, firstNamedPos, lastNamedPos,
-					prevHasNamed, prevLastNamedPos, parentLastNamedPos,
-				) {
-					return false
-				}
-				nextPrevHasNamed := prevHasNamed || hasNamed
-				nextPrevLastNamedPos := prevLastNamedPos
-				if hasNamed {
-					nextPrevLastNamedPos = lastNamedPos
-				}
-				return q.matchChildStepsRecursive(
-					parent, children, namedPosByIndex, parentLastNamedPos,
-					steps, childSteps, childPos+1, nextIdx, nextPrevHasNamed, nextPrevLastNamedPos,
-					lang, source, predicates, captures,
-				)
-			}
-
-			remaining := count - chosen
-			limit := len(candidateIndices) - remaining
-			for i := candidatePos; i <= limit; i++ {
-				childIdx := candidateIndices[i]
-				child := children[childIdx]
-
-				childCheckpoint := len(*captures)
-				if !q.matchStepWithRollbackAtParentPredicates(steps, cs.stepIdx, child, parent, childIdx, lang, source, predicates, captures) {
-					continue
-				}
-
-				nextIdxForChoice := nextIdx
-				if childIdx+1 > nextIdxForChoice {
-					nextIdxForChoice = childIdx + 1
-				}
-
-				hasNamedForChoice := hasNamed
-				firstNamedForChoice := firstNamedPos
-				lastNamedForChoice := lastNamedPos
-				if namedPos := namedPosByIndex[childIdx]; namedPos >= 0 {
-					if !hasNamedForChoice {
-						hasNamedForChoice = true
-						firstNamedForChoice = namedPos
-					}
-					lastNamedForChoice = namedPos
-				}
-
-				if tryCombinations(
-					i+1, chosen+1, nextIdxForChoice,
-					hasNamedForChoice, firstNamedForChoice, lastNamedForChoice,
-				) {
-					return true
-				}
-
-				*captures = (*captures)[:childCheckpoint]
-			}
-
+func (m *childStepMatcher) matchChoiceCombinations(count int, candidatePos int, chosen int, nextIdx int, span childStepNamedSpan) bool {
+	if chosen == count {
+		if !m.anchorsSatisfied(span) {
 			return false
 		}
+		nextPrevHasNamed := m.prevHasNamed || span.hasNamed
+		nextPrevLastNamedPos := m.prevLastNamedPos
+		if span.hasNamed {
+			nextPrevLastNamedPos = span.last
+		}
+		return m.q.matchChildStepsRecursive(
+			m.parent, m.children, m.namedPosByIndex, m.parentLastNamedPos,
+			m.steps, m.childSteps, m.childPos+1, nextIdx, nextPrevHasNamed, nextPrevLastNamedPos,
+			m.lang, m.source, m.predicates, m.captures,
+		)
+	}
 
-		if tryCombinations(0, 0, nextChildIdx, false, -1, -1) {
+	remaining := count - chosen
+	limit := len(m.candidateIndices) - remaining
+	for i := candidatePos; i <= limit; i++ {
+		childIdx := m.candidateIndices[i]
+		child := m.children[childIdx]
+
+		childCheckpoint := len(*m.captures)
+		if !m.q.matchStepWithRollbackAtParentPredicates(
+			m.steps, m.cs.stepIdx, child, m.parent, childIdx, m.lang, m.source, m.predicates, m.captures,
+		) {
+			continue
+		}
+
+		nextIdxForChoice := maxInt(nextIdx, childIdx+1)
+		spanForChoice := span.withNamedPosition(m.namedPosByIndex[childIdx])
+		if m.matchChoiceCombinations(count, i+1, chosen+1, nextIdxForChoice, spanForChoice) {
 			return true
 		}
 
-		*captures = (*captures)[:checkpoint]
+		*m.captures = (*m.captures)[:childCheckpoint]
 	}
 
 	return false
+}
+
+func (m *childStepMatcher) anchorsSatisfied(span childStepNamedSpan) bool {
+	return m.q.stepAnchorsSatisfied(
+		m.step, m.childPos, span.hasNamed, span.first, span.last,
+		m.prevHasNamed, m.prevLastNamedPos, m.parentLastNamedPos,
+	)
+}
+
+func childStepNamedSpanForIndex(namedPosByIndex []int, childIdx int) childStepNamedSpan {
+	return emptyChildStepNamedSpan().withNamedPosition(namedPosByIndex[childIdx])
+}
+
+func emptyChildStepNamedSpan() childStepNamedSpan {
+	return childStepNamedSpan{first: -1, last: -1}
+}
+
+func (s childStepNamedSpan) withNamedPosition(namedPos int) childStepNamedSpan {
+	if namedPos < 0 {
+		return s
+	}
+	if !s.hasNamed {
+		s.hasNamed = true
+		s.first = namedPos
+	}
+	s.last = namedPos
+	return s
+}
+
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (q *Query) matchAlternationStep(step *QueryStep, node *Node, parent *Node, childIdx int, lang *Language, source []byte, predicates []QueryPredicate, captures *[]QueryCapture) bool {
