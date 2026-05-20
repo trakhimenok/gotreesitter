@@ -29,13 +29,71 @@ func TestNormalizeJavaScriptTopLevelExpressionStatementBoundsAlsoSnapsTypeScript
 	root.children[0].symbol = 0
 	root.children[1].symbol = 0
 
-	normalizeJavaScriptTopLevelExpressionStatementBounds(root, lang)
+	normalizeTypeScriptTreeCompatibility(root, nil, lang)
 
 	if got, want := stmt.StartByte(), uint32(73); got != want {
 		t.Fatalf("stmt.StartByte = %d, want %d", got, want)
 	}
 	if got, want := stmt.EndByte(), uint32(376384); got != want {
 		t.Fatalf("stmt.EndByte = %d, want %d", got, want)
+	}
+}
+
+func TestNormalizeJavaScriptTopLevelExpressionStatementBoundsSnapsFinalRefs(t *testing.T) {
+	lang := &Language{
+		Name:        "typescript",
+		SymbolNames: []string{"EOF", "program", "expression_statement", "internal_module"},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF", Visible: false, Named: false},
+			{Name: "program", Visible: true, Named: true},
+			{Name: "expression_statement", Visible: true, Named: true},
+			{Name: "internal_module", Visible: true, Named: true},
+		},
+	}
+
+	arena := newNodeArena(arenaClassFull)
+	arena.finalChildRefs = true
+	eofLeft := newCompactFullLeafInArena(arena, 0, false, 0, 0, Point{}, Point{})
+	eofRight := newCompactFullLeafInArena(arena, 0, false, 0, 0, Point{}, Point{})
+	module := newCompactFullLeafInArena(arena, 3, true, 73, 376384, Point{Row: 3}, Point{Row: 490, Column: 1})
+	stmt := newPendingParentInArena(arena, 2, true, 0, []stackEntry{
+		newStackEntryCompactFullLeaf(module.parseState, module),
+	}, 0, 376385, Point{}, Point{Row: 490, Column: 2}, false)
+	rootParent := newPendingParentInArena(arena, 1, true, 0, []stackEntry{
+		newStackEntryCompactFullLeaf(eofLeft.parseState, eofLeft),
+		newStackEntryCompactFullLeaf(eofRight.parseState, eofRight),
+		newStackEntryPendingParent(stmt.parseState, stmt),
+	}, 0, 376385, Point{}, Point{Row: 490, Column: 2}, false)
+	rootEntry := newStackEntryPendingParent(rootParent.parseState, rootParent)
+	root := materializeStackEntryPendingParent(arena, &rootEntry, pendingParentMaterializeForFinalTree)
+	if root == nil || !nodeHasFinalChildRefs(root) {
+		t.Fatalf("root did not retain final child refs")
+	}
+
+	normalizeTypeScriptTreeCompatibility(root, nil, lang)
+
+	view := resultMutableChildrenForMutation(root)
+	entry, ok := view.Entry(2)
+	if !ok {
+		t.Fatalf("missing final-ref expression_statement child")
+	}
+	if got, want := stackEntryNodeStartByte(entry), uint32(73); got != want {
+		t.Fatalf("stmt start byte = %d, want %d", got, want)
+	}
+	if got, want := stackEntryNodeEndByte(entry), uint32(376384); got != want {
+		t.Fatalf("stmt end byte = %d, want %d", got, want)
+	}
+	if got, want := stackEntryNodeStartPoint(entry), (Point{Row: 3}); got != want {
+		t.Fatalf("stmt start point = %+v, want %+v", got, want)
+	}
+	if got, want := stackEntryNodeEndPoint(entry), (Point{Row: 490, Column: 1}); got != want {
+		t.Fatalf("stmt end point = %+v, want %+v", got, want)
+	}
+	if got := arena.finalChildRefsMaterializedParents; got != 0 {
+		t.Fatalf("final child refs materialized parents = %d, want 0", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 0 {
+		t.Fatalf("single final child refs materialized children = %d, want 0", got)
 	}
 }
 

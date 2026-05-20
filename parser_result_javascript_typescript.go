@@ -21,6 +21,7 @@ func normalizeTypeScriptTreeCompatibility(root *Node, source []byte, lang *Langu
 	normalizeJavaScriptTypeScriptBinaryPrecedence(root, lang)
 	normalizeTypeScriptRecoveredNamespaceRoot(root, source, lang)
 	normalizeTypeScriptCompatibility(root, source, lang)
+	normalizeJavaScriptTopLevelExpressionStatementBounds(root, lang)
 	normalizeCollapsedNamedLeafChildren(root, lang, "existential_type", "*")
 }
 
@@ -103,18 +104,75 @@ func normalizeJavaScriptTopLevelExpressionStatementBounds(root *Node, lang *Lang
 	default:
 		return
 	}
-	for _, child := range root.children {
-		if child == nil || child.Type(lang) != "expression_statement" || len(child.children) == 0 {
+	view := resultMutableChildrenForMutation(root)
+	for i := 0; i < view.Len(); i++ {
+		child, ok := view.Entry(i)
+		if !ok || symbolTypeName(lang, stackEntryNodeSymbol(child)) != "expression_statement" || stackEntryNodeChildCount(child) == 0 {
 			continue
 		}
-		first, last := firstAndLastNonNilChild(child.children)
-		if first == nil || last == nil {
+		first, last, ok := firstAndLastStackEntryChild(child, view.arena)
+		if !ok {
 			continue
 		}
-		child.startByte = first.startByte
-		child.startPoint = first.startPoint
-		child.endByte = last.endByte
-		child.endPoint = last.endPoint
+		setStackEntryRange(
+			child,
+			stackEntryNodeStartByte(first),
+			stackEntryNodeStartPoint(first),
+			stackEntryNodeEndByte(last),
+			stackEntryNodeEndPoint(last),
+		)
+	}
+}
+
+func firstAndLastStackEntryChild(entry stackEntry, arena *nodeArena) (stackEntry, stackEntry, bool) {
+	childCount := stackEntryNodeChildCount(entry)
+	var first stackEntry
+	foundFirst := false
+	for i := 0; i < childCount; i++ {
+		child, ok := stackEntryAliasChild(entry, arena, i)
+		if ok && stackEntryHasNode(child) {
+			first = child
+			foundFirst = true
+			break
+		}
+	}
+	if !foundFirst {
+		return stackEntry{}, stackEntry{}, false
+	}
+	for i := childCount - 1; i >= 0; i-- {
+		child, ok := stackEntryAliasChild(entry, arena, i)
+		if ok && stackEntryHasNode(child) {
+			return first, child, true
+		}
+	}
+	return first, first, true
+}
+
+func setStackEntryRange(entry stackEntry, startByte uint32, startPoint Point, endByte uint32, endPoint Point) {
+	if node := stackEntryNode(entry); node != nil {
+		node.startByte = startByte
+		node.startPoint = startPoint
+		node.endByte = endByte
+		node.endPoint = endPoint
+		return
+	}
+	if node := stackEntryNoTreeNode(entry); node != nil {
+		node.startByte = startByte
+		node.endByte = endByte
+		return
+	}
+	if leaf := stackEntryCompactFullLeaf(entry); leaf != nil {
+		leaf.startByte = startByte
+		leaf.startPoint = startPoint
+		leaf.endByte = endByte
+		leaf.endPoint = endPoint
+		return
+	}
+	if parent := stackEntryPendingParent(entry); parent != nil {
+		parent.startByte = startByte
+		parent.startPoint = startPoint
+		parent.endByte = endByte
+		parent.endPoint = endPoint
 	}
 }
 
