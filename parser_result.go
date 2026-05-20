@@ -176,9 +176,7 @@ func (p *Parser) buildNoTreeBenchmarkResult(source []byte, arena *nodeArena, roo
 	}
 	named := true
 	if p != nil && p.language != nil {
-		if idx := int(sym); idx >= 0 && idx < len(p.language.SymbolMetadata) {
-			named = p.language.SymbolMetadata[sym].Named
-		}
+		named = p.isNamedSymbol(sym)
 	}
 	root := arena.allocNodeFast()
 	root.ownerArena = arena
@@ -632,10 +630,7 @@ func (p *Parser) isAliasTargetSymbol(sym Symbol) bool {
 
 // isNamedSymbol checks whether a symbol is a named symbol.
 func (p *Parser) isNamedSymbol(sym Symbol) bool {
-	if int(sym) < len(p.language.SymbolMetadata) {
-		return p.language.SymbolMetadata[sym].Named
-	}
-	return false
+	return p != nil && symbolIsNamed(p.language, sym)
 }
 
 func nodesFromGSS(stack gssStack) []*Node {
@@ -800,32 +795,14 @@ func (p *Parser) buildResultFromNodes(nodes []*Node, source []byte, arena *nodeA
 		return newTreeWithArenas(root, source, p.language, arena, getBorrowed())
 	}
 
-	// When multiple nodes remain on the stack, check whether all but one
-	// are extras (e.g. leading whitespace/comments). If so, fold the extras
-	// into the real root rather than wrapping everything in an error node.
-	var realRoot *Node
-	var allExtras []*Node
-	var extras []*Node
-	for _, n := range nodes {
-		if n.isExtra() {
-			allExtras = append(allExtras, n)
-			// Ignore invisible extras and zero-width extras in final-root
-			// recovery; they should not force an error wrapper or inflate root
-			// child counts.
-			if p != nil && p.language != nil &&
-				int(n.symbol) < len(p.language.SymbolMetadata) &&
-				p.language.SymbolMetadata[n.symbol].Visible &&
-				n.endByte > n.startByte {
-				extras = append(extras, n)
-			}
-		} else {
-			if realRoot != nil {
-				realRoot = nil // more than one non-extra -> genuine error
-				break
-			}
-			realRoot = n
-		}
+	// When multiple nodes remain on the stack, fold extras into a single real
+	// root when possible rather than wrapping everything in an error node.
+	var resultLang *Language
+	if p != nil {
+		resultLang = p.language
 	}
+	extraSplit := splitResultRootExtras(nodes, resultLang)
+	realRoot := extraSplit.realRoot
 	if realRoot != nil {
 		returnRealRoot := !hasExpectedRoot || realRoot.symbol == expectedRootSymbol
 		if reuseState != nil && reuseState.reusedAny {
@@ -833,82 +810,12 @@ func (p *Parser) buildResultFromNodes(nodes []*Node, source []byte, arena *nodeA
 			realRoot.parent = nil
 			realRoot.childIndex = -1
 		}
-		foldExtras := returnRealRoot && len(extras) > 0
-		if foldExtras {
-			for _, e := range allExtras {
-				if e != nil && (e.IsError() || e.HasError()) {
-					foldExtras = false
-					break
-				}
-			}
-		}
-		if foldExtras {
-			// Fold visible extras into the real root as leading/trailing children.
-			var leadingExtras []*Node
-			var trailingExtras []*Node
-			for _, e := range extras {
-				if e.startByte <= realRoot.startByte {
-					leadingExtras = append(leadingExtras, e)
-				} else {
-					trailingExtras = append(trailingExtras, e)
-				}
-			}
-			if !resultMutableChildrenForMutation(realRoot).SurroundFinalRefs(leadingExtras, trailingExtras) {
-				realRootChildren := resultChildSliceForMutation(realRoot)
-				merged := make([]*Node, 0, len(extras)+len(realRootChildren))
-				leadingCount := 0
-				for _, e := range leadingExtras {
-					merged = append(merged, e)
-					leadingCount++
-				}
-				merged = append(merged, realRootChildren...)
-				for _, e := range trailingExtras {
-					merged = append(merged, e)
-				}
-				if arena != nil {
-					out := arena.allocNodeSlice(len(merged))
-					copy(out, merged)
-					merged = out
-				}
-				realRoot.children = merged
-				// Keep fieldIDs aligned with children: extras have no field (0).
-				if len(realRoot.fieldIDs) > 0 {
-					trailingCount := len(extras) - leadingCount
-					padded := make([]FieldID, leadingCount+len(realRoot.fieldIDs)+trailingCount)
-					copy(padded[leadingCount:], realRoot.fieldIDs)
-					realRoot.fieldIDs = padded
-					if len(realRoot.fieldSources) > 0 {
-						paddedSources := make([]uint8, len(padded))
-						copy(paddedSources[leadingCount:], realRoot.fieldSources)
-						realRoot.fieldSources = paddedSources
-					}
-				}
-				populateParentNode(realRoot, realRoot.children)
-			}
-			// Extend root range to cover the extras.
-			for _, e := range extras {
-				if e.startByte < realRoot.startByte {
-					realRoot.startByte = e.startByte
-					realRoot.startPoint = e.startPoint
-				}
-				if e.endByte > realRoot.endByte {
-					realRoot.endByte = e.endByte
-					realRoot.endPoint = e.endPoint
-				}
-			}
+		if returnRealRoot && extraSplit.canFoldVisibleExtras() {
+			foldResultRootExtras(realRoot, extraSplit.visibleExtras, arena)
 		}
 		// Invisible extras should still contribute to the final root byte/point range.
 		if returnRealRoot {
-			for _, e := range allExtras {
-				if e.startByte < realRoot.startByte {
-					realRoot.startByte = e.startByte
-					realRoot.startPoint = e.startPoint
-				}
-				if e.endByte > realRoot.endByte {
-					realRoot.endByte = e.endByte
-					realRoot.endPoint = e.endPoint
-				}
-			}
+			extendResultRootRangeToExtras(realRoot, extraSplit.allExtras)
 		}
 		timing := p.currentMaterializationTiming()
 		rootRepairStart := materializationTimingStart(timing)
@@ -954,6 +861,111 @@ func (p *Parser) buildResultFromNodes(nodes []*Node, source []byte, arena *nodeA
 	timing.addPythonRootRepair(rootRepairStart)
 	p.finalizeResultRoot(root, source, linkScratch, shouldWireParentLinks, true)
 	return newTreeWithArenas(root, source, p.language, arena, getBorrowed())
+}
+
+type resultRootExtraSplit struct {
+	realRoot      *Node
+	allExtras     []*Node
+	visibleExtras []*Node
+}
+
+func splitResultRootExtras(nodes []*Node, lang *Language) resultRootExtraSplit {
+	var split resultRootExtraSplit
+	for _, n := range nodes {
+		if n.isExtra() {
+			split.allExtras = append(split.allExtras, n)
+			if symbolIsVisible(lang, n.symbol) && n.endByte > n.startByte {
+				split.visibleExtras = append(split.visibleExtras, n)
+			}
+			continue
+		}
+		if split.realRoot != nil {
+			split.realRoot = nil
+			return split
+		}
+		split.realRoot = n
+	}
+	return split
+}
+
+func (s resultRootExtraSplit) canFoldVisibleExtras() bool {
+	if len(s.visibleExtras) == 0 {
+		return false
+	}
+	for _, extra := range s.allExtras {
+		if extra != nil && (extra.IsError() || extra.HasError()) {
+			return false
+		}
+	}
+	return true
+}
+
+func foldResultRootExtras(root *Node, extras []*Node, arena *nodeArena) {
+	if root == nil || len(extras) == 0 {
+		return
+	}
+	var leadingExtras []*Node
+	var trailingExtras []*Node
+	for _, extra := range extras {
+		if extra.startByte <= root.startByte {
+			leadingExtras = append(leadingExtras, extra)
+		} else {
+			trailingExtras = append(trailingExtras, extra)
+		}
+	}
+	if resultMutableChildrenForMutation(root).SurroundFinalRefs(leadingExtras, trailingExtras) {
+		extendResultRootRangeToExtras(root, extras)
+		return
+	}
+	rootChildren := resultChildSliceForMutation(root)
+	merged := make([]*Node, 0, len(extras)+len(rootChildren))
+	leadingCount := 0
+	for _, extra := range leadingExtras {
+		merged = append(merged, extra)
+		leadingCount++
+	}
+	merged = append(merged, rootChildren...)
+	for _, extra := range trailingExtras {
+		merged = append(merged, extra)
+	}
+	if arena != nil {
+		out := arena.allocNodeSlice(len(merged))
+		copy(out, merged)
+		merged = out
+	}
+	root.children = merged
+
+	if len(root.fieldIDs) > 0 {
+		trailingCount := len(extras) - leadingCount
+		padded := make([]FieldID, leadingCount+len(root.fieldIDs)+trailingCount)
+		copy(padded[leadingCount:], root.fieldIDs)
+		root.fieldIDs = padded
+		if len(root.fieldSources) > 0 {
+			paddedSources := make([]uint8, len(padded))
+			copy(paddedSources[leadingCount:], root.fieldSources)
+			root.fieldSources = paddedSources
+		}
+	}
+	extendResultRootRangeToExtras(root, extras)
+}
+
+func extendResultRootRangeToExtras(root *Node, extras []*Node) {
+	if root == nil {
+		return
+	}
+	for _, extra := range extras {
+		if extra == nil {
+			continue
+		}
+		if extra.startByte < root.startByte {
+			root.startByte = extra.startByte
+			root.startPoint = extra.startPoint
+		}
+		if extra.endByte > root.endByte {
+			root.endByte = extra.endByte
+			root.endPoint = extra.endPoint
+		}
+	}
 }
 
 func (p *Parser) finalizeResultRoot(root *Node, source []byte, linkScratch *[]*Node, wireParentLinks, extendTrailing bool) {

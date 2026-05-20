@@ -28,7 +28,7 @@ func normalizeYAMLRecoveredRoot(root *Node, source []byte, lang *Language) {
 					streamChildren = append(streamChildren, doc)
 
 					root.symbol = streamSym
-					root.setNamed(lang.SymbolMetadata[streamSym].Named)
+					root.setNamed(symbolIsNamed(lang, streamSym))
 					root.children = cloneNodeSliceInArena(root.ownerArena, streamChildren)
 					root.fieldIDs = nil
 					root.fieldSources = nil
@@ -100,7 +100,7 @@ prefixDone:
 	children := make([]*Node, 0, len(prefix)+1)
 	children = append(children, prefix...)
 	children = append(children, body)
-	doc := newParentNodeInArena(arena, documentSym, lang.SymbolMetadata[documentSym].Named, children, nil, 0)
+	doc := newParentNodeInArena(arena, documentSym, symbolIsNamed(lang, documentSym), children, nil, 0)
 	doc.endByte = endByte
 	doc.endPoint = endPoint
 	doc.setHasError(false)
@@ -146,7 +146,7 @@ decoratorsDone:
 		if !ok {
 			return nil
 		}
-		core = newParentNodeInArena(arena, blockScalarSym, lang.SymbolMetadata[blockScalarSym].Named, bodyNodes, nil, 0)
+		core = newParentNodeInArena(arena, blockScalarSym, symbolIsNamed(lang, blockScalarSym), bodyNodes, nil, 0)
 		core.endByte = endByte
 		core.endPoint = endPoint
 		core.setHasError(false)
@@ -184,7 +184,7 @@ func yamlWrapYAMLNode(name string, children []*Node, endByte uint32, endPoint Po
 	if !ok {
 		return nil
 	}
-	node := newParentNodeInArena(arena, sym, lang.SymbolMetadata[sym].Named, children, nil, 0)
+	node := newParentNodeInArena(arena, sym, symbolIsNamed(lang, sym), children, nil, 0)
 	node.endByte = endByte
 	node.endPoint = endPoint
 	node.setHasError(false)
@@ -250,7 +250,7 @@ func yamlWrapPlainScalarFlowNodes(node *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	plain := newParentNodeInArena(node.ownerArena, plainScalarSym, lang.SymbolMetadata[plainScalarSym].Named, []*Node{child}, nil, 0)
+	plain := newParentNodeInArena(node.ownerArena, plainScalarSym, symbolIsNamed(lang, plainScalarSym), []*Node{child}, nil, 0)
 	node.children = cloneNodeSliceInArena(node.ownerArena, []*Node{plain})
 	node.fieldIDs = nil
 	node.fieldSources = nil

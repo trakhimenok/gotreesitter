@@ -300,100 +300,86 @@ func newTypeScriptNormalizationContext(source []byte, lang *Language) (typeScrip
 		return ctx, false
 	}
 
-	if callSym, ok := lang.SymbolByName("call_expression"); ok {
-		if instantiationExprSym, ok := lang.SymbolByName("instantiation_expression"); ok {
-			ctx.instantiationExprSym = instantiationExprSym
-			ctx.instantiationExprNamed = symbolIsNamed(lang, instantiationExprSym)
+	if syms, ok := languageSymbols(lang,
+		"call_expression",
+		"type_arguments",
+		"arguments",
+		"predefined_type",
+		"binary_expression",
+		">",
+		"parenthesized_expression",
+		"<",
+		"identifier",
+		"member_expression",
+		"sequence_expression",
+	); ok {
+		ctx.canRewriteGenericCalls = true
+		ctx.callSym = syms[0]
+		ctx.callNamed = symbolIsNamed(lang, ctx.callSym)
+		ctx.typeArgsSym = syms[1]
+		ctx.typeArgsNamed = symbolIsNamed(lang, ctx.typeArgsSym)
+		ctx.argsSym = syms[2]
+		ctx.argsNamed = symbolIsNamed(lang, ctx.argsSym)
+		ctx.predefinedTypeSym = syms[3]
+		ctx.predefinedTypeNamed = symbolIsNamed(lang, ctx.predefinedTypeSym)
+		ctx.binaryExpressionSym = syms[4]
+		ctx.greaterThanSym = syms[5]
+		ctx.parenthesizedExprSym = syms[6]
+		ctx.lessThanSym = syms[7]
+		ctx.identifierSym = syms[8]
+		ctx.memberExpressionSym = syms[9]
+		ctx.sequenceExpressionSym = syms[10]
+		ctx.functionFieldID, _ = lang.FieldByName("function")
+		ctx.typeArgsFieldID, _ = lang.FieldByName("type_arguments")
+		ctx.argumentsFieldID, _ = lang.FieldByName("arguments")
+		ctx.typeIdentifierSym, ctx.hasTypeIdentifierSym = lang.SymbolByName("type_identifier")
+		if ctx.hasTypeIdentifierSym {
+			ctx.typeIdentifierNamed = symbolIsNamed(lang, ctx.typeIdentifierSym)
 		}
-		if typeArgsSym, ok := lang.SymbolByName("type_arguments"); ok {
-			if argsSym, ok := lang.SymbolByName("arguments"); ok {
-				if predefinedTypeSym, ok := lang.SymbolByName("predefined_type"); ok {
-					if binaryExpressionSym, ok := lang.SymbolByName("binary_expression"); ok {
-						if greaterThanSym, ok := lang.SymbolByName(">"); ok {
-							if parenthesizedExprSym, ok := lang.SymbolByName("parenthesized_expression"); ok {
-								if lessThanSym, ok := lang.SymbolByName("<"); ok {
-									if identifierSym, ok := lang.SymbolByName("identifier"); ok {
-										if memberExpressionSym, ok := lang.SymbolByName("member_expression"); ok {
-											if sequenceExpressionSym, ok := lang.SymbolByName("sequence_expression"); ok {
-												ctx.canRewriteGenericCalls = true
-												ctx.callSym = callSym
-												ctx.callNamed = symbolIsNamed(lang, callSym)
-												ctx.typeArgsSym = typeArgsSym
-												ctx.typeArgsNamed = symbolIsNamed(lang, typeArgsSym)
-												ctx.argsSym = argsSym
-												ctx.argsNamed = symbolIsNamed(lang, argsSym)
-												ctx.predefinedTypeSym = predefinedTypeSym
-												ctx.predefinedTypeNamed = symbolIsNamed(lang, predefinedTypeSym)
-												ctx.binaryExpressionSym = binaryExpressionSym
-												ctx.greaterThanSym = greaterThanSym
-												ctx.parenthesizedExprSym = parenthesizedExprSym
-												ctx.lessThanSym = lessThanSym
-												ctx.identifierSym = identifierSym
-												ctx.memberExpressionSym = memberExpressionSym
-												ctx.sequenceExpressionSym = sequenceExpressionSym
-												ctx.functionFieldID, _ = lang.FieldByName("function")
-												ctx.typeArgsFieldID, _ = lang.FieldByName("type_arguments")
-												ctx.argumentsFieldID, _ = lang.FieldByName("arguments")
-												ctx.typeIdentifierSym, ctx.hasTypeIdentifierSym = lang.SymbolByName("type_identifier")
-												if ctx.hasTypeIdentifierSym {
-													ctx.typeIdentifierNamed = int(ctx.typeIdentifierSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[ctx.typeIdentifierSym].Named
-												}
-												ctx.canRewriteInstantiatedCalls = ctx.instantiationExprSym != 0 && ctx.functionFieldID != 0 && ctx.typeArgsFieldID != 0 && ctx.argumentsFieldID != 0
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
+		if syms, ok := languageSymbols(lang, "instantiation_expression"); ok {
+			ctx.instantiationExprSym = syms[0]
+			ctx.instantiationExprNamed = symbolIsNamed(lang, ctx.instantiationExprSym)
+			ctx.canRewriteInstantiatedCalls = ctx.functionFieldID != 0 && ctx.typeArgsFieldID != 0 && ctx.argumentsFieldID != 0
 		}
 	}
 
-	if asExpressionSym, ok := lang.SymbolByName("as_expression"); ok {
-		if assignmentExprSym, ok := lang.SymbolByName("assignment_expression"); ok {
-			if ternaryExprSym, ok := lang.SymbolByName("ternary_expression"); ok {
-				if unionTypeSym, ok := lang.SymbolByName("union_type"); ok {
-					if intersectionTypeSym, ok := lang.SymbolByName("intersection_type"); ok {
-						ctx.canRewriteAsExpressions = true
-						ctx.asExpressionSym = asExpressionSym
-						ctx.asExpressionNamed = symbolIsNamed(lang, asExpressionSym)
-						ctx.assignmentExprSym = assignmentExprSym
-						ctx.assignmentExprNamed = symbolIsNamed(lang, assignmentExprSym)
-						ctx.ternaryExprSym = ternaryExprSym
-						ctx.ternaryExprNamed = symbolIsNamed(lang, ternaryExprSym)
-						ctx.unionTypeSym = unionTypeSym
-						ctx.unionTypeNamed = symbolIsNamed(lang, unionTypeSym)
-						ctx.intersectionTypeSym = intersectionTypeSym
-						ctx.intersectionTypeNamed = symbolIsNamed(lang, intersectionTypeSym)
-						if objectTypeSym, ok := lang.SymbolByName("object_type"); ok {
-							if propertySignatureSym, ok := lang.SymbolByName("property_signature"); ok {
-								if typeAnnotationSym, ok := lang.SymbolByName("type_annotation"); ok {
-									if objectSym, ok := lang.SymbolByName("object"); ok {
-										if pairSym, ok := lang.SymbolByName("pair"); ok {
-											if propertyIdentifierSym, ok := lang.SymbolByName("property_identifier"); ok {
-												if colonSym, ok := lang.SymbolByName(":"); ok {
-													ctx.objectTypeSym = objectTypeSym
-													ctx.objectTypeNamed = symbolIsNamed(lang, objectTypeSym)
-													ctx.propertySignatureSym = propertySignatureSym
-													ctx.propertySignatureNamed = symbolIsNamed(lang, propertySignatureSym)
-													ctx.typeAnnotationSym = typeAnnotationSym
-													ctx.typeAnnotationNamed = symbolIsNamed(lang, typeAnnotationSym)
-													ctx.objectSym = objectSym
-													ctx.pairSym = pairSym
-													ctx.propertyIdentifierSym = propertyIdentifierSym
-													ctx.colonSym = colonSym
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
+	if syms, ok := languageSymbols(lang,
+		"as_expression",
+		"assignment_expression",
+		"ternary_expression",
+		"union_type",
+		"intersection_type",
+	); ok {
+		ctx.canRewriteAsExpressions = true
+		ctx.asExpressionSym = syms[0]
+		ctx.asExpressionNamed = symbolIsNamed(lang, ctx.asExpressionSym)
+		ctx.assignmentExprSym = syms[1]
+		ctx.assignmentExprNamed = symbolIsNamed(lang, ctx.assignmentExprSym)
+		ctx.ternaryExprSym = syms[2]
+		ctx.ternaryExprNamed = symbolIsNamed(lang, ctx.ternaryExprSym)
+		ctx.unionTypeSym = syms[3]
+		ctx.unionTypeNamed = symbolIsNamed(lang, ctx.unionTypeSym)
+		ctx.intersectionTypeSym = syms[4]
+		ctx.intersectionTypeNamed = symbolIsNamed(lang, ctx.intersectionTypeSym)
+		if syms, ok := languageSymbols(lang,
+			"object_type",
+			"property_signature",
+			"type_annotation",
+			"object",
+			"pair",
+			"property_identifier",
+			":",
+		); ok {
+			ctx.objectTypeSym = syms[0]
+			ctx.objectTypeNamed = symbolIsNamed(lang, ctx.objectTypeSym)
+			ctx.propertySignatureSym = syms[1]
+			ctx.propertySignatureNamed = symbolIsNamed(lang, ctx.propertySignatureSym)
+			ctx.typeAnnotationSym = syms[2]
+			ctx.typeAnnotationNamed = symbolIsNamed(lang, ctx.typeAnnotationSym)
+			ctx.objectSym = syms[3]
+			ctx.pairSym = syms[4]
+			ctx.propertyIdentifierSym = syms[5]
+			ctx.colonSym = syms[6]
 		}
 	}
 
@@ -405,43 +391,40 @@ func newTypeScriptNormalizationContext(source []byte, lang *Language) (typeScrip
 		}
 	}
 
-	if typeAssertionSym, ok := findVisibleSymbolByName(lang, "type_assertion", true); ok {
-		if arrowFunctionSym, ok := findVisibleSymbolByName(lang, "arrow_function", true); ok {
-			if typeArgsSym, ok := findVisibleSymbolByName(lang, "type_arguments", true); ok {
-				if typeParametersSym, ok := findVisibleSymbolByName(lang, "type_parameters", true); ok {
-					if typeParameterSym, ok := findVisibleSymbolByName(lang, "type_parameter", true); ok {
-						if typeIdentifierSym, ok := findVisibleSymbolByName(lang, "type_identifier", true); ok {
-							ctx.canRewriteGenericArrows = true
-							ctx.typeAssertionSym = typeAssertionSym
-							ctx.arrowFunctionSym = arrowFunctionSym
-							ctx.typeArgsSym = typeArgsSym
-							ctx.typeParametersSym = typeParametersSym
-							ctx.typeParametersNamed = symbolIsNamed(lang, typeParametersSym)
-							ctx.typeParameterSym = typeParameterSym
-							ctx.typeParameterNamed = symbolIsNamed(lang, typeParameterSym)
-							ctx.typeIdentifierSym = typeIdentifierSym
-							ctx.typeIdentifierNamed = symbolIsNamed(lang, typeIdentifierSym)
-							ctx.nameFieldID, _ = lang.FieldByName("name")
-							ctx.typeParametersFieldID, _ = lang.FieldByName("type_parameters")
-						}
-					}
-				}
-			}
-		}
+	if syms, ok := visibleLanguageSymbols(lang, true,
+		"type_assertion",
+		"arrow_function",
+		"type_arguments",
+		"type_parameters",
+		"type_parameter",
+		"type_identifier",
+	); ok {
+		ctx.canRewriteGenericArrows = true
+		ctx.typeAssertionSym = syms[0]
+		ctx.arrowFunctionSym = syms[1]
+		ctx.typeArgsSym = syms[2]
+		ctx.typeParametersSym = syms[3]
+		ctx.typeParametersNamed = symbolIsNamed(lang, ctx.typeParametersSym)
+		ctx.typeParameterSym = syms[4]
+		ctx.typeParameterNamed = symbolIsNamed(lang, ctx.typeParameterSym)
+		ctx.typeIdentifierSym = syms[5]
+		ctx.typeIdentifierNamed = symbolIsNamed(lang, ctx.typeIdentifierSym)
+		ctx.nameFieldID, _ = lang.FieldByName("name")
+		ctx.typeParametersFieldID, _ = lang.FieldByName("type_parameters")
 	}
 
-	if expressionStatementSym, ok := findVisibleSymbolByName(lang, "expression_statement", true); ok {
-		if classSym, ok := findVisibleSymbolByName(lang, "class", true); ok {
-			if classDeclarationSym, ok := findVisibleSymbolByName(lang, "class_declaration", true); ok {
-				ctx.canRewriteClassDeclarations = true
-				ctx.expressionStatementSym = expressionStatementSym
-				ctx.classSym = classSym
-				ctx.classDeclarationSym = classDeclarationSym
-				ctx.classDeclarationNamed = symbolIsNamed(lang, classDeclarationSym)
-				if ctx.nameFieldID == 0 {
-					ctx.nameFieldID, _ = lang.FieldByName("name")
-				}
-			}
+	if syms, ok := visibleLanguageSymbols(lang, true,
+		"expression_statement",
+		"class",
+		"class_declaration",
+	); ok {
+		ctx.canRewriteClassDeclarations = true
+		ctx.expressionStatementSym = syms[0]
+		ctx.classSym = syms[1]
+		ctx.classDeclarationSym = syms[2]
+		ctx.classDeclarationNamed = symbolIsNamed(lang, ctx.classDeclarationSym)
+		if ctx.nameFieldID == 0 {
+			ctx.nameFieldID, _ = lang.FieldByName("name")
 		}
 	}
 
@@ -933,12 +916,12 @@ func normalizeTypeScriptGenericCallTypeArgument(node *Node, ctx *typeScriptNorma
 		}
 	case "identifier":
 		if typeKeywordSym, ok := typeScriptPredefinedTypeSymbol(ctx.lang, node.Text(ctx.source)); ok {
-			typeKeywordNamed := int(typeKeywordSym) < len(ctx.lang.SymbolMetadata) && ctx.lang.SymbolMetadata[typeKeywordSym].Named
+			typeKeywordNamed := symbolIsNamed(ctx.lang, typeKeywordSym)
 			typeLeaf := newLeafNodeInArena(node.ownerArena, typeKeywordSym, typeKeywordNamed, node.startByte, node.endByte, node.startPoint, node.endPoint)
 			return newParentNodeInArena(node.ownerArena, ctx.predefinedTypeSym, ctx.predefinedTypeNamed, []*Node{typeLeaf}, nil, 0)
 		}
 		if ctx.hasTypeIdentifierSym {
-			typeIdentifierNamed := int(ctx.typeIdentifierSym) < len(ctx.lang.SymbolMetadata) && ctx.lang.SymbolMetadata[ctx.typeIdentifierSym].Named
+			typeIdentifierNamed := symbolIsNamed(ctx.lang, ctx.typeIdentifierSym)
 			return newLeafNodeInArena(node.ownerArena, ctx.typeIdentifierSym, typeIdentifierNamed, node.startByte, node.endByte, node.startPoint, node.endPoint)
 		}
 	}

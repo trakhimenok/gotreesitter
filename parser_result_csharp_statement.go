@@ -826,7 +826,7 @@ func csharpRecoverUsingStatementFromRange(source []byte, start, end uint32, p *P
 	if !ok {
 		return nil, false
 	}
-	named := int(sym) < len(p.language.SymbolMetadata) && p.language.SymbolMetadata[sym].Named
+	named := symbolIsNamed(p.language, sym)
 	usingTok, ok := csharpBuildLeafNodeByName(arena, source, p.language, "using", start, start+5)
 	if !ok {
 		return nil, false

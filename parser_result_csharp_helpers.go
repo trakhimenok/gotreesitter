@@ -787,7 +787,7 @@ func csharpBuildIdentifierNodeFromSource(source []byte, start, end uint32, lang 
 	}
 	keyword := string(source[start:end])
 	keywordSym, ok := symbolByName(lang, keyword)
-	if !ok || int(keywordSym) >= len(lang.SymbolMetadata) || lang.SymbolMetadata[keywordSym].Named {
+	if !ok || !symbolHasMetadata(lang, keywordSym) || symbolIsNamed(lang, keywordSym) {
 		return ident, true
 	}
 	keywordLeaf, ok := csharpBuildLeafNodeByName(arena, source, lang, keyword, start, end)

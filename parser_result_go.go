@@ -420,7 +420,7 @@ condEndReady:
 	if !ok {
 		return nil, false
 	}
-	ifStmtNamed := int(ifStmtSym) < len(p.language.SymbolMetadata) && p.language.SymbolMetadata[ifStmtSym].Named
+	ifStmtNamed := symbolIsNamed(p.language, ifStmtSym)
 	ifLeafStart := advancePointByBytes(Point{}, source[:trimmedStart])
 	ifLeafEnd := advancePointByBytes(ifLeafStart, source[trimmedStart:trimmedStart+2])
 	ifLeaf := newLeafNodeInArena(arena, ifTokenSym, false, trimmedStart, trimmedStart+2, ifLeafStart, ifLeafEnd)
@@ -1294,8 +1294,5 @@ func shouldFlattenInvisibleRootChild(child *Node, lang *Language) bool {
 	if child == nil || child.isExtra() || child.isNamed() || resultChildCount(child) == 0 {
 		return false
 	}
-	if idx := int(child.symbol); idx < len(lang.SymbolMetadata) {
-		return !lang.SymbolMetadata[idx].Visible
-	}
-	return false
+	return lang != nil && !symbolIsVisible(lang, child.symbol)
 }

@@ -7,105 +7,6 @@ type resultCompatibilityContext struct {
 	lang   *Language
 }
 
-type resultCompatibilityStrutID uint8
-
-const (
-	resultCompatibilityStrutNone resultCompatibilityStrutID = iota
-	resultCompatibilityStrutBash
-	resultCompatibilityStrutC
-	resultCompatibilityStrutCSharp
-	resultCompatibilityStrutCaddy
-	resultCompatibilityStrutCobol
-	resultCompatibilityStrutComment
-	resultCompatibilityStrutCooklang
-	resultCompatibilityStrutD
-	resultCompatibilityStrutDart
-	resultCompatibilityStrutElixir
-	resultCompatibilityStrutErlang
-	resultCompatibilityStrutFortran
-	resultCompatibilityStrutGo
-	resultCompatibilityStrutHaskell
-	resultCompatibilityStrutHCL
-	resultCompatibilityStrutHTML
-	resultCompatibilityStrutIni
-	resultCompatibilityStrutJavaScript
-	resultCompatibilityStrutLua
-	resultCompatibilityStrutMake
-	resultCompatibilityStrutNginx
-	resultCompatibilityStrutNim
-	resultCompatibilityStrutPascal
-	resultCompatibilityStrutPerl
-	resultCompatibilityStrutPHP
-	resultCompatibilityStrutPowerShell
-	resultCompatibilityStrutPug
-	resultCompatibilityStrutPython
-	resultCompatibilityStrutRST
-	resultCompatibilityStrutRust
-	resultCompatibilityStrutRuby
-	resultCompatibilityStrutScala
-	resultCompatibilityStrutSQL
-	resultCompatibilityStrutSvelte
-	resultCompatibilityStrutTypeScript
-	resultCompatibilityStrutYAML
-	resultCompatibilityStrutZig
-)
-
-type resultCompatibilityStrutRule struct {
-	languageName string
-	strut        resultCompatibilityStrutID
-}
-
-var resultCompatibilityStrutRules = []resultCompatibilityStrutRule{
-	{"bash", resultCompatibilityStrutBash},
-	{"c", resultCompatibilityStrutC},
-	{"c_sharp", resultCompatibilityStrutCSharp},
-	{"caddy", resultCompatibilityStrutCaddy},
-	{"cobol", resultCompatibilityStrutCobol},
-	{"COBOL", resultCompatibilityStrutCobol},
-	{"comment", resultCompatibilityStrutComment},
-	{"cooklang", resultCompatibilityStrutCooklang},
-	{"d", resultCompatibilityStrutD},
-	{"dart", resultCompatibilityStrutDart},
-	{"elixir", resultCompatibilityStrutElixir},
-	{"erlang", resultCompatibilityStrutErlang},
-	{"fortran", resultCompatibilityStrutFortran},
-	{"go", resultCompatibilityStrutGo},
-	{"haskell", resultCompatibilityStrutHaskell},
-	{"hcl", resultCompatibilityStrutHCL},
-	{"html", resultCompatibilityStrutHTML},
-	{"ini", resultCompatibilityStrutIni},
-	{"javascript", resultCompatibilityStrutJavaScript},
-	{"lua", resultCompatibilityStrutLua},
-	{"make", resultCompatibilityStrutMake},
-	{"nginx", resultCompatibilityStrutNginx},
-	{"nim", resultCompatibilityStrutNim},
-	{"pascal", resultCompatibilityStrutPascal},
-	{"perl", resultCompatibilityStrutPerl},
-	{"php", resultCompatibilityStrutPHP},
-	{"powershell", resultCompatibilityStrutPowerShell},
-	{"pug", resultCompatibilityStrutPug},
-	{"python", resultCompatibilityStrutPython},
-	{"rst", resultCompatibilityStrutRST},
-	{"rust", resultCompatibilityStrutRust},
-	{"ruby", resultCompatibilityStrutRuby},
-	{"scala", resultCompatibilityStrutScala},
-	{"sql", resultCompatibilityStrutSQL},
-	{"svelte", resultCompatibilityStrutSvelte},
-	{"tsx", resultCompatibilityStrutTypeScript},
-	{"typescript", resultCompatibilityStrutTypeScript},
-	{"yaml", resultCompatibilityStrutYAML},
-	{"zig", resultCompatibilityStrutZig},
-}
-
-func resultCompatibilityStrutIDForLanguage(name string) resultCompatibilityStrutID {
-	for _, rule := range resultCompatibilityStrutRules {
-		if rule.languageName == name {
-			return rule.strut
-		}
-	}
-	return resultCompatibilityStrutNone
-}
-
 // normalizeResultCompatibility applies narrow post-build tree rewrites that
 // keep gotreesitter output aligned with C tree-sitter and existing recovery
 // expectations for grammars with known normalization gaps.
@@ -117,97 +18,95 @@ func normalizeResultCompatibility(root *Node, source []byte, p *Parser) {
 	if root == nil || lang == nil {
 		return
 	}
-	if id := resultCompatibilityStrutIDForLanguage(lang.Name); id != resultCompatibilityStrutNone {
-		runResultCompatibilityStrut(id, resultCompatibilityContext{
-			root:   root,
-			source: source,
-			parser: p,
-			lang:   lang,
-		})
-	}
+	runLanguageResultCompatibility(resultCompatibilityContext{
+		root:   root,
+		source: source,
+		parser: p,
+		lang:   lang,
+	})
 	normalizeResultCollapsedNamedLeafChildren(root, lang)
 }
 
-func runResultCompatibilityStrut(id resultCompatibilityStrutID, ctx resultCompatibilityContext) {
-	switch id {
-	case resultCompatibilityStrutBash:
+func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
+	switch ctx.lang.Name {
+	case "bash":
 		normalizeBashProgramVariableAssignments(ctx.root, ctx.lang)
 		normalizeBashGeneratedCommandAssignments(ctx.root, ctx.source, ctx.lang)
 		normalizeBashCommandNameArguments(ctx.root, ctx.lang)
-	case resultCompatibilityStrutC:
+	case "c":
 		normalizeCCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutCSharp:
+	case "c_sharp":
 		normalizeCSharpCompatibility(ctx.root, ctx.source, ctx.parser, ctx.lang)
-	case resultCompatibilityStrutCaddy:
+	case "caddy":
 		normalizeTopLevelTrailingLineBreakSpan(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutCobol:
+	case "cobol", "COBOL":
 		normalizeCobolCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutComment:
+	case "comment":
 		normalizeCommentTrailingExtraTrivia(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutCooklang:
+	case "cooklang":
 		normalizeCooklangTrailingStepTail(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutD:
+	case "d":
 		normalizeDCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutDart:
+	case "dart":
 		normalizeDartCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutElixir:
+	case "elixir":
 		normalizeElixirNestedCallTargetFields(ctx.root, ctx.lang)
-	case resultCompatibilityStrutErlang:
+	case "erlang":
 		normalizeErlangSourceFileForms(ctx.root, ctx.lang)
-	case resultCompatibilityStrutFortran:
+	case "fortran":
 		normalizeFortranStatementLineBreaks(ctx.root, ctx.source, ctx.lang)
 		normalizeTopLevelTrailingLineBreakSpan(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutGo:
+	case "go":
 		normalizeGoReturnedTreeCompatibility(ctx.root, ctx.source, ctx.parser, ctx.lang)
-	case resultCompatibilityStrutHaskell:
+	case "haskell":
 		normalizeHaskellCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutHCL:
+	case "hcl":
 		normalizeHCLConfigFileRoot(ctx.root, ctx.lang)
-	case resultCompatibilityStrutHTML:
+	case "html":
 		normalizeHTMLCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutIni:
+	case "ini":
 		normalizeIniSectionStarts(ctx.root, ctx.lang)
-	case resultCompatibilityStrutJavaScript:
+	case "javascript":
 		normalizeJavaScriptCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutLua:
+	case "lua":
 		normalizeLuaChunkLocalDeclarationFields(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutMake:
+	case "make":
 		normalizeMakeConditionalConsequenceFields(ctx.root, ctx.lang)
-	case resultCompatibilityStrutNginx:
+	case "nginx":
 		normalizeNginxAttributeLineBreaks(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutNim:
+	case "nim":
 		normalizeNimTopLevelCallEnd(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutPascal:
+	case "pascal":
 		normalizePascalTopLevelProgramEnd(ctx.root, ctx.source, ctx.lang)
 		normalizePascalTrailingExtraTrivia(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutPerl:
+	case "perl":
 		normalizePerlCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutPHP:
+	case "php":
 		normalizePHPCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutPowerShell:
+	case "powershell":
 		normalizePowerShellProgramShape(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutPug:
+	case "pug":
 		normalizeTopLevelTrailingLineBreakSpan(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutPython:
+	case "python":
 		normalizePythonCompatibilityWithParser(ctx.root, ctx.source, ctx.parser, ctx.lang)
-	case resultCompatibilityStrutRST:
+	case "rst":
 		normalizeRSTTopLevelSectionEnd(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutRust:
+	case "rust":
 		normalizeRustCompatibility(ctx.root, ctx.source, ctx.parser, ctx.lang)
-	case resultCompatibilityStrutRuby:
+	case "ruby":
 		normalizeRubyThenStarts(ctx.root, ctx.lang)
 		normalizeRubyTopLevelModuleBounds(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutScala:
+	case "scala":
 		normalizeScalaCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutSQL:
+	case "sql":
 		normalizeSQLRecoveredSelectRoot(ctx.root, ctx.lang)
-	case resultCompatibilityStrutSvelte:
+	case "svelte":
 		normalizeSvelteTrailingExtraTrivia(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutTypeScript:
+	case "tsx", "typescript":
 		normalizeTypeScriptTreeCompatibility(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutYAML:
+	case "yaml":
 		normalizeYAMLRecoveredRoot(ctx.root, ctx.source, ctx.lang)
-	case resultCompatibilityStrutZig:
+	case "zig":
 		normalizeZigEmptyInitListFields(ctx.root, ctx.lang)
 	}
 }

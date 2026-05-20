@@ -72,7 +72,7 @@ func normalizeCSharpRecoveredTopLevelChunks(root *Node, source []byte, p *Parser
 	if !ok {
 		return
 	}
-	compilationUnitNamed := int(compilationUnitSym) < len(p.language.SymbolMetadata) && p.language.SymbolMetadata[compilationUnitSym].Named
+	compilationUnitNamed := symbolIsNamed(p.language, compilationUnitSym)
 	if root.ownerArena != nil {
 		buf := root.ownerArena.allocNodeSlice(len(recovered))
 		copy(buf, recovered)

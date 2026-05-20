@@ -1175,11 +1175,7 @@ func pythonKeywordLeafSymbol(node *Node, source []byte, lang *Language) (Symbol,
 	if !ok {
 		return 0, false
 	}
-	if int(sym) >= len(lang.SymbolMetadata) {
-		return 0, false
-	}
-	meta := lang.SymbolMetadata[sym]
-	if meta.Named {
+	if !symbolHasMetadata(lang, sym) || symbolIsNamed(lang, sym) {
 		return 0, false
 	}
 	return sym, true

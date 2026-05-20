@@ -37,9 +37,9 @@ func normalizeSQLRecoveredSelectRoot(root *Node, lang *Language) {
 		copy(buf, bodyChildren)
 		bodyChildren = buf
 	}
-	selectClauseBody := newParentNodeInArena(root.ownerArena, selectClauseBodySym, lang.SymbolMetadata[selectClauseBodySym].Named, bodyChildren, nil, 0)
-	selectClause := newParentNodeInArena(root.ownerArena, selectClauseSym, lang.SymbolMetadata[selectClauseSym].Named, []*Node{root.children[0], selectClauseBody}, nil, 0)
-	selectStatement := newParentNodeInArena(root.ownerArena, selectStmtSym, lang.SymbolMetadata[selectStmtSym].Named, []*Node{selectClause}, nil, 0)
+	selectClauseBody := newParentNodeInArena(root.ownerArena, selectClauseBodySym, symbolIsNamed(lang, selectClauseBodySym), bodyChildren, nil, 0)
+	selectClause := newParentNodeInArena(root.ownerArena, selectClauseSym, symbolIsNamed(lang, selectClauseSym), []*Node{root.children[0], selectClauseBody}, nil, 0)
+	selectStatement := newParentNodeInArena(root.ownerArena, selectStmtSym, symbolIsNamed(lang, selectStmtSym), []*Node{selectClause}, nil, 0)
 	children := []*Node{selectStatement}
 	if root.ownerArena != nil {
 		buf := root.ownerArena.allocNodeSlice(1)
