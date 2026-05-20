@@ -128,6 +128,52 @@ func TestPendingParentMaterializationPreservesFieldEntries(t *testing.T) {
 	}
 }
 
+func TestPendingParentMaterializationRecomputesDirectFieldEntries(t *testing.T) {
+	lang := &Language{
+		FieldMapSlices: [][2]uint16{
+			{},
+			{},
+			{},
+			{},
+			{},
+			{0, 2},
+		},
+		FieldMapEntries: []FieldMapEntry{
+			{FieldID: 7, ChildIndex: 0},
+			{FieldID: 9, ChildIndex: 1},
+		},
+	}
+	parser := NewParser(lang)
+	arena := newNodeArena(arenaClassFull)
+	extra := newLeafNodeInArena(arena, 3, false, 0, 1, Point{}, Point{Column: 1})
+	extra.setExtra(true)
+	left := newLeafNodeInArena(arena, 1, true, 1, 2, Point{Column: 1}, Point{Column: 2})
+	right := newLeafNodeInArena(arena, 2, true, 2, 3, Point{Column: 2}, Point{Column: 3})
+	parent := newPendingParentShellWithEntrySlotsInArena(arena, 4, true, 5, 3, 3, 0, 3, Point{}, Point{Column: 3}, false)
+	parent.setHasDirectFieldEntries(true)
+	parent.setChildEntry(arena, 0, newStackEntryNode(6, extra))
+	parent.setChildEntry(arena, 1, newStackEntryNode(7, left))
+	parent.setChildEntry(arena, 2, newStackEntryNode(8, right))
+
+	entry := newStackEntryPendingParent(9, parent)
+	node := materializeStackEntryPendingParentWithParser(parser, arena, &entry, pendingParentMaterializeForFinalTree)
+	if node == nil {
+		t.Fatal("materialized node = nil")
+	}
+	if got := arena.pendingChildEntriesAllocated; got != 3 {
+		t.Fatalf("pendingChildEntriesAllocated = %d, want direct child slots only", got)
+	}
+	if len(node.fieldIDs) != 3 || node.fieldIDs[0] != 0 || node.fieldIDs[1] != 7 || node.fieldIDs[2] != 9 {
+		t.Fatalf("fieldIDs = %#v, want [0 7 9]", node.fieldIDs)
+	}
+	if len(node.fieldSources) != 3 || node.fieldSources[0] != fieldSourceNone || node.fieldSources[1] != fieldSourceDirect || node.fieldSources[2] != fieldSourceDirect {
+		t.Fatalf("fieldSources = %#v, want [none direct direct]", node.fieldSources)
+	}
+	if node.flags&pendingParentFlagDirectFieldEntry != 0 {
+		t.Fatalf("internal pending direct-field flag leaked to materialized node flags: %08b", node.flags)
+	}
+}
+
 func TestNoTreeNodeStackEntryKeepsBytesAndDropsPoints(t *testing.T) {
 	leaf := newNoTreeLeafNodeInArena(nil, 7, true, 11, 19, Point{Row: 3, Column: 5}, Point{Row: 3, Column: 13})
 	entry := newStackEntryNoTreeNode(2, leaf)

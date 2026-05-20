@@ -27,13 +27,14 @@ type pendingChildEntry uintptr
 type pendingChildRange uint64
 
 const (
-	pendingChildRangeCountBits  = 20
-	pendingChildRangeOffsetBits = 24
-	pendingChildRangeCountMask  = (uint64(1) << pendingChildRangeCountBits) - 1
-	pendingChildRangeOffsetMask = (uint64(1) << pendingChildRangeOffsetBits) - 1
+	pendingChildRangeCountBits                  = 20
+	pendingChildRangeOffsetBits                 = 24
+	pendingChildRangeCountMask                  = (uint64(1) << pendingChildRangeCountBits) - 1
+	pendingChildRangeOffsetMask                 = (uint64(1) << pendingChildRangeOffsetBits) - 1
+	pendingParentFlagFieldEntries     nodeFlags = 1 << 4
+	pendingParentFlagDirectFieldEntry nodeFlags = 1 << 5
 
-	pendingParentFlagFieldEntries nodeFlags = 1 << 4
-	publicPendingParentNodeFlags  nodeFlags = nodeFlagNamed | nodeFlagExtra | nodeFlagMissing | nodeFlagHasError
+	publicPendingParentNodeFlags nodeFlags = nodeFlagNamed | nodeFlagExtra | nodeFlagMissing | nodeFlagHasError
 )
 
 type pendingParentMaterializeReason = materializeReason
@@ -198,6 +199,14 @@ func (p *pendingParent) setHasFieldEntries(v bool) {
 	p.setFlag(pendingParentFlagFieldEntries, v)
 }
 
+func (p *pendingParent) hasDirectFieldEntries() bool {
+	return p != nil && p.hasFlag(pendingParentFlagDirectFieldEntry)
+}
+
+func (p *pendingParent) setHasDirectFieldEntries(v bool) {
+	p.setFlag(pendingParentFlagDirectFieldEntry, v)
+}
+
 func (p *pendingParent) setChildFieldEntry(arena *nodeArena, i int, fid FieldID, source uint8) {
 	if p == nil || i < 0 || i >= p.childEntryCount() {
 		return
@@ -332,7 +341,9 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 	children := arena.allocNodeSliceNoClear(childCount)
 	var fieldIDs []FieldID
 	var fieldSources []uint8
-	if parent.hasFieldEntries() {
+	hasDenseFieldEntries := parent.hasFieldEntries()
+	hasDirectFieldEntries := parent.hasDirectFieldEntries()
+	if hasDenseFieldEntries || hasDirectFieldEntries {
 		fieldIDs = arena.allocFieldIDSlice(childCount)
 		fieldSources = arena.allocFieldSourceSlice(childCount)
 	}
@@ -342,11 +353,14 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 		children[i], updatedChild = materializeStackEntryPayloadEntryWithParser(p, arena, child, compactFullLeafMaterializeReason(reason), reason)
 		child = updatedChild
 		parent.setChildEntry(arena, i, child)
-		if fieldIDs != nil {
+		if hasDenseFieldEntries {
 			fid, source := parent.childFieldEntry(arena, i)
 			fieldIDs[i] = fid
 			fieldSources[i] = source
 		}
+	}
+	if hasDirectFieldEntries {
+		p.populatePendingDirectFieldEntries(parent, children, fieldIDs, fieldSources, arena)
 	}
 	if fieldIDs != nil && p != nil {
 		p.suppressReducedChildFields(children, fieldIDs, fieldSources)

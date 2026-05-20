@@ -1373,6 +1373,7 @@ func (p *Parser) tryPushPendingDirectFieldParent(s *glrStack, act ParseAction, t
 	childCount := 0
 	hasError := false
 	var first, last stackEntry
+	skippedHiddenChild := false
 	for i := start; i < reducedEnd; i++ {
 		entry := entries[i]
 		if !stackEntryHasNode(entry) {
@@ -1385,6 +1386,7 @@ func (p *Parser) tryPushPendingDirectFieldParent(s *glrStack, act ParseAction, t
 			if stackEntryNodeHasError(entry) || stackEntryTreeHasFieldIDs(entry, arena) || pendingPlainHiddenVisibleDescendantCount(entry, arena, symbolMeta) != 0 {
 				return false
 			}
+			skippedHiddenChild = true
 			continue
 		}
 		if childCount == 0 {
@@ -1413,14 +1415,18 @@ func (p *Parser) tryPushPendingDirectFieldParent(s *glrStack, act ParseAction, t
 		p.isNamedSymbol(act.Symbol),
 		act.ProductionID,
 		childCount,
-		childCount*2,
+		pendingDirectFieldParentEntrySlots(childCount, skippedHiddenChild),
 		startByte,
 		endByte,
 		startPoint,
 		endPoint,
 		hasError,
 	)
-	parent.setHasFieldEntries(true)
+	if skippedHiddenChild {
+		parent.setHasFieldEntries(true)
+	} else {
+		parent.setHasDirectFieldEntries(true)
+	}
 	out := 0
 	structuralChildIndex := 0
 	for i := start; i < reducedEnd; i++ {
@@ -1439,7 +1445,7 @@ func (p *Parser) tryPushPendingDirectFieldParent(s *glrStack, act ParseAction, t
 			continue
 		}
 		parent.setChildEntry(arena, out, entry)
-		if fid != 0 {
+		if skippedHiddenChild && fid != 0 {
 			parent.setChildFieldEntry(arena, out, fid, fieldSourceDirect)
 		}
 		out++
@@ -1478,6 +1484,51 @@ func (p *Parser) tryPushPendingDirectFieldParent(s *glrStack, act ParseAction, t
 		*anyReduced = true
 	}
 	return true
+}
+
+func pendingDirectFieldParentEntrySlots(childCount int, skippedHiddenChild bool) int {
+	if skippedHiddenChild {
+		return childCount * 2
+	}
+	return childCount
+}
+
+func (p *Parser) populatePendingDirectFieldEntries(parent *pendingParent, children []*Node, fieldIDs []FieldID, fieldSources []uint8, arena *nodeArena) {
+	if p == nil || parent == nil || len(children) == 0 || len(fieldIDs) == 0 {
+		return
+	}
+	structuralChildCount := 0
+	for _, child := range children {
+		if child != nil && !child.isExtra() {
+			structuralChildCount++
+		}
+	}
+	rawFieldIDs, rawInherited := p.buildFieldIDs(structuralChildCount, parent.productionID, arena)
+	if len(rawFieldIDs) == 0 {
+		return
+	}
+	structuralChildIndex := 0
+	for i, child := range children {
+		if child == nil || child.isExtra() {
+			continue
+		}
+		var fid FieldID
+		inherited := false
+		if structuralChildIndex < len(rawFieldIDs) {
+			fid = rawFieldIDs[structuralChildIndex]
+			if structuralChildIndex < len(rawInherited) {
+				inherited = rawInherited[structuralChildIndex]
+			}
+		}
+		structuralChildIndex++
+		if inherited || fid == 0 || p.shouldSuppressVisibleDirectField(child, fid) {
+			continue
+		}
+		fieldIDs[i] = fid
+		if i < len(fieldSources) {
+			fieldSources[i] = fieldSourceDirect
+		}
+	}
 }
 
 func stackEntryTreeHasFieldIDs(entry stackEntry, arena *nodeArena) bool {

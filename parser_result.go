@@ -132,7 +132,7 @@ func (p *Parser) buildResultFromGLR(stacks []glrStack, source []byte, arena *nod
 		}
 		return tree
 	}
-	nodes := nodesFromGSSMaterializingCompactFullLeaves(selected.gss, arena)
+	nodes := nodesFromGSSMaterializingCompactFullLeaves(p, selected.gss, arena)
 	materializeStart := time.Time{}
 	if materializationTiming != nil {
 		materializeStart = time.Now()
@@ -662,7 +662,7 @@ func nodesFromGSS(stack gssStack) []*Node {
 	return nodes
 }
 
-func nodesFromGSSMaterializingCompactFullLeaves(stack gssStack, arena *nodeArena) []*Node {
+func nodesFromGSSMaterializingCompactFullLeaves(p *Parser, stack gssStack, arena *nodeArena) []*Node {
 	if stack.head == nil {
 		return nil
 	}
@@ -678,7 +678,7 @@ func nodesFromGSSMaterializingCompactFullLeaves(stack gssStack, arena *nodeArena
 	nodes := make([]*Node, count)
 	i := count - 1
 	for n := stack.head; n != nil; n = n.prev {
-		if node := materializeStackEntryPayload(arena, &n.entry, compactFullLeafMaterializeForFinalTree, pendingParentMaterializeForFinalTree); node != nil {
+		if node := materializeStackEntryPayloadWithParser(p, arena, &n.entry, compactFullLeafMaterializeForFinalTree, pendingParentMaterializeForFinalTree); node != nil {
 			nodes[i] = node
 			i--
 		}
@@ -718,7 +718,7 @@ func filterZeroWidthExtras(nodes []*Node, arena *nodeArena) []*Node {
 func (p *Parser) buildResult(stack []stackEntry, source []byte, arena *nodeArena, oldTree *Tree, reuseState *parseReuseState, linkScratch *[]*Node) *Tree {
 	var nodes []*Node
 	for i := range stack {
-		if node := materializeStackEntryPayload(arena, &stack[i], compactFullLeafMaterializeForFinalTree, pendingParentMaterializeForFinalTree); node != nil {
+		if node := materializeStackEntryPayloadWithParser(p, arena, &stack[i], compactFullLeafMaterializeForFinalTree, pendingParentMaterializeForFinalTree); node != nil {
 			nodes = append(nodes, node)
 		}
 	}
