@@ -796,6 +796,15 @@ func TestParseCompactFullArenaInitialNodeCapacityCapsHugeSourceFloor(t *testing.
 	}
 }
 
+func TestParseFinalChildRefArenaInitialNodeCapacityUsesSmallerFloor(t *testing.T) {
+	sourceLen := 2 * 1024 * 1024
+	got := parseFinalChildRefArenaInitialNodeCapacity(sourceLen)
+	want := 64 * 1024
+	if got != want {
+		t.Fatalf("parseFinalChildRefArenaInitialNodeCapacity(%d) = %d, want %d", sourceLen, got, want)
+	}
+}
+
 func TestParsePendingFullArenaNodeCapacityUsesCloseWarmHint(t *testing.T) {
 	sourceLen := 2 * 1024 * 1024
 	initial := parsePendingFullArenaInitialNodeCapacity(sourceLen)
@@ -913,6 +922,35 @@ func TestParseShouldUseCompactFullShiftLeavesKeepsEnvOptInForOtherLargeSources(t
 	parser.noResultCompatibilityBenchmarkOnly = false
 	if parseShouldUseCompactFullShiftLeaves(parser, source, nil, nil, arenaClassFull) {
 		t.Fatal("parseShouldUseCompactFullShiftLeaves = true, want no-compat-only gate")
+	}
+}
+
+func TestParseShouldUseFinalChildRefsDefaultsForLargePythonNoCompat(t *testing.T) {
+	source := make([]byte, 256*1024)
+	parser := &Parser{
+		language:                           &Language{Name: "python"},
+		pendingFullParents:                 true,
+		noResultCompatibilityBenchmarkOnly: true,
+	}
+	if !parseShouldUseFinalChildRefs(parser, source, nil, nil, arenaClassFull) {
+		t.Fatal("parseShouldUseFinalChildRefs = false, want default large Python no-compat pending full parse")
+	}
+
+	parser.pendingFullParents = false
+	if parseShouldUseFinalChildRefs(parser, source, nil, nil, arenaClassFull) {
+		t.Fatal("parseShouldUseFinalChildRefs = true, want pending-parent gate")
+	}
+
+	parser.pendingFullParents = true
+	parser.noResultCompatibilityBenchmarkOnly = false
+	if parseShouldUseFinalChildRefs(parser, source, nil, nil, arenaClassFull) {
+		t.Fatal("parseShouldUseFinalChildRefs = true, want no-compat-only gate")
+	}
+
+	parser.noResultCompatibilityBenchmarkOnly = true
+	t.Setenv("GOT_GLR_V2_FINAL_CHILD_REFS", "0")
+	if parseShouldUseFinalChildRefs(parser, source, nil, nil, arenaClassFull) {
+		t.Fatal("parseShouldUseFinalChildRefs = true, want explicit env disable")
 	}
 }
 

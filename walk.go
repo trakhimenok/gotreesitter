@@ -60,9 +60,9 @@ func Walk(node *Node, fn func(node *Node, depth int) WalkAction) {
 
 		// Use Child(i) index access to avoid allocating a []*Node children slice.
 		childDepth := e.depth + 1
-		count := e.node.ChildCount()
+		count := nodeChildCountNoMaterialize(e.node)
 		for i := count - 1; i >= 0; i-- {
-			if child := e.node.Child(i); child != nil {
+			if child := nodeChildAtForReason(e.node, i, materializeForCursor); child != nil {
 				stack = append(stack, walkEntry{node: child, depth: childDepth})
 			}
 		}

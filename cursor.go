@@ -63,10 +63,10 @@ func (c *TreeCursor) Depth() int {
 // Returns false if the current node has no children.
 func (c *TreeCursor) GotoFirstChild() bool {
 	node := c.CurrentNode()
-	if node == nil || len(node.children) == 0 {
+	if node == nil || nodeChildCountNoMaterialize(node) == 0 {
 		return false
 	}
-	c.stack = append(c.stack, cursorFrame{node: node.children[0], childIndex: 0})
+	c.stack = append(c.stack, cursorFrame{node: nodeChildAtForReason(node, 0, materializeForCursor), childIndex: 0})
 	return true
 }
 
@@ -77,11 +77,11 @@ func (c *TreeCursor) GotoLastChild() bool {
 	if node == nil {
 		return false
 	}
-	n := len(node.children)
+	n := nodeChildCountNoMaterialize(node)
 	if n == 0 {
 		return false
 	}
-	c.stack = append(c.stack, cursorFrame{node: node.children[n-1], childIndex: n - 1})
+	c.stack = append(c.stack, cursorFrame{node: nodeChildAtForReason(node, n-1, materializeForCursor), childIndex: n - 1})
 	return true
 }
 
@@ -97,11 +97,11 @@ func (c *TreeCursor) GotoNextSibling() bool {
 		return false
 	}
 	next := frame.childIndex + 1
-	if next >= len(parentNode.children) {
+	if next >= nodeChildCountNoMaterialize(parentNode) {
 		return false
 	}
 	frame.childIndex = next
-	frame.node = parentNode.children[next]
+	frame.node = nodeChildAtForReason(parentNode, next, materializeForCursor)
 	return true
 }
 
@@ -121,7 +121,7 @@ func (c *TreeCursor) GotoPrevSibling() bool {
 		return false
 	}
 	frame.childIndex = prev
-	frame.node = parentNode.children[prev]
+	frame.node = nodeChildAtForReason(parentNode, prev, materializeForCursor)
 	return true
 }
 
@@ -146,10 +146,7 @@ func (c *TreeCursor) CurrentFieldID() FieldID {
 	if parentNode == nil {
 		return 0
 	}
-	if frame.childIndex < len(parentNode.fieldIDs) {
-		return parentNode.fieldIDs[frame.childIndex]
-	}
-	return 0
+	return nodeFieldIDAt(parentNode, frame.childIndex)
 }
 
 // CurrentFieldName returns the field name of the current node within its parent.
@@ -178,9 +175,10 @@ func (c *TreeCursor) GotoChildByFieldID(fid FieldID) bool {
 	if node == nil {
 		return false
 	}
-	for i, id := range node.fieldIDs {
-		if id == fid && i < len(node.children) {
-			c.stack = append(c.stack, cursorFrame{node: node.children[i], childIndex: i})
+	count := nodeChildCountNoMaterialize(node)
+	for i := 0; i < count; i++ {
+		if nodeFieldIDAt(node, i) == fid {
+			c.stack = append(c.stack, cursorFrame{node: nodeChildAtForReason(node, i, materializeForCursor), childIndex: i})
 			return true
 		}
 	}
@@ -212,7 +210,9 @@ func (c *TreeCursor) GotoFirstNamedChild() bool {
 	if node == nil {
 		return false
 	}
-	for i, child := range node.children {
+	count := nodeChildCountNoMaterialize(node)
+	for i := 0; i < count; i++ {
+		child := nodeChildAtForReason(node, i, materializeForCursor)
 		if child.isNamed() {
 			c.stack = append(c.stack, cursorFrame{node: child, childIndex: i})
 			return true
@@ -228,9 +228,10 @@ func (c *TreeCursor) GotoLastNamedChild() bool {
 	if node == nil {
 		return false
 	}
-	for i := len(node.children) - 1; i >= 0; i-- {
-		if node.children[i].isNamed() {
-			c.stack = append(c.stack, cursorFrame{node: node.children[i], childIndex: i})
+	for i := nodeChildCountNoMaterialize(node) - 1; i >= 0; i-- {
+		child := nodeChildAtForReason(node, i, materializeForCursor)
+		if child.isNamed() {
+			c.stack = append(c.stack, cursorFrame{node: child, childIndex: i})
 			return true
 		}
 	}
@@ -248,10 +249,12 @@ func (c *TreeCursor) GotoNextNamedSibling() bool {
 	if parentNode == nil {
 		return false
 	}
-	for i := frame.childIndex + 1; i < len(parentNode.children); i++ {
-		if parentNode.children[i].isNamed() {
+	count := nodeChildCountNoMaterialize(parentNode)
+	for i := frame.childIndex + 1; i < count; i++ {
+		child := nodeChildAtForReason(parentNode, i, materializeForCursor)
+		if child.isNamed() {
 			frame.childIndex = i
-			frame.node = parentNode.children[i]
+			frame.node = child
 			return true
 		}
 	}
@@ -270,9 +273,10 @@ func (c *TreeCursor) GotoPrevNamedSibling() bool {
 		return false
 	}
 	for i := frame.childIndex - 1; i >= 0; i-- {
-		if parentNode.children[i].isNamed() {
+		child := nodeChildAtForReason(parentNode, i, materializeForCursor)
+		if child.isNamed() {
 			frame.childIndex = i
-			frame.node = parentNode.children[i]
+			frame.node = child
 			return true
 		}
 	}
@@ -291,16 +295,18 @@ func pointGreaterThan(a, b Point) bool {
 // Returns the child index, or -1 when no child contains the byte.
 func (c *TreeCursor) GotoFirstChildForByte(targetByte uint32) int64 {
 	node := c.CurrentNode()
-	if node == nil || len(node.children) == 0 {
+	childCount := nodeChildCountNoMaterialize(node)
+	if node == nil || childCount == 0 {
 		return -1
 	}
-	i := sort.Search(len(node.children), func(i int) bool {
-		return node.children[i].endByte > targetByte
+	i := sort.Search(childCount, func(i int) bool {
+		child := nodeChildAtForReason(node, i, materializeForCursor)
+		return child != nil && child.endByte > targetByte
 	})
-	if i >= len(node.children) {
+	if i >= childCount {
 		return -1
 	}
-	c.stack = append(c.stack, cursorFrame{node: node.children[i], childIndex: i})
+	c.stack = append(c.stack, cursorFrame{node: nodeChildAtForReason(node, i, materializeForCursor), childIndex: i})
 	return int64(i)
 }
 
@@ -309,16 +315,18 @@ func (c *TreeCursor) GotoFirstChildForByte(targetByte uint32) int64 {
 // Returns the child index, or -1 when no child contains the point.
 func (c *TreeCursor) GotoFirstChildForPoint(targetPoint Point) int64 {
 	node := c.CurrentNode()
-	if node == nil || len(node.children) == 0 {
+	childCount := nodeChildCountNoMaterialize(node)
+	if node == nil || childCount == 0 {
 		return -1
 	}
-	i := sort.Search(len(node.children), func(i int) bool {
-		return pointGreaterThan(node.children[i].endPoint, targetPoint)
+	i := sort.Search(childCount, func(i int) bool {
+		child := nodeChildAtForReason(node, i, materializeForCursor)
+		return child != nil && pointGreaterThan(child.endPoint, targetPoint)
 	})
-	if i >= len(node.children) {
+	if i >= childCount {
 		return -1
 	}
-	c.stack = append(c.stack, cursorFrame{node: node.children[i], childIndex: i})
+	c.stack = append(c.stack, cursorFrame{node: nodeChildAtForReason(node, i, materializeForCursor), childIndex: i})
 	return int64(i)
 }
 

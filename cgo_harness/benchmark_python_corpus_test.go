@@ -105,6 +105,12 @@ type pythonRuntimeBenchStats struct {
 	finalChildPointers                   uint64
 	finalFieldIDElements                 uint64
 	finalFieldSourceElements             uint64
+	finalChildRefParents                 uint64
+	finalChildRefs                       uint64
+	finalChildRefMaterializedParents     uint64
+	finalChildRefMaterializedChildren    uint64
+	finalChildRefSingleChildAccesses     uint64
+	finalChildRefSingleChildMaterialized uint64
 	gssNodesAllocated                    uint64
 	gssNodesRetained                     uint64
 	gssNodesDropped                      uint64
@@ -415,6 +421,12 @@ func (s *pythonRuntimeBenchStats) add(rt gotreesitter.ParseRuntime, breakdown go
 	s.finalChildPointers += rt.FinalChildPointers
 	s.finalFieldIDElements += rt.FinalFieldIDElements
 	s.finalFieldSourceElements += rt.FinalFieldSourceElements
+	s.finalChildRefParents += rt.FinalChildRefParents
+	s.finalChildRefs += rt.FinalChildRefs
+	s.finalChildRefMaterializedParents += rt.FinalChildRefMaterializedParents
+	s.finalChildRefMaterializedChildren += rt.FinalChildRefMaterializedChildren
+	s.finalChildRefSingleChildAccesses += rt.FinalChildRefSingleChildAccesses
+	s.finalChildRefSingleChildMaterialized += rt.FinalChildRefSingleChildMaterializedChildren
 	s.gssNodesAllocated += rt.GSSNodesAllocated
 	s.gssNodesRetained += rt.GSSNodesRetained
 	s.gssNodesDropped += rt.GSSNodesDroppedSameToken
@@ -633,6 +645,14 @@ func (s pythonRuntimeBenchStats) report(b *testing.B) {
 	b.ReportMetric(float64(s.parentNodesConstructed)/tokens, "parent_full_nodes/token")
 	b.ReportMetric(float64(s.noTreeReduceNodesConstructed)/tokens, "notree_nodes/token")
 	b.ReportMetric(float64(s.noTreeLeafNodesConstructed)/tokens, "notree_leaf_nodes/token")
+	if s.finalChildRefParents != 0 || s.finalChildRefs != 0 || s.finalChildRefMaterializedParents != 0 || s.finalChildRefSingleChildAccesses != 0 {
+		b.ReportMetric(float64(s.finalChildRefParents)/tokens, "final_child_ref_parents/token")
+		b.ReportMetric(float64(s.finalChildRefs)/tokens, "final_child_refs/token")
+		b.ReportMetric(float64(s.finalChildRefMaterializedParents)/tokens, "final_child_ref_range_materialized_parents/token")
+		b.ReportMetric(float64(s.finalChildRefMaterializedChildren)/tokens, "final_child_ref_range_materialized_children/token")
+		b.ReportMetric(float64(s.finalChildRefSingleChildAccesses)/tokens, "final_child_ref_single_child_accesses/token")
+		b.ReportMetric(float64(s.finalChildRefSingleChildMaterialized)/tokens, "final_child_ref_single_child_materialized/token")
+	}
 	if s.finalNodes != 0 {
 		b.ReportMetric(float64(s.finalNodes)/tokens, "final_nodes/token")
 		b.ReportMetric(float64(s.finalParentNodes)/tokens, "final_parent_nodes/token")

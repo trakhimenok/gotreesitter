@@ -110,6 +110,200 @@ func defaultFieldSourcesInArena(arena *nodeArena, fieldIDs []FieldID) []uint8 {
 	return out
 }
 
+type finalChildSidecar struct {
+	childRange pendingChildRange
+}
+
+const finalChildSidecarIndexBase int32 = -2
+
+func finalChildSidecarID(childIndex int32) (int, bool) {
+	if childIndex > finalChildSidecarIndexBase {
+		return 0, false
+	}
+	return int(-childIndex - 2), true
+}
+
+func (a *nodeArena) attachFinalChildRefs(parent *Node, childRange pendingChildRange) {
+	if a == nil || parent == nil || childRange.count() == 0 {
+		return
+	}
+	if len(a.finalChildSidecars) >= int(^uint32(0)>>1) {
+		return
+	}
+	id := len(a.finalChildSidecars)
+	a.finalChildSidecars = append(a.finalChildSidecars, finalChildSidecar{childRange: childRange})
+	parent.childIndex = -int32(id) - 2
+	a.finalChildRefParents++
+	a.finalChildRefsCreated += uint64(childRange.count())
+}
+
+func (a *nodeArena) finalChildRange(parent *Node) (pendingChildRange, bool) {
+	if a == nil || parent == nil {
+		return 0, false
+	}
+	id, ok := finalChildSidecarID(parent.childIndex)
+	if !ok || id < 0 || id >= len(a.finalChildSidecars) {
+		return 0, false
+	}
+	childRange := a.finalChildSidecars[id].childRange
+	return childRange, childRange.count() > 0
+}
+
+func (a *nodeArena) clearFinalChildRefs(parent *Node) {
+	if a == nil || parent == nil {
+		return
+	}
+	id, ok := finalChildSidecarID(parent.childIndex)
+	if !ok || id < 0 || id >= len(a.finalChildSidecars) {
+		return
+	}
+	a.finalChildSidecars[id] = finalChildSidecar{}
+	parent.childIndex = -1
+}
+
+func nodeChildCountNoMaterialize(n *Node) int {
+	if n == nil {
+		return 0
+	}
+	if childRange, ok := n.ownerArena.finalChildRange(n); ok {
+		return childRange.count()
+	}
+	return len(n.children)
+}
+
+func nodeMaterializeFinalChildRefs(n *Node, reason materializeReason) {
+	if n == nil || n.ownerArena == nil {
+		return
+	}
+	arena := n.ownerArena
+	childRange, ok := arena.finalChildRange(n)
+	if !ok {
+		return
+	}
+	refs := childRange.refs(arena)
+	count := childRange.count()
+	children := arena.allocNodeSliceNoClear(count)
+	for i := 0; i < count; i++ {
+		entry := refs[i].stackEntry()
+		child, updated := materializeStackEntryPayloadEntryWithParser(
+			nil,
+			arena,
+			entry,
+			compactFullLeafMaterializeReason(reason),
+			pendingParentMaterializeReason(reason),
+		)
+		children[i] = child
+		refs[i] = newPendingChildEntry(updated)
+		if child != nil {
+			child.parent = n
+			if _, hasChildRefs := child.ownerArena.finalChildRange(child); !hasChildRefs {
+				child.childIndex = int32(i)
+			}
+		}
+	}
+	n.children = children
+	arena.clearFinalChildRefs(n)
+	arena.finalChildRefsMaterializedParents++
+	arena.finalChildRefsMaterializedChildren += uint64(count)
+}
+
+func nodeMaterializeFinalChildRefAt(n *Node, i int, reason materializeReason) *Node {
+	if n == nil {
+		return nil
+	}
+	if n.ownerArena == nil {
+		if i < 0 || i >= len(n.children) {
+			return nil
+		}
+		return n.children[i]
+	}
+	arena := n.ownerArena
+	childRange, ok := arena.finalChildRange(n)
+	if !ok {
+		if i < 0 || i >= len(n.children) {
+			return nil
+		}
+		return n.children[i]
+	}
+	if i < 0 || i >= childRange.count() {
+		return nil
+	}
+	refs := childRange.refs(arena)
+	if i >= len(refs) {
+		return nil
+	}
+	entry := refs[i].stackEntry()
+	arena.finalChildRefsSingleChildAccesses++
+	wasMaterialized := entry.kind == stackEntryKindNode
+	child, updated := materializeStackEntryPayloadEntryWithParser(
+		nil,
+		arena,
+		entry,
+		compactFullLeafMaterializeReason(reason),
+		pendingParentMaterializeReason(reason),
+	)
+	refs[i] = newPendingChildEntry(updated)
+	if child == nil {
+		return nil
+	}
+	child.parent = n
+	if _, hasChildRefs := child.ownerArena.finalChildRange(child); !hasChildRefs {
+		child.childIndex = int32(i)
+	}
+	if !wasMaterialized {
+		arena.finalChildRefsSingleChildMaterializedChildren++
+	}
+	return child
+}
+
+func nodeChildCount(n *Node) int {
+	return nodeChildCountNoMaterialize(n)
+}
+
+func nodeChildAtForReason(n *Node, i int, reason materializeReason) *Node {
+	if n == nil || i < 0 || i >= nodeChildCountNoMaterialize(n) {
+		return nil
+	}
+	return nodeMaterializeFinalChildRefAt(n, i, reason)
+}
+
+func nodeChildrenForReason(n *Node, reason materializeReason) []*Node {
+	if n == nil {
+		return nil
+	}
+	nodeMaterializeFinalChildRefs(n, reason)
+	return n.children
+}
+
+func materializeFinalChildRefsForSubtree(root *Node, reason materializeReason) {
+	if root == nil {
+		return
+	}
+	if root.ownerArena == nil || len(root.ownerArena.finalChildSidecars) == 0 {
+		return
+	}
+	var local [64]*Node
+	stack := local[:0]
+	stack = append(stack, root)
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		children := nodeChildrenForReason(n, reason)
+		for i := len(children) - 1; i >= 0; i-- {
+			if children[i] != nil {
+				stack = append(stack, children[i])
+			}
+		}
+	}
+}
+
+func nodeFieldIDAt(n *Node, i int) FieldID {
+	if n == nil || i < 0 || i >= len(n.fieldIDs) {
+		return 0
+	}
+	return n.fieldIDs[i]
+}
+
 // ParseStopReason reports why parseInternal terminated.
 type ParseStopReason string
 
@@ -168,77 +362,83 @@ type PendingParentFieldRejectPayloadStats struct {
 
 // ParseRuntime captures parser-loop diagnostics for a completed tree.
 type ParseRuntime struct {
-	StopReason                         ParseStopReason
-	SourceLen                          uint32
-	ExpectedEOFByte                    uint32
-	RootEndByte                        uint32
-	Truncated                          bool
-	TokenSourceEOFEarly                bool
-	TokensConsumed                     uint64
-	LastTokenEndByte                   uint32
-	LastTokenSymbol                    Symbol
-	LastTokenWasEOF                    bool
-	IterationLimit                     int
-	StackDepthLimit                    int
-	NodeLimit                          int
-	MemoryBudgetBytes                  int64
-	Iterations                         int
-	NodesAllocated                     int
-	ArenaBytesAllocated                int64
-	ScratchBytesAllocated              int64
-	EntryScratchBytesAllocated         int64
-	GSSBytesAllocated                  int64
-	PeakStackDepth                     int
-	MaxStacksSeen                      int
-	SingleStackIterations              int
-	MultiStackIterations               int
-	SingleStackTokens                  uint64
-	MultiStackTokens                   uint64
-	SingleStackGSSNodes                uint64
-	MultiStackGSSNodes                 uint64
-	GSSNodesAllocated                  uint64
-	GSSNodesRetained                   uint64
-	GSSNodesDroppedSameToken           uint64
-	ParentNodesAllocated               uint64
-	ParentNodesRetained                uint64
-	ParentNodesDroppedSameToken        uint64
-	LeafNodesAllocated                 uint64
-	LeafNodesRetained                  uint64
-	LeafNodesDroppedSameToken          uint64
-	ChildSlicesAllocated               uint64
-	ChildSlicesRetained                uint64
-	ChildSlicesDroppedSameToken        uint64
-	ChildPointersAllocated             uint64
-	ChildPointersRetained              uint64
-	ChildPointersDroppedSameToken      uint64
-	ReduceChildFastGSS                 ReduceChildPathRuntime
-	ReduceChildAllVisible              ReduceChildPathRuntime
-	ReduceChildNoAlias                 ReduceChildPathRuntime
-	ReduceChildScratchGeneral          ReduceChildPathRuntime
-	ReduceChildScratchNoAlias          ReduceChildPathRuntime
-	TransientChildSlicesAllocated      uint64
-	TransientChildPointersAllocated    uint64
-	TransientChildSlicesMaterialized   uint64
-	TransientChildPointersMaterialized uint64
-	TransientParentNodesAllocated      uint64
-	TransientParentNodesMaterialized   uint64
-	FinalNodes                         uint64
-	FinalParentNodes                   uint64
-	FinalLeafNodes                     uint64
-	FinalFieldedParentNodes            uint64
-	FinalUnfieldedParentNodes          uint64
-	FinalVisibleParentNodes            uint64
-	FinalHiddenParentNodes             uint64
-	FinalCheckpointLeafNodes           uint64
-	FinalChildSlices                   uint64
-	FinalChildPointers                 uint64
-	FinalFieldIDElements               uint64
-	FinalFieldSourceElements           uint64
-	MergeStacksIn                      uint64
-	MergeStacksOut                     uint64
-	MergeSlotsUsed                     uint64
-	GlobalCullStacksIn                 uint64
-	GlobalCullStacksOut                uint64
+	StopReason                                   ParseStopReason
+	SourceLen                                    uint32
+	ExpectedEOFByte                              uint32
+	RootEndByte                                  uint32
+	Truncated                                    bool
+	TokenSourceEOFEarly                          bool
+	TokensConsumed                               uint64
+	LastTokenEndByte                             uint32
+	LastTokenSymbol                              Symbol
+	LastTokenWasEOF                              bool
+	IterationLimit                               int
+	StackDepthLimit                              int
+	NodeLimit                                    int
+	MemoryBudgetBytes                            int64
+	Iterations                                   int
+	NodesAllocated                               int
+	ArenaBytesAllocated                          int64
+	ScratchBytesAllocated                        int64
+	EntryScratchBytesAllocated                   int64
+	GSSBytesAllocated                            int64
+	PeakStackDepth                               int
+	MaxStacksSeen                                int
+	SingleStackIterations                        int
+	MultiStackIterations                         int
+	SingleStackTokens                            uint64
+	MultiStackTokens                             uint64
+	SingleStackGSSNodes                          uint64
+	MultiStackGSSNodes                           uint64
+	GSSNodesAllocated                            uint64
+	GSSNodesRetained                             uint64
+	GSSNodesDroppedSameToken                     uint64
+	ParentNodesAllocated                         uint64
+	ParentNodesRetained                          uint64
+	ParentNodesDroppedSameToken                  uint64
+	LeafNodesAllocated                           uint64
+	LeafNodesRetained                            uint64
+	LeafNodesDroppedSameToken                    uint64
+	ChildSlicesAllocated                         uint64
+	ChildSlicesRetained                          uint64
+	ChildSlicesDroppedSameToken                  uint64
+	ChildPointersAllocated                       uint64
+	ChildPointersRetained                        uint64
+	ChildPointersDroppedSameToken                uint64
+	ReduceChildFastGSS                           ReduceChildPathRuntime
+	ReduceChildAllVisible                        ReduceChildPathRuntime
+	ReduceChildNoAlias                           ReduceChildPathRuntime
+	ReduceChildScratchGeneral                    ReduceChildPathRuntime
+	ReduceChildScratchNoAlias                    ReduceChildPathRuntime
+	TransientChildSlicesAllocated                uint64
+	TransientChildPointersAllocated              uint64
+	TransientChildSlicesMaterialized             uint64
+	TransientChildPointersMaterialized           uint64
+	TransientParentNodesAllocated                uint64
+	TransientParentNodesMaterialized             uint64
+	FinalNodes                                   uint64
+	FinalParentNodes                             uint64
+	FinalLeafNodes                               uint64
+	FinalFieldedParentNodes                      uint64
+	FinalUnfieldedParentNodes                    uint64
+	FinalVisibleParentNodes                      uint64
+	FinalHiddenParentNodes                       uint64
+	FinalCheckpointLeafNodes                     uint64
+	FinalChildSlices                             uint64
+	FinalChildPointers                           uint64
+	FinalFieldIDElements                         uint64
+	FinalFieldSourceElements                     uint64
+	FinalChildRefParents                         uint64
+	FinalChildRefs                               uint64
+	FinalChildRefMaterializedParents             uint64
+	FinalChildRefMaterializedChildren            uint64
+	FinalChildRefSingleChildAccesses             uint64
+	FinalChildRefSingleChildMaterializedChildren uint64
+	MergeStacksIn                                uint64
+	MergeStacksOut                               uint64
+	MergeSlotsUsed                               uint64
+	GlobalCullStacksIn                           uint64
+	GlobalCullStacksOut                          uint64
 
 	ExternalScannerCheckpointRecords                 uint64
 	ExternalScannerCheckpointSlotsAllocated          uint64
@@ -539,14 +739,11 @@ func (n *Node) Parent() *Node {
 }
 
 // ChildCount returns the number of children (both named and anonymous).
-func (n *Node) ChildCount() int { return len(n.children) }
+func (n *Node) ChildCount() int { return nodeChildCount(n) }
 
 // Child returns the i-th child, or nil if i is out of range.
 func (n *Node) Child(i int) *Node {
-	if i < 0 || i >= len(n.children) {
-		return nil
-	}
-	return n.children[i]
+	return nodeChildAtForReason(n, i, materializeForParentAPI)
 }
 
 // NextSibling returns the next sibling node, or nil when this is the last child
@@ -559,7 +756,7 @@ func (n *Node) NextSibling() *Node {
 	if n.parent == nil {
 		return nil
 	}
-	siblings := n.parent.children
+	siblings := nodeChildrenForReason(n.parent, materializeForParentAPI)
 	if i := int(n.childIndex); i >= 0 && i < len(siblings) && siblings[i] == n {
 		if i+1 < len(siblings) {
 			return siblings[i+1]
@@ -588,7 +785,7 @@ func (n *Node) PrevSibling() *Node {
 	if n.parent == nil {
 		return nil
 	}
-	siblings := n.parent.children
+	siblings := nodeChildrenForReason(n.parent, materializeForParentAPI)
 	if i := int(n.childIndex); i >= 0 && i < len(siblings) && siblings[i] == n {
 		if i > 0 {
 			return siblings[i-1]
@@ -610,8 +807,10 @@ func (n *Node) PrevSibling() *Node {
 // NamedChildCount returns the number of named children.
 func (n *Node) NamedChildCount() int {
 	count := 0
-	for _, c := range n.children {
-		if c.isNamed() {
+	childCount := nodeChildCountNoMaterialize(n)
+	for i := 0; i < childCount; i++ {
+		c := nodeChildAtForReason(n, i, materializeForParentAPI)
+		if c != nil && c.isNamed() {
 			count++
 		}
 	}
@@ -622,8 +821,10 @@ func (n *Node) NamedChildCount() int {
 // or nil if i is out of range.
 func (n *Node) NamedChild(i int) *Node {
 	count := 0
-	for _, c := range n.children {
-		if c.isNamed() {
+	childCount := nodeChildCountNoMaterialize(n)
+	for childIndex := 0; childIndex < childCount; childIndex++ {
+		c := nodeChildAtForReason(n, childIndex, materializeForParentAPI)
+		if c != nil && c.isNamed() {
 			if count == i {
 				return c
 			}
@@ -642,9 +843,10 @@ func (n *Node) ChildByFieldName(name string, lang *Language) *Node {
 		return nil
 	}
 
-	for i, id := range n.fieldIDs {
-		if id == fid && i < len(n.children) {
-			return n.children[i]
+	childCount := nodeChildCountNoMaterialize(n)
+	for i := 0; i < childCount; i++ {
+		if nodeFieldIDAt(n, i) == fid {
+			return nodeChildAtForReason(n, i, materializeForParentAPI)
 		}
 	}
 	return nil
@@ -653,10 +855,10 @@ func (n *Node) ChildByFieldName(name string, lang *Language) *Node {
 // FieldNameForChild returns the field name assigned to the i-th child,
 // or an empty string when no field is assigned.
 func (n *Node) FieldNameForChild(i int, lang *Language) string {
-	if n == nil || lang == nil || i < 0 || i >= len(n.children) || i >= len(n.fieldIDs) {
+	if n == nil || lang == nil || i < 0 || i >= nodeChildCountNoMaterialize(n) {
 		return ""
 	}
-	fid := n.fieldIDs[i]
+	fid := nodeFieldIDAt(n, i)
 	if fid == 0 || int(fid) >= len(lang.FieldNames) {
 		return ""
 	}
@@ -664,7 +866,7 @@ func (n *Node) FieldNameForChild(i int, lang *Language) string {
 }
 
 // Children returns a slice of all children.
-func (n *Node) Children() []*Node { return n.children }
+func (n *Node) Children() []*Node { return nodeChildrenForReason(n, materializeForParentAPI) }
 
 // SExpr returns a tree-sitter-style S-expression for this node.
 // It includes only named nodes for stable debug snapshots.
@@ -800,7 +1002,12 @@ func (n *Node) descendantForByteRange(startByte, endByte uint32, namedOnly bool)
 	if !namedOnly || n.isNamed() {
 		deepest = n
 	}
-	for _, child := range n.children {
+	childCount := nodeChildCountNoMaterialize(n)
+	for i := 0; i < childCount; i++ {
+		child := nodeChildAtForReason(n, i, materializeForParentAPI)
+		if child == nil {
+			continue
+		}
 		if !child.containsByteRange(startByte, endByte) {
 			continue
 		}
@@ -820,7 +1027,12 @@ func (n *Node) descendantForPointRange(startPoint, endPoint Point, namedOnly boo
 	if !namedOnly || n.isNamed() {
 		deepest = n
 	}
-	for _, child := range n.children {
+	childCount := nodeChildCountNoMaterialize(n)
+	for i := 0; i < childCount; i++ {
+		child := nodeChildAtForReason(n, i, materializeForParentAPI)
+		if child == nil {
+			continue
+		}
 		if !child.containsPointRange(startPoint, endPoint) {
 			continue
 		}
@@ -979,11 +1191,13 @@ func wireParentLinksWithScratch(root *Node, scratch *[]*Node) {
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		for i := range n.children {
-			c := n.children[i]
+		childCount := nodeChildCountNoMaterialize(n)
+		for i := 0; i < childCount; i++ {
+			c := nodeChildAtForReason(n, i, materializeForParentAPI)
 			if c == nil {
 				continue
 			}
+			nodeMaterializeFinalChildRefs(c, materializeForParentAPI)
 			c.parent = n
 			c.childIndex = int32(i)
 			stack = append(stack, c)
@@ -1009,28 +1223,45 @@ type finalTreeMaterializationStats struct {
 	fieldSourceElements  uint64
 }
 
+type finalTreeStatsItem struct {
+	node  *Node
+	entry stackEntry
+	arena *nodeArena
+}
+
 func collectFinalTreeMaterializationStats(root *Node, lang *Language) finalTreeMaterializationStats {
 	var stats finalTreeMaterializationStats
 	if root == nil {
 		return stats
 	}
-	var local [64]*Node
+	var local [64]finalTreeStatsItem
 	stack := local[:0]
-	stack = append(stack, root)
+	stack = append(stack, finalTreeStatsItem{node: root, arena: root.ownerArena})
 	for len(stack) > 0 {
-		n := stack[len(stack)-1]
+		item := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		if n == nil {
+		if item.node != nil {
+			collectFinalNodeStats(item.node, lang, &stats, &stack)
 			continue
 		}
-		stats.nodes++
-		childCount := len(n.children)
+		collectFinalEntryStats(item.entry, item.arena, lang, &stats, &stack)
+	}
+	return stats
+}
+
+func collectFinalNodeStats(n *Node, lang *Language, stats *finalTreeMaterializationStats, stack *[]finalTreeStatsItem) {
+	if n == nil || stats == nil || stack == nil {
+		return
+	}
+	stats.nodes++
+	if childRange, ok := n.ownerArena.finalChildRange(n); ok {
+		childCount := childRange.count()
 		if childCount == 0 {
 			stats.leafNodes++
 			if _, ok := externalScannerCheckpointRefForNode(n); ok {
 				stats.checkpointLeafNodes++
 			}
-			continue
+			return
 		}
 		stats.parentNodes++
 		if nodeVisibleInLanguage(n, lang) {
@@ -1040,22 +1271,103 @@ func collectFinalTreeMaterializationStats(root *Node, lang *Language) finalTreeM
 		}
 		stats.childSlices++
 		stats.childPointers += uint64(childCount)
-		if len(n.fieldIDs) > 0 {
-			stats.fieldIDElements += uint64(len(n.fieldIDs))
-		}
-		if len(n.fieldSources) > 0 {
-			stats.fieldSourceElements += uint64(len(n.fieldSources))
-		}
-		if hasParentFieldMetadata(n.fieldIDs, n.fieldSources) {
-			stats.fieldedParentNodes++
-		} else {
-			stats.unfieldedParentNodes++
-		}
+		stats.unfieldedParentNodes++
+		refs := childRange.refs(n.ownerArena)
 		for i := childCount - 1; i >= 0; i-- {
-			stack = append(stack, n.children[i])
+			*stack = append(*stack, finalTreeStatsItem{entry: refs[i].stackEntry(), arena: n.ownerArena})
 		}
+		return
 	}
-	return stats
+	childCount := len(n.children)
+	if childCount == 0 {
+		stats.leafNodes++
+		if _, ok := externalScannerCheckpointRefForNode(n); ok {
+			stats.checkpointLeafNodes++
+		}
+		return
+	}
+	stats.parentNodes++
+	if nodeVisibleInLanguage(n, lang) {
+		stats.visibleParentNodes++
+	} else {
+		stats.hiddenParentNodes++
+	}
+	stats.childSlices++
+	stats.childPointers += uint64(childCount)
+	if len(n.fieldIDs) > 0 {
+		stats.fieldIDElements += uint64(len(n.fieldIDs))
+	}
+	if len(n.fieldSources) > 0 {
+		stats.fieldSourceElements += uint64(len(n.fieldSources))
+	}
+	if hasParentFieldMetadata(n.fieldIDs, n.fieldSources) {
+		stats.fieldedParentNodes++
+	} else {
+		stats.unfieldedParentNodes++
+	}
+	for i := childCount - 1; i >= 0; i-- {
+		child := n.children[i]
+		var arena *nodeArena
+		if child != nil {
+			arena = child.ownerArena
+		}
+		*stack = append(*stack, finalTreeStatsItem{node: child, arena: arena})
+	}
+}
+
+func collectFinalEntryStats(entry stackEntry, arena *nodeArena, lang *Language, stats *finalTreeMaterializationStats, stack *[]finalTreeStatsItem) {
+	if stats == nil || stack == nil || !stackEntryHasNode(entry) {
+		return
+	}
+	if node := stackEntryNode(entry); node != nil {
+		collectFinalNodeStats(node, lang, stats, stack)
+		return
+	}
+	if leaf := stackEntryCompactFullLeaf(entry); leaf != nil {
+		stats.nodes++
+		stats.leafNodes++
+		if leaf.hasCheckpoint {
+			stats.checkpointLeafNodes++
+		}
+		return
+	}
+	parent := stackEntryPendingParent(entry)
+	if parent == nil {
+		return
+	}
+	stats.nodes++
+	childCount := parent.childEntryCount()
+	if childCount == 0 {
+		stats.leafNodes++
+		return
+	}
+	stats.parentNodes++
+	var symbolMeta []SymbolMetadata
+	if lang != nil {
+		symbolMeta = lang.SymbolMetadata
+	}
+	if symbolVisibleForPending(parent.symbol, symbolMeta) {
+		stats.visibleParentNodes++
+	} else {
+		stats.hiddenParentNodes++
+	}
+	stats.childSlices++
+	stats.childPointers += uint64(childCount)
+	if parent.hasFieldEntries() || parent.hasDirectFieldEntries() {
+		stats.fieldedParentNodes++
+		stats.fieldIDElements += uint64(childCount)
+		stats.fieldSourceElements += uint64(childCount)
+	} else {
+		stats.unfieldedParentNodes++
+	}
+	refs := parent.childRefs(arena)
+	limit := childCount
+	if limit > len(refs) {
+		limit = len(refs)
+	}
+	for i := limit - 1; i >= 0; i-- {
+		*stack = append(*stack, finalTreeStatsItem{entry: refs[i].stackEntry(), arena: arena})
+	}
 }
 
 func nodeVisibleInLanguage(n *Node, lang *Language) bool {
@@ -1229,6 +1541,29 @@ func newParentNodeInArenaNoLinksWithFieldSources(arena *nodeArena, sym Symbol, n
 	n.childIndex = -1
 	arena.recordParentNodeConstructed(len(children), fieldIDs, n.fieldSources, fieldSources != nil, true, trackChildErrors)
 	populateParentNodeNoLinks(n, children, trackChildErrors)
+	nodeInitEquivVersion(n)
+	if arena.audit != nil {
+		arena.audit.recordNodeAlloc(n, runtimeAuditNodeKindParent)
+	}
+	return n
+}
+
+func newParentNodeInArenaWithFinalChildRefs(arena *nodeArena, sym Symbol, named bool, childRange pendingChildRange, productionID uint16, trackChildErrors bool) *Node {
+	if arena == nil {
+		return newParentNode(nil, sym, named, nil, nil, productionID)
+	}
+	childCount := childRange.count()
+	if perfCountersEnabled {
+		perfRecordParentChildren(childCount)
+	}
+	n := arena.allocNodeFast()
+	n.ownerArena = arena
+	n.symbol = sym
+	n.setNamed(named)
+	n.productionID = productionID
+	n.childIndex = -1
+	arena.recordParentNodeConstructed(childCount, nil, nil, false, true, trackChildErrors)
+	arena.attachFinalChildRefs(n, childRange)
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {
 		arena.audit.recordNodeAlloc(n, runtimeAuditNodeKindParent)
@@ -1679,7 +2014,8 @@ func (t *Tree) WriteDOT(w io.Writer, lang *Language) error {
 			return err
 		}
 
-		for _, child := range n.children {
+		children := nodeChildrenForReason(n, materializeForParentAPI)
+		for _, child := range children {
 			if child == nil {
 				continue
 			}
@@ -1743,6 +2079,7 @@ func cloneTreeNodesIntoArena(root *Node, arena *nodeArena) *Node {
 	if root == nil {
 		return nil
 	}
+	materializeFinalChildRefsForSubtree(root, materializeForParentAPI)
 
 	type clonePair struct {
 		old *Node
@@ -1805,6 +2142,7 @@ func cloneTreeNodesWithOffset(root *Node, offsetBytes uint32, offsetExtent Point
 	if root == nil {
 		return nil
 	}
+	materializeFinalChildRefsForSubtree(root, materializeForParentAPI)
 
 	type clonePair struct {
 		old *Node
@@ -2014,6 +2352,7 @@ func (n *Node) Edit(edit InputEdit) {
 	if n == nil {
 		return
 	}
+	materializeFinalChildRefsForSubtree(n, materializeForEdit)
 	n.ensureParentLinks()
 	root := n
 	for root.parent != nil {
@@ -2030,6 +2369,7 @@ func (t *Tree) Edit(edit InputEdit) {
 	t.edits = append(t.edits, edit)
 	t.lastEditedLeaf = nil
 	if t.root != nil {
+		materializeFinalChildRefsForSubtree(t.root, materializeForEdit)
 		byteDelta := int64(edit.NewEndByte) - int64(edit.OldEndByte)
 		rowDelta := int64(edit.NewEndPoint.Row) - int64(edit.OldEndPoint.Row)
 		colDelta := int64(edit.NewEndPoint.Column) - int64(edit.OldEndPoint.Column)

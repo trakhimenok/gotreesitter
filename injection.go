@@ -655,7 +655,7 @@ func shiftNodePoints(root *Node, offset Point) {
 			n.endPoint.Column = addUint32Delta(n.endPoint.Column, int64(offset.Column))
 		}
 
-		stack = append(stack, n.children...)
+		stack = append(stack, nodeChildrenForReason(n, materializeForParentAPI)...)
 	}
 }
 

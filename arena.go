@@ -71,6 +71,7 @@ type nodeArena struct {
 	parentLinkMu        sync.Mutex
 	deferredParentRoot  *Node
 	parentLinksDeferred bool
+	finalChildRefs      bool
 	// skipChildClear allows reset() to skip child-slab pointer clearing when
 	// a parse did not borrow any external nodes (full parse without reuse).
 	skipChildClear bool
@@ -88,6 +89,7 @@ type nodeArena struct {
 	pendingChildEntrySlabCursor     int
 	compactCheckpointLeafSlabs      []compactCheckpointLeafSlab
 	compactCheckpointLeafSlabCursor int
+	finalChildSidecars              []finalChildSidecar
 
 	childSlabs                         []childSliceSlab
 	fieldSlabs                         []fieldSliceSlab
@@ -149,6 +151,12 @@ type nodeArena struct {
 	pendingParentRejectedChild                       uint64
 	pendingParentRejectedSpan                        uint64
 	pendingParentRejectedFill                        uint64
+	finalChildRefParents                             uint64
+	finalChildRefsCreated                            uint64
+	finalChildRefsMaterializedParents                uint64
+	finalChildRefsMaterializedChildren               uint64
+	finalChildRefsSingleChildAccesses                uint64
+	finalChildRefsSingleChildMaterializedChildren    uint64
 
 	pendingParentLastRejectReason        pendingParentRejectReason
 	pendingParentLastFieldRejectShape    pendingParentFieldRejectShape
@@ -464,6 +472,7 @@ func (a *nodeArena) reset() {
 	a.deferredParentRoot = nil
 	a.parentLinksDeferred = false
 	a.parentLinkMu.Unlock()
+	a.finalChildRefs = false
 	// Checkpoint refs contain only integer fields, but stale refs must not
 	// remain visible when a node slot is reused.
 	a.externalScannerNodeCheckpoints.reset()
@@ -612,6 +621,10 @@ func (a *nodeArena) reset() {
 		}
 	}
 	a.pendingChildEntrySlabCursor = 0
+	if len(a.finalChildSidecars) > 0 {
+		clear(a.finalChildSidecars)
+		a.finalChildSidecars = a.finalChildSidecars[:0]
+	}
 	if len(a.compactCheckpointLeafSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -725,6 +738,12 @@ func (a *nodeArena) reset() {
 	a.pendingParentRejectedChild = 0
 	a.pendingParentRejectedSpan = 0
 	a.pendingParentRejectedFill = 0
+	a.finalChildRefParents = 0
+	a.finalChildRefsCreated = 0
+	a.finalChildRefsMaterializedParents = 0
+	a.finalChildRefsMaterializedChildren = 0
+	a.finalChildRefsSingleChildAccesses = 0
+	a.finalChildRefsSingleChildMaterializedChildren = 0
 	a.pendingParentLastRejectReason = pendingParentRejectUnknown
 	a.pendingParentLastFieldRejectShape = pendingParentFieldRejectUnknown
 	a.pendingParentActiveFieldPayloadShape = pendingParentFieldRejectPayloadUnknown

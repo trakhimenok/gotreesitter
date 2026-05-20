@@ -470,8 +470,8 @@ func (q *Query) executeNodeIntoBuffer(root *Node, lang *Language, source []byte,
 			continue
 		}
 
-		for i := n.ChildCount() - 1; i >= 0; i-- {
-			child := n.Child(i)
+		for i := nodeChildCountNoMaterialize(n) - 1; i >= 0; i-- {
+			child := nodeChildAtForReason(n, i, materializeForQuery)
 			if child == nil {
 				continue
 			}
@@ -695,11 +695,11 @@ func (c *QueryCursor) nextMatchRaw() (QueryMatch, bool) {
 
 			// Push children in reverse order so leftmost is visited first.
 			if !c.hasMaxStartDepth || depth < c.maxStartDepth {
-				children := n.Children()
-				for i := len(children) - 1; i >= 0; i-- {
-					if c.nodeIntersectsRanges(children[i]) {
+				for i := nodeChildCountNoMaterialize(n) - 1; i >= 0; i-- {
+					child := nodeChildAtForReason(n, i, materializeForQuery)
+					if child != nil && c.nodeIntersectsRanges(child) {
 						c.worklist = append(c.worklist, queryCursorWorkItem{
-							node:  children[i],
+							node:  child,
 							depth: depth + 1,
 						})
 					}

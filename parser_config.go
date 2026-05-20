@@ -120,6 +120,14 @@ func parsePendingParentsEnv() (configured bool, enabled bool) {
 	return true, raw != "0" && !strings.EqualFold(raw, "false")
 }
 
+func parseFinalChildRefsEnv() (configured bool, enabled bool) {
+	raw := strings.TrimSpace(os.Getenv("GOT_GLR_V2_FINAL_CHILD_REFS"))
+	if raw == "" {
+		return false, false
+	}
+	return true, raw != "0" && !strings.EqualFold(raw, "false")
+}
+
 func parsePreMaterializationDiagEnabled() bool {
 	preMaterializationDiagOnce.Do(func() {
 		raw := strings.TrimSpace(os.Getenv("GOT_GLR_V2_PRE_MATERIALIZATION_DIAG"))

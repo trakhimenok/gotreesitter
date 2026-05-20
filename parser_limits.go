@@ -230,6 +230,52 @@ func parseCompactFullArenaInitialNodeCapacity(sourceLen int) int {
 	return max(base, estimate)
 }
 
+func parseFinalChildRefArenaNodeCapacity(sourceLen, hint int) int {
+	target := parseFinalChildRefArenaInitialNodeCapacity(sourceLen)
+	if hint <= 0 {
+		return target
+	}
+	limit := parseFinalChildRefArenaHintLimit(sourceLen)
+	if hint > limit {
+		hint = limit
+	}
+	base := nodeCapacityForClass(arenaClassFull)
+	if hint < base {
+		hint = base
+	}
+	if hint < target/2 {
+		return target
+	}
+	return hint
+}
+
+func parseFinalChildRefArenaHintLimit(sourceLen int) int {
+	base := nodeCapacityForClass(arenaClassFull)
+	limit := parseFinalChildRefArenaInitialNodeCapacity(sourceLen) * 4
+	const maxFinalChildRefArenaHintNodes = 512 * 1024
+	if limit > maxFinalChildRefArenaHintNodes {
+		limit = maxFinalChildRefArenaHintNodes
+	}
+	return max(base, limit)
+}
+
+func parseFinalChildRefArenaInitialNodeCapacity(sourceLen int) int {
+	base := nodeCapacityForClass(arenaClassFull)
+	if sourceLen <= 0 {
+		return base
+	}
+	estimate := sourceLen / 384
+	const minFinalChildRefArenaPreallocNodes = 64 * 1024
+	if estimate < minFinalChildRefArenaPreallocNodes {
+		estimate = minFinalChildRefArenaPreallocNodes
+	}
+	const maxFinalChildRefArenaPreallocNodes = 256 * 1024
+	if estimate > maxFinalChildRefArenaPreallocNodes {
+		estimate = maxFinalChildRefArenaPreallocNodes
+	}
+	return max(base, estimate)
+}
+
 func parseFullExternalScannerCheckpointCapacity(sourceLen, nodeCapacity int) int {
 	if sourceLen < 256*1024 || nodeCapacity <= 0 {
 		return 0
@@ -292,6 +338,30 @@ func parseShouldUsePendingFullParents(p *Parser, source []byte, reuse *reuseCurs
 		p.language.Name == "python"
 	return p != nil &&
 		(pendingEnabled || compactLeafParentBoundary || defaultPythonLargeNoCompat) &&
+		!p.noTreeBenchmarkOnly &&
+		arenaClass == arenaClassFull &&
+		reuse == nil &&
+		oldTree == nil &&
+		len(source) >= 256*1024
+}
+
+func parseShouldUseFinalChildRefs(p *Parser, source []byte, reuse *reuseCursor, oldTree *Tree, arenaClass arenaClass) bool {
+	if p == nil {
+		return false
+	}
+	finalConfigured, finalEnabled := parseFinalChildRefsEnv()
+	if finalConfigured && !finalEnabled {
+		return false
+	}
+	defaultPythonLargeNoCompat := !finalConfigured &&
+		p.pendingFullParents &&
+		p.noResultCompatibilityBenchmarkOnly &&
+		p.language != nil &&
+		p.language.Name == "python"
+	return p != nil &&
+		(finalEnabled || defaultPythonLargeNoCompat) &&
+		p.pendingFullParents &&
+		p.noResultCompatibilityBenchmarkOnly &&
 		!p.noTreeBenchmarkOnly &&
 		arenaClass == arenaClassFull &&
 		reuse == nil &&
@@ -363,6 +433,13 @@ func (p *Parser) compactFullArenaHintCapacity() int {
 	return int(atomic.LoadUint32(&p.compactFullArenaHint))
 }
 
+func (p *Parser) finalChildRefArenaHintCapacity() int {
+	if p == nil {
+		return 0
+	}
+	return int(atomic.LoadUint32(&p.finalChildRefArenaHint))
+}
+
 func (p *Parser) incrementalArenaHintCapacity() int {
 	if p == nil {
 		return 0
@@ -411,6 +488,13 @@ func (p *Parser) recordCompactFullArenaUsage(used int) {
 		return
 	}
 	p.recordArenaUsageHint(&p.compactFullArenaHint, used, 1_000_000, parseCompactFullArenaHintHeadroom)
+}
+
+func (p *Parser) recordFinalChildRefArenaUsage(used int) {
+	if p == nil || used <= 0 {
+		return
+	}
+	p.recordArenaUsageHint(&p.finalChildRefArenaHint, used, 512*1024, parseFinalChildRefArenaHintHeadroom)
 }
 
 func (p *Parser) recordArenaUsageHint(slot *uint32, used int, maxHintNodes int, headroom func(int) int) {
@@ -488,6 +572,21 @@ func parseCompactFullArenaHintHeadroom(used int) int {
 	const maxLargeCompactFullArenaHintHeadroom = 32 * 1024
 	if headroom > maxLargeCompactFullArenaHintHeadroom {
 		return maxLargeCompactFullArenaHintHeadroom
+	}
+	return headroom
+}
+
+func parseFinalChildRefArenaHintHeadroom(used int) int {
+	if used <= 0 {
+		return 0
+	}
+	if used < 64*1024 {
+		return used / 4
+	}
+	headroom := used / 16
+	const maxFinalChildRefArenaHintHeadroom = 16 * 1024
+	if headroom > maxFinalChildRefArenaHintHeadroom {
+		return maxFinalChildRefArenaHintHeadroom
 	}
 	return headroom
 }

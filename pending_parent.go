@@ -338,6 +338,26 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 		return materializeStackEntryCompactFullLeafEntry(arena, entry, compactFullLeafMaterializeReason(reason))
 	}
 	childCount := parent.childEntryCount()
+	if arena != nil &&
+		arena.finalChildRefs &&
+		childCount > 0 &&
+		!parent.hasFieldEntries() &&
+		!parent.hasDirectFieldEntries() &&
+		(reason == materializeForFinalTree || reason == materializeForParentAPI || reason == materializeForQuery || reason == materializeForCursor) {
+		node := newParentNodeInArenaWithFinalChildRefs(arena, parent.symbol, parent.isNamed(), parent.childRange, parent.productionID, parent.hasError())
+		node.flags = parent.flags & publicPendingParentNodeFlags
+		node.startByte = parent.startByte
+		node.endByte = parent.endByte
+		node.startPoint = parent.startPoint
+		node.endPoint = parent.endPoint
+		node.parseState = parent.parseState
+		node.preGotoState = parent.preGotoState
+		entry.node = node
+		entry.kind = stackEntryKindNode
+		entry.state = node.parseState
+		arena.recordPendingParentMaterialized(reason)
+		return node, entry
+	}
 	children := arena.allocNodeSliceNoClear(childCount)
 	var fieldIDs []FieldID
 	var fieldSources []uint8

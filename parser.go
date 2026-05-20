@@ -28,6 +28,7 @@ type Parser struct {
 	fullArenaHint                       uint32
 	pendingFullArenaHint                uint32
 	compactFullArenaHint                uint32
+	finalChildRefArenaHint              uint32
 	incrementalArenaHint                uint32
 	fullGSSHint                         uint32
 	incrementalGSSHint                  uint32
@@ -63,6 +64,7 @@ type Parser struct {
 	compactNoTreeShiftLeaves            bool
 	compactFullShiftLeaves              bool
 	pendingFullParents                  bool
+	finalChildRefs                      bool
 	skipInvisibleFullLeafCheckpoints    bool
 	transientReduceChildren             bool
 	transientReduceScratchNoAlias       bool
@@ -321,6 +323,7 @@ func resetSnippetParser(parser *Parser) {
 	parser.fullArenaHint = 0
 	parser.pendingFullArenaHint = 0
 	parser.compactFullArenaHint = 0
+	parser.finalChildRefArenaHint = 0
 	parser.incrementalArenaHint = 0
 	parser.fullGSSHint = 0
 	parser.incrementalGSSHint = 0
@@ -333,6 +336,7 @@ func resetSnippetParser(parser *Parser) {
 	parser.compactNoTreeShiftLeaves = false
 	parser.compactFullShiftLeaves = false
 	parser.pendingFullParents = false
+	parser.finalChildRefs = false
 	parser.skipInvisibleFullLeafCheckpoints = false
 	parser.noResultCompatibilityBenchmarkOnly = false
 	parser.timeoutMicros = 0
@@ -1124,6 +1128,7 @@ func (p *Parser) parseIncrementalInternal(source []byte, oldTree *Tree, ts Token
 	}
 	if oldTree != nil {
 		oldTree.ensureExternalScannerCheckpoints()
+		materializeFinalChildRefsForSubtree(oldTree.RootNode(), materializeForEdit)
 	}
 
 	p.reuseMu.Lock()
@@ -1374,6 +1379,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	prevCompactNoTreeShiftLeaves := p.compactNoTreeShiftLeaves
 	prevCompactFullShiftLeaves := p.compactFullShiftLeaves
 	prevPendingFullParents := p.pendingFullParents
+	prevFinalChildRefs := p.finalChildRefs
 	prevSkipInvisibleFullLeafCheckpoints := p.skipInvisibleFullLeafCheckpoints
 	prevTransientReduceChildren := p.transientReduceChildren
 	prevTransientReduceScratchNoAlias := p.transientReduceScratchNoAlias
@@ -1381,11 +1387,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	p.compactNoTreeShiftLeaves = p.noTreeBenchmarkOnly && parseShouldCompactNoTreeShiftLeaves(len(source))
 	p.compactFullShiftLeaves = parseShouldUseCompactFullShiftLeaves(p, source, reuse, oldTree, arenaClass)
 	p.pendingFullParents = parseShouldUsePendingFullParents(p, source, reuse, oldTree, arenaClass)
+	p.finalChildRefs = parseShouldUseFinalChildRefs(p, source, reuse, oldTree, arenaClass)
 	p.skipInvisibleFullLeafCheckpoints = parseShouldSkipInvisibleFullLeafCheckpoints(p, source, reuse, oldTree, arenaClass)
 	defer func() {
 		p.compactNoTreeShiftLeaves = prevCompactNoTreeShiftLeaves
 		p.compactFullShiftLeaves = prevCompactFullShiftLeaves
 		p.pendingFullParents = prevPendingFullParents
+		p.finalChildRefs = prevFinalChildRefs
 		p.skipInvisibleFullLeafCheckpoints = prevSkipInvisibleFullLeafCheckpoints
 		p.transientReduceChildren = prevTransientReduceChildren
 		p.transientReduceScratchNoAlias = prevTransientReduceScratchNoAlias
@@ -1433,6 +1441,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 
 	arena := acquireNodeArena(arenaClass)
 	arena.skipChildClear = reuse == nil && oldTree == nil
+	arena.finalChildRefs = p.finalChildRefs
 	arena.audit = nil
 	if scratch.audit.enabled {
 		scratch.merge.audit = &scratch.audit
@@ -1465,7 +1474,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	if arenaClass == arenaClassFull {
 		defer func() {
 			if !p.noTreeBenchmarkOnly {
-				if p.compactFullShiftLeaves {
+				if p.finalChildRefs {
+					p.recordFinalChildRefArenaUsage(arena.used)
+				} else if p.compactFullShiftLeaves {
 					p.recordCompactFullArenaUsage(arena.used)
 				} else if p.pendingFullParents {
 					p.recordPendingFullArenaUsage(arena.used)
@@ -1485,7 +1496,10 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	case arenaClassFull:
 		target := parseFullArenaNodeCapacity(len(source), p.fullArenaHintCapacity())
 		checkpointCapacityTarget := target
-		if p.compactFullShiftLeaves {
+		if p.finalChildRefs {
+			target = parseFinalChildRefArenaNodeCapacity(len(source), p.finalChildRefArenaHintCapacity())
+			checkpointCapacityTarget = parseFullArenaInitialNodeCapacity(len(source))
+		} else if p.compactFullShiftLeaves {
 			target = parseCompactFullArenaNodeCapacity(len(source), p.compactFullArenaHintCapacity())
 			checkpointCapacityTarget = parseFullArenaInitialNodeCapacity(len(source))
 		} else if p.pendingFullParents {
@@ -1607,6 +1621,12 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		parseRuntime.PendingParentRejectedChild = arena.pendingParentRejectedChild
 		parseRuntime.PendingParentRejectedSpan = arena.pendingParentRejectedSpan
 		parseRuntime.PendingParentRejectedFill = arena.pendingParentRejectedFill
+		parseRuntime.FinalChildRefParents = arena.finalChildRefParents
+		parseRuntime.FinalChildRefs = arena.finalChildRefsCreated
+		parseRuntime.FinalChildRefMaterializedParents = arena.finalChildRefsMaterializedParents
+		parseRuntime.FinalChildRefMaterializedChildren = arena.finalChildRefsMaterializedChildren
+		parseRuntime.FinalChildRefSingleChildAccesses = arena.finalChildRefsSingleChildAccesses
+		parseRuntime.FinalChildRefSingleChildMaterializedChildren = arena.finalChildRefsSingleChildMaterializedChildren
 		parseRuntime.PreMaterializationFieldRejectCandidates = preMaterializationFieldRejectCandidates
 		parseRuntime.PreMaterializationFieldRejectSameKeyCandidates = preMaterializationFieldRejectSameKeyCandidates
 		parseRuntime.PreMaterializationFieldRejectOverflowCandidates = preMaterializationFieldRejectOverflowCandidates
