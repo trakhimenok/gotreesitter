@@ -153,6 +153,15 @@ type PendingParentFieldRejectStats struct {
 	AllVisibleDirect      uint64
 }
 
+type PendingParentFieldRejectPayloadStats struct {
+	Unknown          uint64
+	Visible          uint64
+	HiddenEmpty      uint64
+	HiddenOne        uint64
+	HiddenMany       uint64
+	HiddenWithFields uint64
+}
+
 // ParseRuntime captures parser-loop diagnostics for a completed tree.
 type ParseRuntime struct {
 	StopReason                         ParseStopReason
@@ -250,6 +259,7 @@ type ParseRuntime struct {
 	PendingParentMaterializedForParentReduce         uint64
 	PendingParentMaterializedForParentReject         PendingParentRejectStats
 	PendingParentMaterializedForFieldReject          PendingParentFieldRejectStats
+	PendingParentMaterializedForFieldRejectPayload   PendingParentFieldRejectPayloadStats
 	PendingParentMaterializedForFinalTree            uint64
 	PendingParentMaterializedForNormalization        uint64
 	PendingParentMaterializedForRecovery             uint64

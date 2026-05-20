@@ -200,7 +200,7 @@ func TestMaterializePendingPayloadEntriesPropagatesFieldRejectShape(t *testing.T
 	arena.pendingParentActiveRejectReason = pendingParentRejectAlias
 	arena.pendingParentActiveFieldRejectShape = pendingParentFieldRejectHiddenChildPlain
 
-	materializePendingPayloadEntries(entries, 0, len(entries), arena)
+	materializePendingPayloadEntries(nil, entries, 0, len(entries), arena)
 
 	if got := stackEntryPendingParent(entries[0]); got != nil {
 		t.Fatalf("entry still pending parent = %p, want materialized node", got)

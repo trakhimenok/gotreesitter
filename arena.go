@@ -128,6 +128,7 @@ type nodeArena struct {
 	pendingParentMaterializedForCheckpointRebuild   uint64
 	pendingParentMaterializedForParentReject        PendingParentRejectStats
 	pendingParentMaterializedForFieldReject         PendingParentFieldRejectStats
+	pendingParentMaterializedForFieldRejectPayload  PendingParentFieldRejectPayloadStats
 	pendingParentDropped                            uint64
 	pendingParentsFlattened                         uint64
 	pendingChildRefsFlattened                       uint64
@@ -147,71 +148,72 @@ type nodeArena struct {
 	pendingParentRejectedSpan                       uint64
 	pendingParentRejectedFill                       uint64
 
-	pendingParentLastRejectReason       pendingParentRejectReason
-	pendingParentLastFieldRejectShape   pendingParentFieldRejectShape
-	pendingParentActiveRejectReason     pendingParentRejectReason
-	pendingParentActiveFieldRejectShape pendingParentFieldRejectShape
-	checkpointLeafFullNodesAvoided      uint64
-	leafNodesConstructed                uint64
-	parentNodesConstructed              uint64
-	fieldedParentNodesConstructed       uint64
-	unfieldedParentNodesConstructed     uint64
-	parentConstructedChildLen0          uint64
-	parentConstructedChildLen1          uint64
-	parentConstructedChildLen2          uint64
-	parentConstructedChildLen3          uint64
-	parentConstructedChildLen4Plus      uint64
-	parentConstructedNoLinks            uint64
-	parentConstructedWithLinks          uint64
-	parentConstructedTrackErrors        uint64
-	parentConstructedFieldSources       uint64
-	parentReductionVisible              uint64
-	parentReductionInvisible            uint64
-	parentReductionVisibleFielded       uint64
-	parentReductionVisibleUnfielded     uint64
-	parentReductionInvisibleFielded     uint64
-	parentReductionInvisibleUnfielded   uint64
-	parentReductionVisibleChildPointers uint64
-	parentReductionInvisibleChildPtrs   uint64
-	parentReductionVisibleChildLen0     uint64
-	parentReductionVisibleChildLen1     uint64
-	parentReductionVisibleChildLen2     uint64
-	parentReductionVisibleChildLen3     uint64
-	parentReductionVisibleChildLen4Plus uint64
-	parentReductionInvisibleChildLen0   uint64
-	parentReductionInvisibleChildLen1   uint64
-	parentReductionInvisibleChildLen2   uint64
-	parentReductionInvisibleChildLen3   uint64
-	parentReductionInvisibleChildLen4P  uint64
-	reduceChildSlicesFastGSS            uint64
-	reduceChildPointersFastGSS          uint64
-	reduceChildSlicesAllVisible         uint64
-	reduceChildPointersAllVisible       uint64
-	reduceChildSlicesNoAlias            uint64
-	reduceChildPointersNoAlias          uint64
-	reduceChildSlicesScratchGeneral     uint64
-	reduceChildPointersScratchGeneral   uint64
-	reduceChildSlicesScratchNoAlias     uint64
-	reduceChildPointersScratchNoAlias   uint64
-	collapseRawUnaryAttempts            uint64
-	collapseRawUnarySuccesses           uint64
-	collapseRawUnaryMissShape           uint64
-	collapseRawUnaryMissGrammar         uint64
-	collapseRawUnaryMissChild           uint64
-	collapseRawUnaryMissRule            uint64
-	collapseUnaryAttempts               uint64
-	collapseUnarySuccesses              uint64
-	collapseUnaryMissShape              uint64
-	collapseUnaryMissGrammar            uint64
-	collapseUnaryMissFielded            uint64
-	collapseUnaryMissChild              uint64
-	collapseUnaryMissRule               uint64
-	collapseRuleSameSymbol              uint64
-	collapseRuleInvisibleWrapper        uint64
-	collapseRuleNamedLeafAlias          uint64
-	noTreeReduceNodesConstructed        uint64
-	noTreeLeafNodesConstructed          uint64
-	noTreePlaceholderNodesConstructed   uint64
+	pendingParentLastRejectReason        pendingParentRejectReason
+	pendingParentLastFieldRejectShape    pendingParentFieldRejectShape
+	pendingParentActiveFieldPayloadShape pendingParentFieldRejectPayloadShape
+	pendingParentActiveRejectReason      pendingParentRejectReason
+	pendingParentActiveFieldRejectShape  pendingParentFieldRejectShape
+	checkpointLeafFullNodesAvoided       uint64
+	leafNodesConstructed                 uint64
+	parentNodesConstructed               uint64
+	fieldedParentNodesConstructed        uint64
+	unfieldedParentNodesConstructed      uint64
+	parentConstructedChildLen0           uint64
+	parentConstructedChildLen1           uint64
+	parentConstructedChildLen2           uint64
+	parentConstructedChildLen3           uint64
+	parentConstructedChildLen4Plus       uint64
+	parentConstructedNoLinks             uint64
+	parentConstructedWithLinks           uint64
+	parentConstructedTrackErrors         uint64
+	parentConstructedFieldSources        uint64
+	parentReductionVisible               uint64
+	parentReductionInvisible             uint64
+	parentReductionVisibleFielded        uint64
+	parentReductionVisibleUnfielded      uint64
+	parentReductionInvisibleFielded      uint64
+	parentReductionInvisibleUnfielded    uint64
+	parentReductionVisibleChildPointers  uint64
+	parentReductionInvisibleChildPtrs    uint64
+	parentReductionVisibleChildLen0      uint64
+	parentReductionVisibleChildLen1      uint64
+	parentReductionVisibleChildLen2      uint64
+	parentReductionVisibleChildLen3      uint64
+	parentReductionVisibleChildLen4Plus  uint64
+	parentReductionInvisibleChildLen0    uint64
+	parentReductionInvisibleChildLen1    uint64
+	parentReductionInvisibleChildLen2    uint64
+	parentReductionInvisibleChildLen3    uint64
+	parentReductionInvisibleChildLen4P   uint64
+	reduceChildSlicesFastGSS             uint64
+	reduceChildPointersFastGSS           uint64
+	reduceChildSlicesAllVisible          uint64
+	reduceChildPointersAllVisible        uint64
+	reduceChildSlicesNoAlias             uint64
+	reduceChildPointersNoAlias           uint64
+	reduceChildSlicesScratchGeneral      uint64
+	reduceChildPointersScratchGeneral    uint64
+	reduceChildSlicesScratchNoAlias      uint64
+	reduceChildPointersScratchNoAlias    uint64
+	collapseRawUnaryAttempts             uint64
+	collapseRawUnarySuccesses            uint64
+	collapseRawUnaryMissShape            uint64
+	collapseRawUnaryMissGrammar          uint64
+	collapseRawUnaryMissChild            uint64
+	collapseRawUnaryMissRule             uint64
+	collapseUnaryAttempts                uint64
+	collapseUnarySuccesses               uint64
+	collapseUnaryMissShape               uint64
+	collapseUnaryMissGrammar             uint64
+	collapseUnaryMissFielded             uint64
+	collapseUnaryMissChild               uint64
+	collapseUnaryMissRule                uint64
+	collapseRuleSameSymbol               uint64
+	collapseRuleInvisibleWrapper         uint64
+	collapseRuleNamedLeafAlias           uint64
+	noTreeReduceNodesConstructed         uint64
+	noTreeLeafNodesConstructed           uint64
+	noTreePlaceholderNodesConstructed    uint64
 
 	pendingParentRejectedFieldsHiddenChildPlain      uint64
 	pendingParentRejectedFieldsHiddenChildPlainEmpty uint64
@@ -695,6 +697,7 @@ func (a *nodeArena) reset() {
 	a.pendingParentMaterializedForCheckpointRebuild = 0
 	a.pendingParentMaterializedForParentReject = PendingParentRejectStats{}
 	a.pendingParentMaterializedForFieldReject = PendingParentFieldRejectStats{}
+	a.pendingParentMaterializedForFieldRejectPayload = PendingParentFieldRejectPayloadStats{}
 	a.pendingParentDropped = 0
 	a.pendingParentsFlattened = 0
 	a.pendingChildRefsFlattened = 0
@@ -720,6 +723,7 @@ func (a *nodeArena) reset() {
 	a.pendingParentRejectedFill = 0
 	a.pendingParentLastRejectReason = pendingParentRejectUnknown
 	a.pendingParentLastFieldRejectShape = pendingParentFieldRejectUnknown
+	a.pendingParentActiveFieldPayloadShape = pendingParentFieldRejectPayloadUnknown
 	a.pendingParentActiveRejectReason = pendingParentRejectUnknown
 	a.pendingParentActiveFieldRejectShape = pendingParentFieldRejectUnknown
 	a.checkpointLeafFullNodesAvoided = 0
@@ -1507,6 +1511,17 @@ const (
 	pendingParentFieldRejectAllVisibleDirect
 )
 
+type pendingParentFieldRejectPayloadShape uint8
+
+const (
+	pendingParentFieldRejectPayloadUnknown pendingParentFieldRejectPayloadShape = iota
+	pendingParentFieldRejectPayloadVisible
+	pendingParentFieldRejectPayloadHiddenEmpty
+	pendingParentFieldRejectPayloadHiddenOne
+	pendingParentFieldRejectPayloadHiddenMany
+	pendingParentFieldRejectPayloadHiddenWithFields
+)
+
 func (s *PendingParentRejectStats) increment(reason pendingParentRejectReason) {
 	if s == nil {
 		return
@@ -1568,6 +1583,26 @@ func (s *PendingParentFieldRejectStats) increment(shape pendingParentFieldReject
 		s.Child++
 	case pendingParentFieldRejectAllVisibleDirect:
 		s.AllVisibleDirect++
+	default:
+		s.Unknown++
+	}
+}
+
+func (s *PendingParentFieldRejectPayloadStats) increment(shape pendingParentFieldRejectPayloadShape) {
+	if s == nil {
+		return
+	}
+	switch shape {
+	case pendingParentFieldRejectPayloadVisible:
+		s.Visible++
+	case pendingParentFieldRejectPayloadHiddenEmpty:
+		s.HiddenEmpty++
+	case pendingParentFieldRejectPayloadHiddenOne:
+		s.HiddenOne++
+	case pendingParentFieldRejectPayloadHiddenMany:
+		s.HiddenMany++
+	case pendingParentFieldRejectPayloadHiddenWithFields:
+		s.HiddenWithFields++
 	default:
 		s.Unknown++
 	}
@@ -1649,6 +1684,7 @@ func (a *nodeArena) recordParentRejectPayloadMaterialized(entry stackEntry, reas
 		a.pendingParentMaterializedForParentReject.increment(reason)
 		if reason == pendingParentRejectFields {
 			a.pendingParentMaterializedForFieldReject.increment(a.pendingParentActiveFieldRejectShape)
+			a.pendingParentMaterializedForFieldRejectPayload.increment(a.pendingParentActiveFieldPayloadShape)
 		}
 	}
 }

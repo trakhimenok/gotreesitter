@@ -632,7 +632,7 @@ func (p *Parser) applyReduceActionFromGSS(s *glrStack, act ParseAction, tok Toke
 			}
 			return
 		}
-		materializePendingPayloadEntries(windowEntries, 0, actualEnd, arena)
+		materializePendingPayloadEntries(p, windowEntries, 0, actualEnd, arena)
 	}
 
 	if child := p.collapsibleRawUnarySelfReduction(act, tok, arena, windowEntries, 0, reducedEnd); child != nil {
@@ -862,7 +862,7 @@ func (p *Parser) applyReduceActionFromGSSTransientParents(s *glrStack, act Parse
 			}
 			return
 		}
-		materializePendingPayloadEntries(windowEntries, 0, actualEnd, arena)
+		materializePendingPayloadEntries(p, windowEntries, 0, actualEnd, arena)
 	}
 
 	if child := p.collapsibleRawUnarySelfReduction(act, tok, arena, windowEntries, 0, reducedEnd); child != nil {
@@ -1029,7 +1029,7 @@ func computeReduceRangeForFullPayloads(entries []stackEntry, childCount int, pay
 	return computeReduceRange(entries, childCount)
 }
 
-func materializePendingPayloadEntries(entries []stackEntry, start, end int, arena *nodeArena) {
+func materializePendingPayloadEntries(p *Parser, entries []stackEntry, start, end int, arena *nodeArena) {
 	if end > len(entries) {
 		end = len(entries)
 	}
@@ -1043,21 +1043,48 @@ func materializePendingPayloadEntries(entries []stackEntry, start, end int, aren
 	}
 	prevRejectReason := pendingParentRejectUnknown
 	prevRejectShape := pendingParentFieldRejectUnknown
+	prevPayloadShape := pendingParentFieldRejectPayloadUnknown
 	if arena != nil {
 		prevRejectReason = arena.pendingParentActiveRejectReason
 		prevRejectShape = arena.pendingParentActiveFieldRejectShape
+		prevPayloadShape = arena.pendingParentActiveFieldPayloadShape
 		arena.pendingParentActiveRejectReason = rejectReason
 		arena.pendingParentActiveFieldRejectShape = rejectShape
 		defer func() {
 			arena.pendingParentActiveRejectReason = prevRejectReason
 			arena.pendingParentActiveFieldRejectShape = prevRejectShape
+			arena.pendingParentActiveFieldPayloadShape = prevPayloadShape
 		}()
 	}
 	for i := start; i < end; i++ {
 		if stackEntryCompactFullLeaf(entries[i]) == nil && stackEntryPendingParent(entries[i]) == nil {
 			continue
 		}
+		if arena != nil && rejectReason == pendingParentRejectFields {
+			arena.pendingParentActiveFieldPayloadShape = p.pendingParentFieldRejectPayloadShape(entries[i])
+		}
 		materializeStackEntryPayload(arena, &entries[i], compactFullLeafMaterializeForParentReduce, pendingParentMaterializeForParentReduce)
+	}
+}
+
+func (p *Parser) pendingParentFieldRejectPayloadShape(entry stackEntry) pendingParentFieldRejectPayloadShape {
+	if p == nil || p.language == nil || !stackEntryHasNode(entry) {
+		return pendingParentFieldRejectPayloadUnknown
+	}
+	symbolMeta := p.language.SymbolMetadata
+	if stackEntryVisibleForPending(entry, symbolMeta) {
+		return pendingParentFieldRejectPayloadVisible
+	}
+	if n := stackEntryNode(entry); hiddenTreeHasFieldIDs(n) {
+		return pendingParentFieldRejectPayloadHiddenWithFields
+	}
+	switch pendingPlainHiddenVisibleDescendantCount(entry, symbolMeta) {
+	case 0:
+		return pendingParentFieldRejectPayloadHiddenEmpty
+	case 1:
+		return pendingParentFieldRejectPayloadHiddenOne
+	default:
+		return pendingParentFieldRejectPayloadHiddenMany
 	}
 }
 
@@ -2860,7 +2887,7 @@ func (p *Parser) applyReduceAction(s *glrStack, act ParseAction, tok Token, anyR
 		if p.tryPushPendingNoFieldParent(s, act, tok, anyReduced, nodeCount, arena, entryScratch, gssScratch, entries, window.start, window.reducedEnd, window.actualEnd, window.topState, window.start) {
 			return
 		}
-		materializePendingPayloadEntries(entries, window.start, window.actualEnd, arena)
+		materializePendingPayloadEntries(p, entries, window.start, window.actualEnd, arena)
 	}
 
 	if child := p.collapsibleRawUnarySelfReduction(act, tok, arena, entries, window.start, window.reducedEnd); child != nil {
@@ -2982,7 +3009,7 @@ func (p *Parser) applyReduceActionTransientParents(s *glrStack, act ParseAction,
 		if p.tryPushPendingNoFieldParent(s, act, tok, anyReduced, nodeCount, arena, entryScratch, gssScratch, entries, window.start, window.reducedEnd, window.actualEnd, window.topState, window.start) {
 			return
 		}
-		materializePendingPayloadEntries(entries, window.start, window.actualEnd, arena)
+		materializePendingPayloadEntries(p, entries, window.start, window.actualEnd, arena)
 	}
 
 	if child := p.collapsibleRawUnarySelfReduction(act, tok, arena, entries, window.start, window.reducedEnd); child != nil {
