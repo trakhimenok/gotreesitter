@@ -98,6 +98,30 @@ go test . -tags treesitter_c_parity -run '^$' \
   -benchmem -count=10 -benchtime=750ms
 ```
 
+## Run Real-Corpus Parser Benchmarks
+
+`BenchmarkParityRealCorpusParse*` uses `cgo_harness/corpus_real/<language>`
+fixtures and compares gotreesitter against the C tree-sitter runtime for full
+parse, single-byte incremental edit, and no-edit incremental parse. Strict
+structural parity is the default precheck.
+
+```sh
+GOMAXPROCS=1 GTS_REAL_CORPUS_BENCH_LANGS=go \
+go test . -tags treesitter_c_parity -run '^$' \
+  -bench '^BenchmarkParityRealCorpusParse(Full|IncrementalSingleByteEdit|IncrementalNoEdit)/go/' \
+  -benchmem -count=10 -benchtime=750ms
+```
+
+Useful narrow-run knobs:
+
+- `GTS_REAL_CORPUS_BENCH_LANGS=c,cpp,c_sharp`
+- `GTS_REAL_CORPUS_BENCH_ORDER=path|largest|smallest`
+- `GTS_REAL_CORPUS_BENCH_MAX_FILES=1`
+- `GTS_REAL_CORPUS_BENCH_MAX_FILE_BYTES=20000`
+- `GTS_REAL_CORPUS_BENCH_SKIP_MISMATCH=1` to benchmark only parity-clean files.
+- `GTS_REAL_CORPUS_BENCH_ALLOW_MISMATCH=1` for timing-only diagnosis when the
+  selected corpus exposes a known structural mismatch.
+
 ## Run Parity Tests In Docker Sandbox
 
 This keeps heavy parity runs isolated from your host/WSL memory space and
