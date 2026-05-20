@@ -162,6 +162,35 @@ func TestArenaResetRetainsFieldSlabsWithinBudget(t *testing.T) {
 	}
 }
 
+func TestArenaResetTrimsFinalChildSidecarsWithinBudget(t *testing.T) {
+	arena := newNodeArena(arenaClassIncremental)
+	limit := maxRetainedFinalChildSidecarCapacityForClass(arena.class)
+	if limit <= 0 {
+		t.Fatal("expected positive final child sidecar retention limit")
+	}
+
+	for i := 0; i < limit+128; i++ {
+		parent := arena.allocNode()
+		childRange, _ := arena.allocPendingChildEntries(1)
+		arena.attachFinalChildRefs(parent, childRange)
+	}
+	if cap(arena.finalChildSidecars) <= limit {
+		t.Fatalf("final child sidecar cap = %d, want > retention limit %d before reset", cap(arena.finalChildSidecars), limit)
+	}
+
+	arena.reset()
+
+	if got := len(arena.finalChildSidecars); got != 0 {
+		t.Fatalf("len(finalChildSidecars) after reset = %d, want 0", got)
+	}
+	if got := cap(arena.finalChildSidecars); got > limit {
+		t.Fatalf("cap(finalChildSidecars) after reset = %d, limit = %d", got, limit)
+	}
+	if got, wantMax := arena.finalChildSidecarBytesAllocated(), finalChildSidecarBytesForCap(limit); got > wantMax {
+		t.Fatalf("final child sidecar bytes after reset = %d, want <= %d", got, wantMax)
+	}
+}
+
 // TestChildSlabStalePointersAfterReset checks whether child slabs (which hold
 // []*Node) can retain stale pointers in the region [used:cap] after reset().
 // allocNodeSlice calls clear(out) on each allocation, zeroing [start:used].

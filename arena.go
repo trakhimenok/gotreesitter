@@ -621,9 +621,15 @@ func (a *nodeArena) reset() {
 		}
 	}
 	a.pendingChildEntrySlabCursor = 0
-	if len(a.finalChildSidecars) > 0 {
-		clear(a.finalChildSidecars)
-		a.finalChildSidecars = a.finalChildSidecars[:0]
+	if cap(a.finalChildSidecars) > 0 {
+		if len(a.finalChildSidecars) > 0 {
+			clear(a.finalChildSidecars)
+		}
+		if limit := maxRetainedFinalChildSidecarCapacityForClass(a.class); cap(a.finalChildSidecars) > limit {
+			a.finalChildSidecars = make([]finalChildSidecar, 0, limit)
+		} else {
+			a.finalChildSidecars = a.finalChildSidecars[:0]
+		}
 	}
 	if len(a.compactCheckpointLeafSlabs) > 0 {
 		retained := 0
@@ -2245,6 +2251,13 @@ func maxRetainedPendingChildEntryCapacityForClass(class arenaClass) int {
 		return max(maxRetainedFullSliceCap, defaultPendingChildEntrySlabCap(class))
 	}
 	return max(defaultPendingChildEntrySlabCap(class)*maxRetainedArenaFactor, maxRetainedIncrementalSliceCap)
+}
+
+func maxRetainedFinalChildSidecarCapacityForClass(class arenaClass) int {
+	if class == arenaClassFull {
+		return maxRetainedFullSliceCap
+	}
+	return maxRetainedIncrementalSliceCap
 }
 
 func maxRetainedCompactCheckpointLeafCapacityForClass(class arenaClass) int {
