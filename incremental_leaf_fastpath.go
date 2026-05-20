@@ -24,7 +24,7 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 	if leaf == nil || !leaf.containsByteRange(edit.StartByte, edit.OldEndByte) {
 		leaf = root.DescendantForByteRange(edit.StartByte, edit.OldEndByte)
 	}
-	if leaf == nil || leaf.ChildCount() != 0 || leaf.hasError() || leaf.isMissing() || leaf.isExtra() {
+	if leaf == nil || leaf.ChildCount() != 0 || leaf.hasError() || leaf.isMissing() {
 		return nil, false
 	}
 	start := time.Time{}
@@ -32,6 +32,9 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 		start = time.Now()
 	}
 	tok, ok := scanLeafTokenWithoutMutatingSource(ts, leaf)
+	if !ok {
+		tok, ok = p.scanLeafTokenWithFreshSource(source, leaf)
+	}
 	if !ok {
 		restoreState, ok := snapshotTokenSourceState(ts)
 		if !ok {
@@ -82,6 +85,31 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 		timing.singleStackTokens = 1
 	}
 	return tree, true
+}
+
+func (p *Parser) scanLeafTokenWithFreshSource(source []byte, leaf *Node) (Token, bool) {
+	if p == nil || p.reparseFactory == nil || leaf == nil {
+		return Token{}, false
+	}
+	fresh, err := p.reparseFactory(source)
+	if err != nil || fresh == nil {
+		return Token{}, false
+	}
+	release := manageTokenSourceLifetime(fresh)
+	defer release()
+
+	ts := p.wrapIncludedRanges(fresh)
+	if stateful, ok := ts.(parserStateTokenSource); ok {
+		stateful.SetParserState(leaf.preGotoState)
+		stateful.SetGLRStates(nil)
+	}
+	if skipper, ok := ts.(PointSkippableTokenSource); ok {
+		return skipper.SkipToByteWithPoint(leaf.startByte, leaf.startPoint), true
+	}
+	if skipper, ok := ts.(ByteSkippableTokenSource); ok {
+		return skipper.SkipToByte(leaf.startByte), true
+	}
+	return Token{}, false
 }
 
 func scanLeafTokenWithoutMutatingSource(ts TokenSource, leaf *Node) (Token, bool) {

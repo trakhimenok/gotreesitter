@@ -334,3 +334,286 @@ func TestReuseTreeWithNewSourceKeepsPrimaryArena(t *testing.T) {
 		t.Fatalf("arena refs after reused tree release = %d, want %d", got, refsBefore)
 	}
 }
+
+func TestTokenInvariantLeafEditAllowsExtraLeaf(t *testing.T) {
+	lang := buildArithmeticExtraCommentLanguage()
+	parser := NewParser(lang)
+	oldSource := []byte("1#2012\n+2")
+	newSource := []byte("1#2013\n+2")
+	tree := mustParse(t, parser, oldSource)
+
+	tree.Edit(InputEdit{
+		StartByte:   5,
+		OldEndByte:  6,
+		NewEndByte:  6,
+		StartPoint:  Point{Row: 0, Column: 5},
+		OldEndPoint: Point{Row: 0, Column: 6},
+		NewEndPoint: Point{Row: 0, Column: 6},
+	})
+	leaf := tree.lastEditedLeaf
+	if leaf == nil {
+		t.Fatal("expected edited leaf to be tracked")
+	}
+	if !leaf.isExtra() {
+		t.Fatalf("edited leaf extra = false, want true; leaf=%s", leaf.Type(lang))
+	}
+
+	reused := mustParseIncremental(t, parser, newSource, tree)
+	rt := reused.ParseRuntime()
+	if rt.StopReason != ParseStopAccepted {
+		t.Fatalf("incremental stop reason = %q, want %q (%s)", rt.StopReason, ParseStopAccepted, rt.Summary())
+	}
+	if rt.TokensConsumed != 1 {
+		t.Fatalf("tokens consumed = %d, want token-invariant fast path to consume 1", rt.TokensConsumed)
+	}
+	if got, want := reused.RootNode().EndByte(), uint32(len(newSource)); got != want {
+		t.Fatalf("root end byte = %d, want %d", got, want)
+	}
+}
+
+func TestTokenInvariantLeafEditUsesFreshCustomTokenSource(t *testing.T) {
+	lang := buildArithmeticExtraCommentLanguage()
+	parser := NewParser(lang)
+	oldSource := []byte("1#2012\n+2")
+	newSource := []byte("1#2013\n+2")
+	oldTree, err := parser.ParseWithTokenSource(oldSource, newArithmeticExtraCommentTokenSource(oldSource))
+	if err != nil {
+		t.Fatalf("ParseWithTokenSource failed: %v", err)
+	}
+
+	oldTree.Edit(InputEdit{
+		StartByte:   5,
+		OldEndByte:  6,
+		NewEndByte:  6,
+		StartPoint:  Point{Row: 0, Column: 5},
+		OldEndPoint: Point{Row: 0, Column: 6},
+		NewEndPoint: Point{Row: 0, Column: 6},
+	})
+	newTree, err := parser.ParseIncrementalWithTokenSource(newSource, oldTree, newArithmeticExtraCommentTokenSource(newSource))
+	if err != nil {
+		t.Fatalf("ParseIncrementalWithTokenSource failed: %v", err)
+	}
+	rt := newTree.ParseRuntime()
+	if rt.StopReason != ParseStopAccepted {
+		t.Fatalf("incremental stop reason = %q, want %q (%s)", rt.StopReason, ParseStopAccepted, rt.Summary())
+	}
+	if rt.TokensConsumed != 1 {
+		t.Fatalf("tokens consumed = %d, want fresh custom-source fast path to consume 1", rt.TokensConsumed)
+	}
+}
+
+type arithmeticExtraCommentTokenSource struct {
+	src []byte
+	pos int
+	row uint32
+	col uint32
+}
+
+func newArithmeticExtraCommentTokenSource(src []byte) *arithmeticExtraCommentTokenSource {
+	return &arithmeticExtraCommentTokenSource{src: src}
+}
+
+func (ts *arithmeticExtraCommentTokenSource) RebuildTokenSource(src []byte, _ *Language) (TokenSource, error) {
+	return newArithmeticExtraCommentTokenSource(src), nil
+}
+
+func (ts *arithmeticExtraCommentTokenSource) SetParserState(StateID) {}
+
+func (ts *arithmeticExtraCommentTokenSource) SetGLRStates([]StateID) {}
+
+func (ts *arithmeticExtraCommentTokenSource) SkipToByte(offset uint32) Token {
+	ts.pos = 0
+	ts.row = 0
+	ts.col = 0
+	for ts.pos < len(ts.src) && ts.pos < int(offset) {
+		ts.advance()
+	}
+	return ts.Next()
+}
+
+func (ts *arithmeticExtraCommentTokenSource) Next() Token {
+	for ts.pos < len(ts.src) {
+		switch ts.src[ts.pos] {
+		case ' ', '\t', '\n':
+			ts.advance()
+			continue
+		case '+':
+			return ts.makeSingleByteToken(2)
+		case '#':
+			return ts.commentToken()
+		default:
+			if ts.src[ts.pos] >= '0' && ts.src[ts.pos] <= '9' {
+				return ts.numberToken()
+			}
+			ts.advance()
+		}
+	}
+	pt := Point{Row: ts.row, Column: ts.col}
+	return Token{StartByte: uint32(ts.pos), EndByte: uint32(ts.pos), StartPoint: pt, EndPoint: pt}
+}
+
+func (ts *arithmeticExtraCommentTokenSource) makeSingleByteToken(sym Symbol) Token {
+	start := ts.pos
+	startPt := Point{Row: ts.row, Column: ts.col}
+	ts.advance()
+	return Token{
+		Symbol:     sym,
+		StartByte:  uint32(start),
+		EndByte:    uint32(ts.pos),
+		StartPoint: startPt,
+		EndPoint:   Point{Row: ts.row, Column: ts.col},
+		Text:       string(ts.src[start:ts.pos]),
+	}
+}
+
+func (ts *arithmeticExtraCommentTokenSource) numberToken() Token {
+	start := ts.pos
+	startPt := Point{Row: ts.row, Column: ts.col}
+	for ts.pos < len(ts.src) && ts.src[ts.pos] >= '0' && ts.src[ts.pos] <= '9' {
+		ts.advance()
+	}
+	return Token{
+		Symbol:     1,
+		StartByte:  uint32(start),
+		EndByte:    uint32(ts.pos),
+		StartPoint: startPt,
+		EndPoint:   Point{Row: ts.row, Column: ts.col},
+		Text:       string(ts.src[start:ts.pos]),
+	}
+}
+
+func (ts *arithmeticExtraCommentTokenSource) commentToken() Token {
+	start := ts.pos
+	startPt := Point{Row: ts.row, Column: ts.col}
+	ts.advance()
+	for ts.pos < len(ts.src) && ts.src[ts.pos] >= '0' && ts.src[ts.pos] <= '9' {
+		ts.advance()
+	}
+	return Token{
+		Symbol:     3,
+		StartByte:  uint32(start),
+		EndByte:    uint32(ts.pos),
+		StartPoint: startPt,
+		EndPoint:   Point{Row: ts.row, Column: ts.col},
+		Text:       string(ts.src[start:ts.pos]),
+	}
+}
+
+func (ts *arithmeticExtraCommentTokenSource) advance() {
+	if ts.pos >= len(ts.src) {
+		return
+	}
+	if ts.src[ts.pos] == '\n' {
+		ts.row++
+		ts.col = 0
+		ts.pos++
+		return
+	}
+	ts.pos++
+	ts.col++
+}
+
+func buildArithmeticExtraCommentLanguage() *Language {
+	return &Language{
+		Name:               "arithmetic_extra_comment",
+		SymbolCount:        5,
+		TokenCount:         4,
+		ExternalTokenCount: 0,
+		StateCount:         5,
+		LargeStateCount:    0,
+		FieldCount:         0,
+		ProductionIDCount:  2,
+
+		SymbolNames: []string{"EOF", "NUMBER", "+", "COMMENT", "expression"},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF", Visible: false, Named: false},
+			{Name: "NUMBER", Visible: true, Named: true},
+			{Name: "+", Visible: true, Named: false},
+			{Name: "COMMENT", Visible: true, Named: true},
+			{Name: "expression", Visible: true, Named: true},
+		},
+		FieldNames: []string{""},
+
+		ParseActions: []ParseActionEntry{
+			{Actions: nil},
+			{Actions: []ParseAction{{Type: ParseActionShift, State: 1}}},
+			{Actions: []ParseAction{{Type: ParseActionReduce, Symbol: 4, ChildCount: 1, ProductionID: 0}}},
+			{Actions: []ParseAction{{Type: ParseActionShift, State: 2}}},
+			{Actions: []ParseAction{{Type: ParseActionShift, State: 3}}},
+			{Actions: []ParseAction{{Type: ParseActionAccept}}},
+			{Actions: []ParseAction{{Type: ParseActionShift, State: 4}}},
+			{Actions: []ParseAction{{Type: ParseActionReduce, Symbol: 4, ChildCount: 3, ProductionID: 1}}},
+			{Actions: []ParseAction{{Type: ParseActionShift, Extra: true}}},
+		},
+
+		// Columns: EOF(0), NUMBER(1), PLUS(2), COMMENT(3), expression(4)
+		ParseTable: [][]uint16{
+			{0, 1, 0, 8, 3},
+			{2, 2, 2, 2, 0},
+			{5, 0, 4, 8, 0},
+			{0, 6, 0, 8, 0},
+			{7, 7, 7, 7, 0},
+		},
+
+		LexModes: []LexMode{
+			{LexState: 0},
+			{LexState: 0},
+			{LexState: 0},
+			{LexState: 0},
+			{LexState: 0},
+		},
+
+		LexStates: []LexState{
+			{
+				AcceptToken: 0,
+				Skip:        false,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{
+					{Lo: '0', Hi: '9', NextState: 1},
+					{Lo: '+', Hi: '+', NextState: 2},
+					{Lo: '#', Hi: '#', NextState: 4},
+					{Lo: ' ', Hi: ' ', NextState: 3},
+					{Lo: '\t', Hi: '\t', NextState: 3},
+					{Lo: '\n', Hi: '\n', NextState: 3},
+				},
+			},
+			{
+				AcceptToken: 1,
+				Skip:        false,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{
+					{Lo: '0', Hi: '9', NextState: 1},
+				},
+			},
+			{
+				AcceptToken: 2,
+				Skip:        false,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: nil,
+			},
+			{
+				AcceptToken: 0,
+				Skip:        true,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{
+					{Lo: ' ', Hi: ' ', NextState: 3},
+					{Lo: '\t', Hi: '\t', NextState: 3},
+					{Lo: '\n', Hi: '\n', NextState: 3},
+				},
+			},
+			{
+				AcceptToken: 3,
+				Skip:        false,
+				Default:     -1,
+				EOF:         -1,
+				Transitions: []LexTransition{
+					{Lo: '0', Hi: '9', NextState: 4},
+				},
+			},
+		},
+	}
+}

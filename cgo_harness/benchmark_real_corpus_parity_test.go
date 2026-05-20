@@ -592,7 +592,14 @@ func verifyRealCorpusIncrementalCandidate(b *testing.B, tc realCorpusBenchmarkCa
 
 	goOldTree := parseRealCorpusGoFull(b, tc, goParser)
 	goOldTree.Edit(editCase.goEdit)
-	goIncrTree := parseRealCorpusGoIncremental(b, realCorpusCaseWithSource(tc, edited), goParser, goOldTree)
+	verifyPhase := fmt.Sprintf(
+		"gotreesitter incremental candidate=%s offset=%d %q->%q",
+		editCase.label,
+		editCase.offset,
+		editCase.original,
+		editCase.replacement,
+	)
+	goIncrTree := parseRealCorpusGoIncrementalWithPhase(b, realCorpusCaseWithSource(tc, edited), goParser, goOldTree, verifyPhase)
 	releaseGoTree(goOldTree)
 	defer releaseGoTree(goIncrTree)
 	var goIncrErrs []string
@@ -696,7 +703,14 @@ func benchmarkRealCorpusGoParseIncrementalSingleByteEdit(b *testing.B, cases []r
 			profileTotals.addEdit(time.Since(editStart))
 			oldTree := state.tree
 			parseStart := time.Now()
-			newTree, profile := parseRealCorpusGoIncrementalProfiled(b, realCorpusCaseWithSource(state.tc.realCorpusBenchmarkCase, state.src), parser, state.tree)
+			phase := fmt.Sprintf(
+				"gotreesitter incremental edit=%s offset=%d %q->%q",
+				state.tc.label,
+				state.tc.offset,
+				state.tc.original,
+				state.tc.replacement,
+			)
+			newTree, profile := parseRealCorpusGoIncrementalProfiledWithPhase(b, realCorpusCaseWithSource(state.tc.realCorpusBenchmarkCase, state.src), parser, state.tree, phase)
 			profileTotals.addParseWall(time.Since(parseStart))
 			profileTotals.add(profile)
 			if newTree != oldTree {
@@ -862,6 +876,11 @@ func parseRealCorpusGoFull(tb testing.TB, tc realCorpusBenchmarkCase, parser *go
 
 func parseRealCorpusGoIncremental(tb testing.TB, tc realCorpusBenchmarkCase, parser *gotreesitter.Parser, oldTree *gotreesitter.Tree) *gotreesitter.Tree {
 	tb.Helper()
+	return parseRealCorpusGoIncrementalWithPhase(tb, tc, parser, oldTree, "gotreesitter incremental")
+}
+
+func parseRealCorpusGoIncrementalWithPhase(tb testing.TB, tc realCorpusBenchmarkCase, parser *gotreesitter.Parser, oldTree *gotreesitter.Tree, phase string) *gotreesitter.Tree {
+	tb.Helper()
 	var tree *gotreesitter.Tree
 	var err error
 	switch tc.report.Backend {
@@ -875,11 +894,16 @@ func parseRealCorpusGoIncremental(tb testing.TB, tc realCorpusBenchmarkCase, par
 	default:
 		tb.Fatalf("unsupported incremental backend %q for %q", tc.report.Backend, tc.name)
 	}
-	requireCompleteRealCorpusGoTree(tb, tc, tree, "gotreesitter incremental", err)
+	requireCompleteRealCorpusGoTree(tb, tc, tree, phase, err)
 	return tree
 }
 
 func parseRealCorpusGoIncrementalProfiled(tb testing.TB, tc realCorpusBenchmarkCase, parser *gotreesitter.Parser, oldTree *gotreesitter.Tree) (*gotreesitter.Tree, gotreesitter.IncrementalParseProfile) {
+	tb.Helper()
+	return parseRealCorpusGoIncrementalProfiledWithPhase(tb, tc, parser, oldTree, "gotreesitter incremental")
+}
+
+func parseRealCorpusGoIncrementalProfiledWithPhase(tb testing.TB, tc realCorpusBenchmarkCase, parser *gotreesitter.Parser, oldTree *gotreesitter.Tree, phase string) (*gotreesitter.Tree, gotreesitter.IncrementalParseProfile) {
 	tb.Helper()
 	var tree *gotreesitter.Tree
 	var profile gotreesitter.IncrementalParseProfile
@@ -895,7 +919,7 @@ func parseRealCorpusGoIncrementalProfiled(tb testing.TB, tc realCorpusBenchmarkC
 	default:
 		tb.Fatalf("unsupported incremental backend %q for %q", tc.report.Backend, tc.name)
 	}
-	requireCompleteRealCorpusGoTree(tb, tc, tree, "gotreesitter incremental", err)
+	requireCompleteRealCorpusGoTree(tb, tc, tree, phase, err)
 	return tree, profile
 }
 

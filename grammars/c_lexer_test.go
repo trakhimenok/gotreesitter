@@ -56,6 +56,29 @@ func TestCTokenSourceSkipToByte(t *testing.T) {
 	}
 }
 
+func TestCTokenSourceSkipToBytePreservesParserState(t *testing.T) {
+	lang := CLanguage()
+	src := []byte("#ifdef __cplusplus\nextern \"C\" {\n#endif\n")
+	target := bytes.Index(src, []byte("#endif"))
+	if target < 0 {
+		t.Fatal("missing #endif marker")
+	}
+
+	ts, err := NewCTokenSource(src, lang)
+	if err != nil {
+		t.Fatalf("NewCTokenSource failed: %v", err)
+	}
+	ts.SetParserState(35)
+
+	tok := ts.SkipToByte(uint32(target))
+	if got, want := lang.SymbolNames[tok.Symbol], "preproc_directive"; got != want {
+		t.Fatalf("SkipToByte directive token = %q, want %q", got, want)
+	}
+	if got, want := tok.Text, "#endif"; got != want {
+		t.Fatalf("SkipToByte directive text = %q, want %q", got, want)
+	}
+}
+
 func TestParseCPreprocessorDefines(t *testing.T) {
 	lang := CLanguage()
 	parser := gotreesitter.NewParser(lang)

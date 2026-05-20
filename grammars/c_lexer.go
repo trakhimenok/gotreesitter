@@ -164,6 +164,15 @@ func NewCTokenSourceOrEOF(src []byte, lang *gotreesitter.Language) gotreesitter.
 	return ts
 }
 
+// RebuildTokenSource constructs a fresh C token source for another source
+// buffer while preserving the grammar table identity.
+func (ts *CTokenSource) RebuildTokenSource(src []byte, lang *gotreesitter.Language) (gotreesitter.TokenSource, error) {
+	if lang == nil {
+		lang = ts.lang
+	}
+	return NewCTokenSource(src, lang)
+}
+
 // Reset reinitializes this token source for a new source buffer.
 func (ts *CTokenSource) Reset(src []byte) {
 	ts.src = src
@@ -370,8 +379,6 @@ func (ts *CTokenSource) SkipToByte(offset uint32) gotreesitter.Token {
 	ts.pending = nil
 	ts.done = false
 	ts.preprocState = cPreprocNormal
-	ts.parserState = 0
-	ts.glrStates = ts.glrStates[:0]
 	ts.lastSyntheticOffset = -1
 	ts.preprocDefineNameEnd = -1
 	ts.preprocOpaqueArgPending = false
