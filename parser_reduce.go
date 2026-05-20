@@ -60,6 +60,87 @@ func buildReduceFieldPresence(lang *Language) []bool {
 	return out
 }
 
+func buildReduceEffectiveFieldPresence(lang *Language) []bool {
+	if lang == nil || len(lang.FieldMapSlices) == 0 {
+		return nil
+	}
+	out := make([]bool, len(lang.FieldMapSlices))
+	seenReduce := make([]bool, len(lang.FieldMapSlices))
+	for _, entry := range lang.ParseActions {
+		for _, act := range entry.Actions {
+			if act.Type != ParseActionReduce {
+				continue
+			}
+			pid := int(act.ProductionID)
+			if pid < 0 || pid >= len(out) {
+				continue
+			}
+			seenReduce[pid] = true
+			if fieldMapHasEffectiveFields(lang, int(act.ChildCount), act.ProductionID) {
+				out[pid] = true
+			}
+		}
+	}
+	for pid, fm := range lang.FieldMapSlices {
+		if fm[1] != 0 && !seenReduce[pid] {
+			out[pid] = true
+		}
+	}
+	return out
+}
+
+func fieldMapHasEffectiveFields(lang *Language, childCount int, productionID uint16) bool {
+	if lang == nil || childCount <= 0 || len(lang.FieldMapEntries) == 0 {
+		return false
+	}
+	pid := int(productionID)
+	if pid < 0 || pid >= len(lang.FieldMapSlices) {
+		return false
+	}
+	fm := lang.FieldMapSlices[pid]
+	count := int(fm[1])
+	if count == 0 {
+		return false
+	}
+	fieldIDs := make([]FieldID, childCount)
+	inherited := make([]bool, childCount)
+	conflictedInherited := make([]bool, childCount)
+	start := int(fm[0])
+	for i := 0; i < count; i++ {
+		entryIdx := start + i
+		if entryIdx >= len(lang.FieldMapEntries) {
+			break
+		}
+		entry := lang.FieldMapEntries[entryIdx]
+		if int(entry.ChildIndex) >= childCount {
+			continue
+		}
+		idx := entry.ChildIndex
+		switch {
+		case conflictedInherited[idx]:
+			if !entry.Inherited {
+				fieldIDs[idx] = entry.FieldID
+				inherited[idx] = false
+				conflictedInherited[idx] = false
+			}
+		case fieldIDs[idx] == 0:
+			fieldIDs[idx] = entry.FieldID
+			inherited[idx] = entry.Inherited
+		case !entry.Inherited && inherited[idx]:
+			fieldIDs[idx] = entry.FieldID
+			inherited[idx] = false
+		case entry.Inherited && inherited[idx] && fieldIDs[idx] != entry.FieldID:
+			fieldIDs[idx] = 0
+			inherited[idx] = false
+			conflictedInherited[idx] = true
+		case entry.Inherited == inherited[idx]:
+			fieldIDs[idx] = entry.FieldID
+			inherited[idx] = entry.Inherited
+		}
+	}
+	return fieldIDSliceHasAny(fieldIDs)
+}
+
 func buildSingleTokenWrapperSymbols(lang *Language) []bool {
 	if lang == nil || len(lang.ParseActions) == 0 || len(lang.SymbolMetadata) == 0 {
 		return nil
@@ -3796,12 +3877,15 @@ func (p *Parser) reduceProductionHasFields(productionID uint16) bool {
 	return p.reduceHasFields[pid]
 }
 
-func (p *Parser) reduceProductionHasEffectiveFields(childCount int, productionID uint16, arena *nodeArena) bool {
+func (p *Parser) reduceProductionHasEffectiveFields(_ int, productionID uint16, _ *nodeArena) bool {
 	if !p.reduceProductionHasFields(productionID) {
 		return false
 	}
-	fieldIDs, _ := p.buildFieldIDs(childCount, productionID, arena)
-	return fieldIDSliceHasAny(fieldIDs)
+	pid := int(productionID)
+	if pid < 0 || pid >= len(p.reduceHasEffectiveFields) {
+		return true
+	}
+	return p.reduceHasEffectiveFields[pid]
 }
 
 func fieldIDSliceHasAny(fieldIDs []FieldID) bool {

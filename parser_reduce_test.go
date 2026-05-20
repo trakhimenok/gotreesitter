@@ -159,6 +159,9 @@ func TestReduceProductionHasEffectiveFieldsIgnoresConflictedZeroFields(t *testin
 			{FieldID: 1, ChildIndex: 0, Inherited: true},
 			{FieldID: 2, ChildIndex: 0, Inherited: true},
 		},
+		ParseActions: []ParseActionEntry{
+			{Actions: []ParseAction{{Type: ParseActionReduce, Symbol: 1, ChildCount: 1, ProductionID: 0}}},
+		},
 	}
 	p := NewParser(lang)
 	arena := newNodeArena(arenaClassFull)
@@ -185,6 +188,9 @@ func TestTryPushPendingNoFieldParentAllowsEffectiveNoFieldProduction(t *testing.
 		FieldMapEntries: []FieldMapEntry{
 			{FieldID: 1, ChildIndex: 0, Inherited: true},
 			{FieldID: 2, ChildIndex: 0, Inherited: true},
+		},
+		ParseActions: []ParseActionEntry{
+			{Actions: []ParseAction{{Type: ParseActionReduce, Symbol: 1, ChildCount: 1, ProductionID: 0}}},
 		},
 	}
 	p := NewParser(lang)
