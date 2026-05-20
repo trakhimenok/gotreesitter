@@ -31,6 +31,9 @@ const (
 	pendingChildRangeOffsetBits = 24
 	pendingChildRangeCountMask  = (uint64(1) << pendingChildRangeCountBits) - 1
 	pendingChildRangeOffsetMask = (uint64(1) << pendingChildRangeOffsetBits) - 1
+
+	pendingParentFlagFieldEntries nodeFlags = 1 << 4
+	publicPendingParentNodeFlags  nodeFlags = nodeFlagNamed | nodeFlagExtra | nodeFlagMissing | nodeFlagHasError
 )
 
 type pendingParentMaterializeReason = materializeReason
@@ -102,6 +105,10 @@ func newPendingParentInArena(arena *nodeArena, sym Symbol, named bool, productio
 }
 
 func newPendingParentShellInArena(arena *nodeArena, sym Symbol, named bool, productionID uint16, childCount int, startByte, endByte uint32, startPoint, endPoint Point, hasError bool) *pendingParent {
+	return newPendingParentShellWithEntrySlotsInArena(arena, sym, named, productionID, childCount, childCount, startByte, endByte, startPoint, endPoint, hasError)
+}
+
+func newPendingParentShellWithEntrySlotsInArena(arena *nodeArena, sym Symbol, named bool, productionID uint16, childCount, entrySlots int, startByte, endByte uint32, startPoint, endPoint Point, hasError bool) *pendingParent {
 	var p *pendingParent
 	var childRange pendingChildRange
 	if arena == nil {
@@ -111,7 +118,7 @@ func newPendingParentShellInArena(arena *nodeArena, sym Symbol, named bool, prod
 		p = &pendingParent{}
 	} else {
 		p = arena.allocPendingParent()
-		childRange, _ = arena.allocPendingChildEntries(childCount)
+		childRange, _ = arena.allocPendingChildEntryRange(childCount, entrySlots)
 		arena.pendingParentCreated++
 	}
 	p.setChildEntries(childRange)
@@ -140,6 +147,18 @@ func (p *pendingParent) childRefs(arena *nodeArena) []pendingChildEntry {
 		return nil
 	}
 	return p.childRange.refs(arena)
+}
+
+func (p *pendingParent) fieldEntryRefs(arena *nodeArena) []pendingChildEntry {
+	if p == nil || arena == nil || !p.hasFieldEntries() || p.childRange.count() == 0 {
+		return nil
+	}
+	count := p.childRange.count()
+	refs := p.childRange.refsN(arena, count*2)
+	if len(refs) < count*2 {
+		return nil
+	}
+	return refs[count : count*2]
 }
 
 func (p *pendingParent) childEntryCount() int {
@@ -171,6 +190,36 @@ func (p *pendingParent) setChildEntry(arena *nodeArena, i int, entry stackEntry)
 	refs[i] = newPendingChildEntry(entry)
 }
 
+func (p *pendingParent) hasFieldEntries() bool {
+	return p != nil && p.hasFlag(pendingParentFlagFieldEntries)
+}
+
+func (p *pendingParent) setHasFieldEntries(v bool) {
+	p.setFlag(pendingParentFlagFieldEntries, v)
+}
+
+func (p *pendingParent) setChildFieldEntry(arena *nodeArena, i int, fid FieldID, source uint8) {
+	if p == nil || i < 0 || i >= p.childEntryCount() {
+		return
+	}
+	refs := p.fieldEntryRefs(arena)
+	if i >= len(refs) {
+		return
+	}
+	refs[i] = newPendingChildFieldEntry(fid, source)
+}
+
+func (p *pendingParent) childFieldEntry(arena *nodeArena, i int) (FieldID, uint8) {
+	if p == nil || i < 0 || i >= p.childEntryCount() {
+		return 0, fieldSourceNone
+	}
+	refs := p.fieldEntryRefs(arena)
+	if i >= len(refs) {
+		return 0, fieldSourceNone
+	}
+	return refs[i].fieldID(), refs[i].fieldSource()
+}
+
 func newPendingChildRange(slabIndex, offset, count int) pendingChildRange {
 	if count <= 0 {
 		return 0
@@ -199,7 +248,10 @@ func (r pendingChildRange) offset() int {
 }
 
 func (r pendingChildRange) refs(arena *nodeArena) []pendingChildEntry {
-	count := r.count()
+	return r.refsN(arena, r.count())
+}
+
+func (r pendingChildRange) refsN(arena *nodeArena, count int) []pendingChildEntry {
 	if arena == nil || count == 0 {
 		return nil
 	}
@@ -228,6 +280,18 @@ func newPendingChildEntry(entry stackEntry) pendingChildEntry {
 		panic("pending child entry payload is under-aligned")
 	}
 	return pendingChildEntry(ptr | kind)
+}
+
+func newPendingChildFieldEntry(fid FieldID, source uint8) pendingChildEntry {
+	return pendingChildEntry(uintptr(fid) | uintptr(source)<<16)
+}
+
+func (e pendingChildEntry) fieldID() FieldID {
+	return FieldID(uintptr(e) & 0xffff)
+}
+
+func (e pendingChildEntry) fieldSource() uint8 {
+	return uint8((uintptr(e) >> 16) & 0xff)
 }
 
 const pendingChildEntryKindMask = uintptr(3)
@@ -266,15 +330,29 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 	}
 	childCount := parent.childEntryCount()
 	children := arena.allocNodeSliceNoClear(childCount)
+	var fieldIDs []FieldID
+	var fieldSources []uint8
+	if parent.hasFieldEntries() {
+		fieldIDs = arena.allocFieldIDSlice(childCount)
+		fieldSources = arena.allocFieldSourceSlice(childCount)
+	}
 	for i := 0; i < childCount; i++ {
 		child := parent.childEntry(arena, i)
 		var updatedChild stackEntry
 		children[i], updatedChild = materializeStackEntryPayloadEntryWithParser(p, arena, child, compactFullLeafMaterializeReason(reason), reason)
 		child = updatedChild
 		parent.setChildEntry(arena, i, child)
+		if fieldIDs != nil {
+			fid, source := parent.childFieldEntry(arena, i)
+			fieldIDs[i] = fid
+			fieldSources[i] = source
+		}
 	}
-	node := newParentNodeInArenaNoLinksWithFieldSources(arena, parent.symbol, parent.isNamed(), children, nil, nil, parent.productionID, parent.hasError())
-	node.flags = parent.flags
+	if fieldIDs != nil && p != nil {
+		p.suppressReducedChildFields(children, fieldIDs, fieldSources)
+	}
+	node := newParentNodeInArenaNoLinksWithFieldSources(arena, parent.symbol, parent.isNamed(), children, fieldIDs, fieldSources, parent.productionID, parent.hasError())
+	node.flags = parent.flags & publicPendingParentNodeFlags
 	node.startByte = parent.startByte
 	node.endByte = parent.endByte
 	node.startPoint = parent.startPoint

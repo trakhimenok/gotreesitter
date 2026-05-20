@@ -1245,6 +1245,10 @@ func (p *Parser) tryPushPendingNoFieldParent(s *glrStack, act ParseAction, tok T
 		return false
 	}
 	if p.reduceProductionHasEffectiveFields(int(act.ChildCount), act.ProductionID, arena) {
+		rawFieldIDs, rawInherited := p.buildFieldIDs(int(act.ChildCount), act.ProductionID, arena)
+		if p.tryPushPendingDirectFieldParent(s, act, tok, anyReduced, nodeCount, arena, entryScratch, gssScratch, entries, start, reducedEnd, trailingEnd, topState, truncateDepth, rawFieldIDs, rawInherited) {
+			return true
+		}
 		if arena != nil && arena.breakdownEnabled {
 			p.recordPendingFieldRejectShape(arena, act, entries, start, reducedEnd)
 		}
@@ -1346,6 +1350,151 @@ func (p *Parser) tryPushPendingNoFieldParent(s *glrStack, act ParseAction, tok T
 		*anyReduced = true
 	}
 	return true
+}
+
+func (p *Parser) tryPushPendingDirectFieldParent(s *glrStack, act ParseAction, tok Token, anyReduced *bool, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, entries []stackEntry, start, reducedEnd, trailingEnd int, topState StateID, truncateDepth int, rawFieldIDs []FieldID, rawInherited []bool) bool {
+	if p == nil || p.language == nil || arena == nil || s == nil || !p.noResultCompatibilityBenchmarkOnly || len(rawFieldIDs) == 0 || !fieldIDSliceHasAny(rawFieldIDs) {
+		return false
+	}
+	// Dart has a grammar-specific direct-field suppression rule that needs
+	// materialized child type checks; keep that path on the existing reducer.
+	if p.language.Name == "dart" {
+		return false
+	}
+	for _, inherited := range rawInherited {
+		if inherited {
+			return false
+		}
+	}
+	symbolMeta := p.language.SymbolMetadata
+	if !symbolVisibleForPending(act.Symbol, symbolMeta) {
+		return false
+	}
+	childCount := 0
+	hasError := false
+	var first, last stackEntry
+	for i := start; i < reducedEnd; i++ {
+		entry := entries[i]
+		if !stackEntryHasNode(entry) {
+			continue
+		}
+		if stackEntryNodeIsMissing(entry) {
+			return false
+		}
+		if !stackEntryVisibleForPending(entry, symbolMeta) {
+			if stackEntryNodeHasError(entry) || stackEntryTreeHasFieldIDs(entry, arena) || pendingPlainHiddenVisibleDescendantCount(entry, arena, symbolMeta) != 0 {
+				return false
+			}
+			continue
+		}
+		if childCount == 0 {
+			first = entry
+		}
+		last = entry
+		childCount++
+		hasError = hasError || stackEntryNodeHasError(entry)
+	}
+	if childCount == 0 {
+		return false
+	}
+	startByte := stackEntryNodeStartByte(first)
+	endByte := stackEntryNodeEndByte(last)
+	startPoint := stackEntryNodeStartPoint(first)
+	endPoint := stackEntryNodeEndPoint(last)
+	if span, ok := pendingReduceWindowSpan(entries, start, reducedEnd); ok {
+		startByte = span.startByte
+		endByte = span.endByte
+		startPoint = span.startPoint
+		endPoint = span.endPoint
+	}
+	parent := newPendingParentShellWithEntrySlotsInArena(
+		arena,
+		act.Symbol,
+		p.isNamedSymbol(act.Symbol),
+		act.ProductionID,
+		childCount,
+		childCount*2,
+		startByte,
+		endByte,
+		startPoint,
+		endPoint,
+		hasError,
+	)
+	parent.setHasFieldEntries(true)
+	out := 0
+	structuralChildIndex := 0
+	for i := start; i < reducedEnd; i++ {
+		entry := entries[i]
+		if !stackEntryHasNode(entry) {
+			continue
+		}
+		var fid FieldID
+		if !stackEntryNodeIsExtra(entry) {
+			if structuralChildIndex < len(rawFieldIDs) {
+				fid = rawFieldIDs[structuralChildIndex]
+			}
+			structuralChildIndex++
+		}
+		if !stackEntryVisibleForPending(entry, symbolMeta) {
+			continue
+		}
+		parent.setChildEntry(arena, out, entry)
+		if fid != 0 {
+			parent.setChildFieldEntry(arena, out, fid, fieldSourceDirect)
+		}
+		out++
+	}
+	if out != childCount {
+		arena.recordPendingParentRejected(pendingParentRejectFill)
+		return false
+	}
+	gotoState := p.lookupGoto(topState, act.Symbol)
+	targetState := topState
+	if gotoState != 0 {
+		targetState = gotoState
+	}
+	if tok.NoLookahead && targetState == topState {
+		parent.setExtra(true)
+	}
+	parent.preGotoState = topState
+	parent.parseState = targetState
+	if !s.truncate(truncateDepth) {
+		s.dead = true
+		return true
+	}
+	p.pushStackPendingParent(s, targetState, parent, entryScratch, gssScratch)
+	for i := reducedEnd; i < trailingEnd; i++ {
+		extra, ok := retargetStackEntryPayload(entries[i], targetState)
+		if !ok {
+			continue
+		}
+		p.pushStackEntry(s, extra, entryScratch, gssScratch)
+	}
+	if nodeCount != nil {
+		*nodeCount = *nodeCount + 1
+	}
+	s.score += int(act.DynamicPrecedence)
+	if anyReduced != nil {
+		*anyReduced = true
+	}
+	return true
+}
+
+func stackEntryTreeHasFieldIDs(entry stackEntry, arena *nodeArena) bool {
+	if n := stackEntryNode(entry); n != nil {
+		return hiddenTreeHasFieldIDs(n)
+	}
+	if parent := stackEntryPendingParent(entry); parent != nil {
+		if parent.hasFieldEntries() {
+			return true
+		}
+		for i := 0; i < parent.childEntryCount(); i++ {
+			if stackEntryTreeHasFieldIDs(parent.childEntry(arena, i), arena) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *Parser) recordPendingFieldRejectShape(arena *nodeArena, act ParseAction, entries []stackEntry, start, reducedEnd int) {

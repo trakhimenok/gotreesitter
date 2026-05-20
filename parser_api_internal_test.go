@@ -765,7 +765,7 @@ func TestParsePendingFullArenaInitialNodeCapacityUsesLowerLargeSourceFloor(t *te
 func TestParsePendingFullArenaInitialNodeCapacityCapsHugeSourceFloor(t *testing.T) {
 	sourceLen := 3 * 1024 * 1024
 	got := parsePendingFullArenaInitialNodeCapacity(sourceLen)
-	want := 1_200_000
+	want := 1_050_000
 	if got != want {
 		t.Fatalf("parsePendingFullArenaInitialNodeCapacity(%d) = %d, want %d", sourceLen, got, want)
 	}

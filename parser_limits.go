@@ -173,7 +173,7 @@ func parsePendingFullArenaInitialNodeCapacity(sourceLen int) int {
 		return target
 	}
 	estimate := sourceLen / 2
-	const maxPendingFullParentPreallocNodes = 1_200_000
+	const maxPendingFullParentPreallocNodes = 1_050_000
 	if estimate > maxPendingFullParentPreallocNodes {
 		estimate = maxPendingFullParentPreallocNodes
 	}
