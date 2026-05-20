@@ -1102,9 +1102,6 @@ func (p *Parser) parseIncrementalInternal(source []byte, oldTree *Tree, ts Token
 	if tree, ok := p.tryTokenInvariantLeafEdit(source, oldTree, ts, timing); ok {
 		return tree
 	}
-	if oldTree != nil {
-		oldTree.ensureParentLinks()
-	}
 
 	// Subtree reuse is safe for DFA token sources without external scanners
 	// and for custom token sources that explicitly opt in.
@@ -1125,6 +1122,9 @@ func (p *Parser) parseIncrementalInternal(source []byte, oldTree *Tree, ts Token
 			tree = p.retryFullParseWithTokenSource(source, ts, initialMaxStacks, deterministicExternalConflicts, tree)
 		}
 		return tree
+	}
+	if oldTree != nil {
+		oldTree.ensureParentLinks()
 	}
 	if oldTree != nil {
 		if languageUsesExternalScannerCheckpoints(p.language) {
