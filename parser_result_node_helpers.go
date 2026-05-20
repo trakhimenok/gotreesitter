@@ -21,14 +21,18 @@ func ensureNodeFieldStorage(n *Node, childCount int) {
 	}
 }
 func replaceChildRangeWithSingleNode(parent *Node, start, end int, replacement *Node) {
-	if parent == nil || replacement == nil || start < 0 || start >= end || end > len(parent.children) {
+	if parent == nil || replacement == nil {
 		return
 	}
-	oldLen := len(parent.children)
+	children := resultDenseChildrenForMutation(parent)
+	if start < 0 || start >= end || end > len(children) {
+		return
+	}
+	oldLen := len(children)
 	newChildren := make([]*Node, 0, oldLen-(end-start)+1)
-	newChildren = append(newChildren, parent.children[:start]...)
+	newChildren = append(newChildren, children[:start]...)
 	newChildren = append(newChildren, replacement)
-	newChildren = append(newChildren, parent.children[end:]...)
+	newChildren = append(newChildren, children[end:]...)
 	parent.children = newChildren
 
 	if len(parent.fieldIDs) == oldLen {

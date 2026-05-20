@@ -4261,11 +4261,32 @@ func cloneNodeInArena(arena *nodeArena, n *Node) *Node {
 	if arena == nil {
 		cloned := &Node{}
 		*cloned = *n
+		if nodeHasFinalChildRefs(n) {
+			childCount := nodeChildCountNoMaterialize(n)
+			if childCount > 0 {
+				cloned.children = make([]*Node, childCount)
+				for i := 0; i < childCount; i++ {
+					cloned.children[i] = nodeChildAtForReason(n, i, materializeForNormalization)
+				}
+			}
+			cloned.childIndex = -1
+		}
 		return cloned
 	}
 	cloned := arena.allocNode()
 	*cloned = *n
 	cloned.ownerArena = arena
+	if nodeHasFinalChildRefs(n) {
+		childCount := nodeChildCountNoMaterialize(n)
+		if childCount > 0 {
+			children := arena.allocNodeSlice(childCount)
+			for i := 0; i < childCount; i++ {
+				children[i] = nodeChildAtForReason(n, i, materializeForNormalization)
+			}
+			cloned.children = children
+		}
+		cloned.childIndex = -1
+	}
 	return cloned
 }
 

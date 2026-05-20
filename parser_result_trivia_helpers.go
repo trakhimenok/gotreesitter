@@ -25,11 +25,12 @@ func lastNonTriviaByteEnd(source []byte) uint32 {
 }
 
 func trimTrailingExtraTriviaRoot(root *Node, source []byte) {
-	if root == nil || len(root.children) == 0 || len(source) == 0 {
+	childCount := resultChildCount(root)
+	if root == nil || childCount == 0 || len(source) == 0 {
 		return
 	}
-	last := root.children[len(root.children)-1]
-	if last == nil || !last.IsExtra() || len(last.children) != 0 {
+	last := resultChildAt(root, childCount-1)
+	if last == nil || !last.IsExtra() || resultChildCount(last) != 0 {
 		return
 	}
 	if last.startByte >= last.endByte || last.endByte != root.endByte || int(last.endByte) > len(source) {
@@ -38,7 +39,8 @@ func trimTrailingExtraTriviaRoot(root *Node, source []byte) {
 	if !bytesAreTrivia(source[last.startByte:last.endByte]) {
 		return
 	}
-	root.children = root.children[:len(root.children)-1]
+	children := resultDenseChildrenForMutation(root)
+	root.children = children[:len(children)-1]
 	if len(root.fieldIDs) > len(root.children) {
 		root.fieldIDs = root.fieldIDs[:len(root.children)]
 	}

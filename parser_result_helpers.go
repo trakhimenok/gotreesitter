@@ -14,6 +14,18 @@ func cloneNodeSliceInArena(arena *nodeArena, nodes []*Node) []*Node {
 	return buf
 }
 
+func resultChildCount(n *Node) int {
+	return nodeChildCountNoMaterialize(n)
+}
+
+func resultChildAt(n *Node, i int) *Node {
+	return nodeChildAtForReason(n, i, materializeForNormalization)
+}
+
+func resultDenseChildrenForMutation(n *Node) []*Node {
+	return nodeChildrenForReason(n, materializeForNormalization)
+}
+
 func symbolByName(lang *Language, name string) (Symbol, bool) {
 	if lang == nil {
 		return 0, false

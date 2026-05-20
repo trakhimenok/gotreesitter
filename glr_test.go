@@ -1087,6 +1087,46 @@ func TestCloneTreeNodesWithOffsetKeepsFinalChildRefsRangeLazy(t *testing.T) {
 	}
 }
 
+func TestCloneNodeInArenaDropsSourceFinalChildSidecarID(t *testing.T) {
+	arena := newNodeArena(arenaClassFull)
+	arena.finalChildRefs = true
+	leftLeaf := newCompactFullLeafInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})
+	leftLeaf.parseState = 11
+	rightLeaf := newCompactFullLeafInArena(arena, 2, true, 1, 2, Point{Column: 1}, Point{Column: 2})
+	rightLeaf.parseState = 12
+	parent := newPendingParentInArena(arena, 3, true, 4, []stackEntry{
+		newStackEntryCompactFullLeaf(leftLeaf.parseState, leftLeaf),
+		newStackEntryCompactFullLeaf(rightLeaf.parseState, rightLeaf),
+	}, 0, 2, Point{}, Point{Column: 2}, false)
+	parent.parseState = 13
+
+	entry := newStackEntryPendingParent(parent.parseState, parent)
+	root := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree)
+	if root == nil {
+		t.Fatal("root = nil")
+	}
+	clone := cloneNodeInArena(arena, root)
+	if clone == nil {
+		t.Fatal("clone = nil")
+	}
+	if nodeHasFinalChildRefs(clone) {
+		t.Fatal("clone retained source final-child sidecar id")
+	}
+	if got := clone.ChildCount(); got != 2 {
+		t.Fatalf("clone ChildCount = %d, want 2", got)
+	}
+	if got := arena.finalChildRefsMaterializedParents; got != 0 {
+		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 2 {
+		t.Fatalf("single children materialized = %d, want 2", got)
+	}
+	clone.children = nil
+	if got := clone.ChildCount(); got != 0 {
+		t.Fatalf("clone ChildCount after children rewrite = %d, want 0", got)
+	}
+}
+
 func TestPendingParentMaterializationPreservesFieldEntries(t *testing.T) {
 	arena := newNodeArena(arenaClassFull)
 	left := newLeafNodeInArena(arena, 1, true, 0, 1, Point{}, Point{Column: 1})

@@ -31,12 +31,14 @@ func normalizeCollapsedNamedLeafChildrenWithStats(root *Node, lang *Language, pa
 			return
 		}
 		counters.nodesVisited++
-		if n.symbol == parentSym && len(n.children) == 0 {
+		childCount := resultChildCount(n)
+		if n.symbol == parentSym && childCount == 0 {
 			child := newLeafNodeInArena(n.ownerArena, childSym, childNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
 			n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
 			counters.nodesRewritten++
 		}
-		for _, child := range n.children {
+		for i := 0; i < childCount; i++ {
+			child := resultChildAt(n, i)
 			walk(child)
 		}
 	}
