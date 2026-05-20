@@ -497,149 +497,179 @@ func normalizeCCastUnknownTypeIdentifiers(root *Node, source []byte, lang *Langu
 	if root == nil || lang == nil || lang.Name != "c" {
 		return
 	}
-	typeDescriptorSym, ok := lang.SymbolByName("type_descriptor")
+	syms, ok := cCastRewriteSymbolsForLanguage(lang)
 	if !ok {
 		return
 	}
-	typeIdentifierSym, ok := lang.SymbolByName("type_identifier")
-	if !ok {
-		return
-	}
-	identifierSym, ok := lang.SymbolByName("identifier")
-	if !ok {
-		return
-	}
-	parenthesizedSym, ok := lang.SymbolByName("parenthesized_expression")
-	if !ok {
-		return
-	}
-	callSym, ok := lang.SymbolByName("call_expression")
-	if !ok {
-		return
-	}
-	castSym, ok := lang.SymbolByName("cast_expression")
-	if !ok {
-		return
-	}
-	argumentListSym, ok := lang.SymbolByName("argument_list")
-	if !ok {
-		return
-	}
-	functionFieldID, hasFunctionField := lang.FieldByName("function")
-	argumentsFieldID, hasArgumentsField := lang.FieldByName("arguments")
-	if !hasFunctionField || !hasArgumentsField {
-		return
-	}
-	typeFieldID, hasTypeField := lang.FieldByName("type")
-	valueFieldID, hasValueField := lang.FieldByName("value")
-	if !hasTypeField || !hasValueField {
-		return
-	}
-	identifierNamed := symbolIsNamed(lang, identifierSym)
-	typeDescriptorNamed := symbolIsNamed(lang, typeDescriptorSym)
-	typeIdentifierNamed := symbolIsNamed(lang, typeIdentifierSym)
-	parenthesizedNamed := symbolIsNamed(lang, parenthesizedSym)
-	callNamed := symbolIsNamed(lang, callSym)
-	castNamed := symbolIsNamed(lang, castSym)
-	argumentListNamed := symbolIsNamed(lang, argumentListSym)
 	localTypes := collectCLocalTypeNames(root, source, lang)
 
 	walkResultTree(root, func(n *Node) {
-		if n.Type(lang) == "cast_expression" && len(n.children) == 4 {
-			typeDescriptor := n.children[1]
-			value := n.children[3]
-			if typeDescriptor != nil && value != nil && typeDescriptor.symbol == typeDescriptorSym && len(typeDescriptor.children) == 1 {
-				typeIdent := typeDescriptor.children[0]
-				if typeIdent != nil && typeIdent.symbol == typeIdentifierSym && value.Type(lang) == "parenthesized_expression" {
-					name := typeIdent.Text(source)
-					if _, ok := localTypes[name]; !ok {
-						ident := newLeafNodeInArena(n.ownerArena, identifierSym, identifierNamed, typeIdent.startByte, typeIdent.endByte, typeIdent.startPoint, typeIdent.endPoint)
-						function := newParentNodeInArena(n.ownerArena, parenthesizedSym, parenthesizedNamed, []*Node{n.children[0], ident, n.children[2]}, nil, 0)
-						argsChildren := append([]*Node(nil), value.children...)
-						argsChildren = cloneNodeSliceIfArena(n.ownerArena, argsChildren)
-						arguments := newParentNodeInArena(n.ownerArena, argumentListSym, argumentListNamed, argsChildren, nil, 0)
-						children := []*Node{function, arguments}
-						children = cloneNodeSliceIfArena(n.ownerArena, children)
-						fieldIDs := make([]FieldID, len(children))
-						fieldIDs[0] = functionFieldID
-						fieldIDs[1] = argumentsFieldID
-						fieldIDs = cloneFieldIDSliceInArena(n.ownerArena, fieldIDs)
-						n.symbol = callSym
-						n.setNamed(callNamed)
-						n.children = children
-						n.fieldIDs = fieldIDs
-						n.fieldSources = make([]uint8, len(children))
-						n.fieldSources[0] = fieldSourceDirect
-						n.fieldSources[1] = fieldSourceDirect
-						n.productionID = 0
-						for i, child := range n.children {
-							if child == nil {
-								continue
-							}
-							child.parent = n
-							child.childIndex = int32(i)
-						}
-					}
-				}
-			}
-		}
+		rewriteUnknownCCastAsCall(n, source, syms, localTypes)
 	})
 
 	walkResultTree(root, func(n *Node) {
-		if n.Type(lang) == "call_expression" && len(n.children) == 2 {
-			function := n.children[0]
-			arguments := n.children[1]
-			if function != nil && arguments != nil &&
-				function.Type(lang) == "parenthesized_expression" &&
-				arguments.Type(lang) == "argument_list" &&
-				len(function.children) >= 3 {
-				var ident *Node
-				for _, child := range function.children {
-					if child != nil && child.Type(lang) == "identifier" {
-						ident = child
-						break
-					}
-				}
-				if ident != nil {
-					name := canonicalCTypeName(ident.Text(source))
-					if _, ok := localTypes[name]; ok {
-						typeIdent := newLeafNodeInArena(n.ownerArena, typeIdentifierSym, typeIdentifierNamed, ident.startByte, ident.endByte, ident.startPoint, ident.endPoint)
-						typeDescriptor := newParentNodeInArena(n.ownerArena, typeDescriptorSym, typeDescriptorNamed, []*Node{typeIdent}, nil, 0)
-						var valueNode *Node
-						for _, child := range arguments.children {
-							if child != nil && child.isNamed() {
-								valueNode = child
-								break
-							}
-						}
-						if valueNode != nil {
-							children := []*Node{function.children[0], typeDescriptor, function.children[len(function.children)-1], valueNode}
-							children = cloneNodeSliceIfArena(n.ownerArena, children)
-							fieldIDs := make([]FieldID, len(children))
-							fieldIDs[1] = typeFieldID
-							fieldIDs[3] = valueFieldID
-							fieldIDs = cloneFieldIDSliceInArena(n.ownerArena, fieldIDs)
-							n.symbol = castSym
-							n.setNamed(castNamed)
-							n.children = children
-							n.fieldIDs = fieldIDs
-							n.fieldSources = make([]uint8, len(children))
-							n.fieldSources[1] = fieldSourceDirect
-							n.fieldSources[3] = fieldSourceDirect
-							n.productionID = 0
-							for i, child := range n.children {
-								if child == nil {
-									continue
-								}
-								child.parent = n
-								child.childIndex = int32(i)
-							}
-						}
-					}
-				}
-			}
-		}
+		rewriteKnownCCallAsCast(n, source, syms, localTypes)
 	})
+}
+
+type cCastRewriteSymbols struct {
+	typeDescriptor     Symbol
+	typeIdentifier     Symbol
+	identifier         Symbol
+	parenthesized      Symbol
+	call               Symbol
+	cast               Symbol
+	argumentList       Symbol
+	functionField      FieldID
+	argumentsField     FieldID
+	typeField          FieldID
+	valueField         FieldID
+	identifierNamed    bool
+	typeDescNamed      bool
+	typeIdentNamed     bool
+	parenthesizedNamed bool
+	callNamed          bool
+	castNamed          bool
+	argumentListNamed  bool
+}
+
+func cCastRewriteSymbolsForLanguage(lang *Language) (cCastRewriteSymbols, bool) {
+	var syms cCastRewriteSymbols
+	var ok bool
+	if syms.typeDescriptor, ok = lang.SymbolByName("type_descriptor"); !ok {
+		return syms, false
+	}
+	if syms.typeIdentifier, ok = lang.SymbolByName("type_identifier"); !ok {
+		return syms, false
+	}
+	if syms.identifier, ok = lang.SymbolByName("identifier"); !ok {
+		return syms, false
+	}
+	if syms.parenthesized, ok = lang.SymbolByName("parenthesized_expression"); !ok {
+		return syms, false
+	}
+	if syms.call, ok = lang.SymbolByName("call_expression"); !ok {
+		return syms, false
+	}
+	if syms.cast, ok = lang.SymbolByName("cast_expression"); !ok {
+		return syms, false
+	}
+	if syms.argumentList, ok = lang.SymbolByName("argument_list"); !ok {
+		return syms, false
+	}
+	if syms.functionField, ok = lang.FieldByName("function"); !ok {
+		return syms, false
+	}
+	if syms.argumentsField, ok = lang.FieldByName("arguments"); !ok {
+		return syms, false
+	}
+	if syms.typeField, ok = lang.FieldByName("type"); !ok {
+		return syms, false
+	}
+	if syms.valueField, ok = lang.FieldByName("value"); !ok {
+		return syms, false
+	}
+	syms.identifierNamed = symbolIsNamed(lang, syms.identifier)
+	syms.typeDescNamed = symbolIsNamed(lang, syms.typeDescriptor)
+	syms.typeIdentNamed = symbolIsNamed(lang, syms.typeIdentifier)
+	syms.parenthesizedNamed = symbolIsNamed(lang, syms.parenthesized)
+	syms.callNamed = symbolIsNamed(lang, syms.call)
+	syms.castNamed = symbolIsNamed(lang, syms.cast)
+	syms.argumentListNamed = symbolIsNamed(lang, syms.argumentList)
+	return syms, true
+}
+
+func rewriteUnknownCCastAsCall(n *Node, source []byte, syms cCastRewriteSymbols, localTypes map[string]struct{}) {
+	if n == nil || n.symbol != syms.cast || len(n.children) != 4 {
+		return
+	}
+	typeDescriptor := n.children[1]
+	value := n.children[3]
+	if typeDescriptor == nil || value == nil || typeDescriptor.symbol != syms.typeDescriptor || len(typeDescriptor.children) != 1 {
+		return
+	}
+	typeIdent := typeDescriptor.children[0]
+	if typeIdent == nil || typeIdent.symbol != syms.typeIdentifier || value.symbol != syms.parenthesized {
+		return
+	}
+	if _, ok := localTypes[typeIdent.Text(source)]; ok {
+		return
+	}
+
+	ident := newLeafNodeInArena(n.ownerArena, syms.identifier, syms.identifierNamed, typeIdent.startByte, typeIdent.endByte, typeIdent.startPoint, typeIdent.endPoint)
+	function := newParentNodeInArena(n.ownerArena, syms.parenthesized, syms.parenthesizedNamed, []*Node{n.children[0], ident, n.children[2]}, nil, 0)
+	argsChildren := cloneNodeSliceIfArena(n.ownerArena, append([]*Node(nil), value.children...))
+	arguments := newParentNodeInArena(n.ownerArena, syms.argumentList, syms.argumentListNamed, argsChildren, nil, 0)
+	children := cloneNodeSliceIfArena(n.ownerArena, []*Node{function, arguments})
+	fieldIDs := cloneFieldIDSliceInArena(n.ownerArena, []FieldID{syms.functionField, syms.argumentsField})
+	setCRewriteChildren(n, syms.call, syms.callNamed, children, fieldIDs, []int{0, 1})
+}
+
+func rewriteKnownCCallAsCast(n *Node, source []byte, syms cCastRewriteSymbols, localTypes map[string]struct{}) {
+	if n == nil || n.symbol != syms.call || len(n.children) != 2 {
+		return
+	}
+	function := n.children[0]
+	arguments := n.children[1]
+	if function == nil || arguments == nil ||
+		function.symbol != syms.parenthesized ||
+		arguments.symbol != syms.argumentList ||
+		len(function.children) < 3 {
+		return
+	}
+	ident := firstChildWithSymbol(function.children, syms.identifier)
+	if ident == nil {
+		return
+	}
+	if _, ok := localTypes[canonicalCTypeName(ident.Text(source))]; !ok {
+		return
+	}
+	valueNode := firstNamedChild(arguments.children)
+	if valueNode == nil {
+		return
+	}
+
+	typeIdent := newLeafNodeInArena(n.ownerArena, syms.typeIdentifier, syms.typeIdentNamed, ident.startByte, ident.endByte, ident.startPoint, ident.endPoint)
+	typeDescriptor := newParentNodeInArena(n.ownerArena, syms.typeDescriptor, syms.typeDescNamed, []*Node{typeIdent}, nil, 0)
+	children := cloneNodeSliceIfArena(n.ownerArena, []*Node{function.children[0], typeDescriptor, function.children[len(function.children)-1], valueNode})
+	fieldIDs := make([]FieldID, len(children))
+	fieldIDs[1] = syms.typeField
+	fieldIDs[3] = syms.valueField
+	fieldIDs = cloneFieldIDSliceInArena(n.ownerArena, fieldIDs)
+	setCRewriteChildren(n, syms.cast, syms.castNamed, children, fieldIDs, []int{1, 3})
+}
+
+func firstChildWithSymbol(children []*Node, sym Symbol) *Node {
+	for _, child := range children {
+		if child != nil && child.symbol == sym {
+			return child
+		}
+	}
+	return nil
+}
+
+func firstNamedChild(children []*Node) *Node {
+	for _, child := range children {
+		if child != nil && child.isNamed() {
+			return child
+		}
+	}
+	return nil
+}
+
+func setCRewriteChildren(n *Node, symbol Symbol, named bool, children []*Node, fieldIDs []FieldID, directFieldIndexes []int) {
+	n.symbol = symbol
+	n.setNamed(named)
+	n.children = children
+	n.fieldIDs = fieldIDs
+	n.fieldSources = make([]uint8, len(children))
+	for _, idx := range directFieldIndexes {
+		if idx >= 0 && idx < len(n.fieldSources) {
+			n.fieldSources[idx] = fieldSourceDirect
+		}
+	}
+	n.productionID = 0
+	populateParentNode(n, n.children)
 }
 
 func normalizeCPointerAssignmentPrecedence(root *Node, lang *Language) {
