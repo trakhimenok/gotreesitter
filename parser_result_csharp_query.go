@@ -867,6 +867,16 @@ func csharpRecoverQueryExpressionNodeFromRange(source []byte, start, end uint32,
 	if start >= end {
 		return nil, false
 	}
+	if node, handled, ok := csharpRecoverQueryKeywordOrShapeExpressionNode(source, start, end, lang, arena); handled {
+		return node, ok
+	}
+	if node, handled, ok := csharpRecoverQueryOperatorExpressionNode(source, start, end, lang, arena); handled {
+		return node, ok
+	}
+	return csharpRecoverQueryLeafExpressionNode(source, start, end, lang, arena)
+}
+
+func csharpRecoverQueryKeywordOrShapeExpressionNode(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool, bool) {
 	if csharpHasKeywordAt(source, start, "from") {
 		spec, ok := csharpParseQueryExpressionSpec(source, csharpQueryAssignmentSpec{
 			queryStart: start,
@@ -874,80 +884,95 @@ func csharpRecoverQueryExpressionNodeFromRange(source []byte, start, end uint32,
 		})
 		if ok {
 			if node, ok := csharpBuildRecoveredQueryExpressionWithoutParser(arena, source, lang, spec); ok {
-				return node, true
+				return node, true, true
 			}
 		}
 	}
 	if csharpHasKeywordAt(source, start, "ref") {
 		if node, ok := csharpBuildRefExpressionNode(arena, source, lang, start, end); ok {
-			return node, true
+			return node, true, true
 		}
 	}
 	if qPos, ok := csharpFindTopLevelOperator(source, start, end, "?"); ok {
 		colonPos, ok := csharpFindConditionalColon(source, qPos+1, end)
 		if !ok {
-			return nil, false
+			return nil, true, false
 		}
 		condition, ok := csharpRecoverQueryExpressionNodeFromRange(source, start, qPos, lang, arena)
 		if !ok {
-			return nil, false
+			return nil, true, false
 		}
 		consequence, ok := csharpRecoverQueryExpressionNodeFromRange(source, qPos+1, colonPos, lang, arena)
 		if !ok {
-			return nil, false
+			return nil, true, false
 		}
 		alternative, ok := csharpRecoverQueryExpressionNodeFromRange(source, colonPos+1, end, lang, arena)
 		if !ok {
-			return nil, false
+			return nil, true, false
 		}
-		return csharpBuildConditionalExpressionNode(arena, source, lang, condition, qPos, consequence, colonPos, alternative)
+		node, ok := csharpBuildConditionalExpressionNode(arena, source, lang, condition, qPos, consequence, colonPos, alternative)
+		return node, true, ok
 	}
 	if csharpHasKeywordAt(source, start, "new") {
 		if node, ok := csharpBuildAnonymousObjectCreationNode(arena, source, lang, start, end); ok {
-			return node, true
+			return node, true, true
 		}
 		if node, ok := csharpBuildObjectCreationExpressionNode(arena, source, lang, start, end); ok {
-			return node, true
+			return node, true, true
 		}
 	}
 	if source[start] == '(' && source[end-1] == ')' {
 		if node, ok := csharpBuildTupleExpressionNode(arena, source, lang, start, end); ok {
-			return node, true
+			return node, true, true
 		}
 	}
 	if source[start] == '[' && source[end-1] == ']' {
 		if node, ok := csharpBuildElementBindingExpressionNode(arena, source, lang, start, end); ok {
-			return node, true
+			return node, true, true
 		}
 	}
+	return nil, false, false
+}
+
+func csharpRecoverQueryOperatorExpressionNode(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool, bool) {
 	if arrowPos, ok := csharpFindTopLevelOperator(source, start, end, "=>"); ok {
-		return csharpBuildLambdaExpressionNode(arena, source, lang, start, arrowPos, end)
+		node, ok := csharpBuildLambdaExpressionNode(arena, source, lang, start, arrowPos, end)
+		return node, true, ok
 	}
 	if opPos, ok := csharpFindTopLevelOperator(source, start, end, "=="); ok {
-		return csharpBuildBinaryExpressionNode(arena, source, lang, start, opPos, opPos+2, end)
+		node, ok := csharpBuildBinaryExpressionNode(arena, source, lang, start, opPos, opPos+2, end)
+		return node, true, ok
 	}
 	if isPos, ok := csharpFindTopLevelKeyword(source, start, end, "is"); ok {
-		return csharpBuildIsPatternExpressionNode(arena, source, lang, start, isPos, isPos+2, end)
+		node, ok := csharpBuildIsPatternExpressionNode(arena, source, lang, start, isPos, isPos+2, end)
+		return node, true, ok
 	}
 	if opPos, ok := csharpFindTopLevelOperator(source, start, end, "*"); ok {
-		return csharpBuildBinaryExpressionNode(arena, source, lang, start, opPos, opPos+1, end)
+		node, ok := csharpBuildBinaryExpressionNode(arena, source, lang, start, opPos, opPos+1, end)
+		return node, true, ok
 	}
 	if opPos, ok := csharpFindTopLevelAssignment(source, start, end); ok {
-		return csharpBuildAssignmentExpressionNode(arena, source, lang, start, opPos, end)
+		node, ok := csharpBuildAssignmentExpressionNode(arena, source, lang, start, opPos, end)
+		return node, true, ok
 	}
 	if end > start && source[end-1] == ')' {
 		if node, ok := csharpBuildInvocationExpressionNode(arena, source, lang, start, end); ok {
-			return node, true
+			return node, true, true
 		}
 	}
 	if dotPos, ok := csharpFindLastTopLevelOperator(source, start, end, "."); ok {
-		return csharpBuildMemberAccessExpressionNode(arena, source, lang, start, dotPos, end)
+		node, ok := csharpBuildMemberAccessExpressionNode(arena, source, lang, start, dotPos, end)
+		return node, true, ok
 	}
 	if end > start && source[end-1] == ']' {
 		if node, ok := csharpBuildElementAccessExpressionNode(arena, source, lang, start, end); ok {
-			return node, true
+			return node, true, true
 		}
 	}
+	return nil, false, false
+}
+
+func csharpRecoverQueryLeafExpressionNode(source []byte, start, end uint32, lang *Language, arena *nodeArena) (*Node, bool) {
 	if source[start] == '"' && source[end-1] == '"' && end-start >= 2 {
 		return csharpBuildStringLiteralNode(arena, source, lang, start, end)
 	}
