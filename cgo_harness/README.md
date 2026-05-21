@@ -121,17 +121,21 @@ Useful narrow-run knobs:
 - `GTS_REAL_CORPUS_BENCH_SKIP_MISMATCH=1` to benchmark only parity-clean files.
 - `GTS_REAL_CORPUS_BENCH_ALLOW_MISMATCH=1` for timing-only diagnosis when the
   selected corpus exposes a known structural mismatch.
-- `GOT_PARSE_PHASE_TIMING=1` to enable result-selection/tree-build/finalization
-  phase timing for full parses beyond the default large-Python diagnostic lane.
+- `GOT_PARSE_PHASE_TIMING=1` to enable parser-loop, token, action, GLR stack,
+  and result-selection/tree-build/finalization phase timing for full parses
+  beyond the default large-Python diagnostic lane.
 
 The gotreesitter incremental lanes also report parser attribution counters:
 `edit_ns/op`, `parse_wall_ns/op`, `reuse_ns/op`, `reparse_ns/op`,
-`unattributed_ns/op`, reused subtree/byte counts, reuse rejection counts, GLR
-stack iteration counts, recovery counts, survivor-node counts, and result
-phase buckets such as `result_tree_build_ns/op`,
-`result_compatibility_ns/op`, `result_parent_link_ns/op`, and
-`normalization_ns/op`. The no-edit lane reports zero parser work when the
-unchanged-tree fast path returns the previous tree.
+`unattributed_ns/op`, parser buckets such as `parser_loop_ns/op`,
+`token_next_ns/op`, `action_dispatch_ns/op`, `action_lookup_ns/op`,
+`action_apply_ns/op`, `glr_merge_ns/op`, and `glr_cull_ns/op`, reused
+subtree/byte counts, reuse rejection counts, GLR stack iteration counts,
+recovery counts, survivor-node counts, and result phase buckets such as
+`result_tree_build_ns/op`, `result_compatibility_ns/op`,
+`result_parent_link_ns/op`, and `normalization_ns/op`. The no-edit lane
+reports zero parser work when the unchanged-tree fast path returns the previous
+tree.
 
 For cross-language optimization sweeps, use the Docker matrix runner. It runs
 one language per container, enables phase timing by default, keeps the raw logs,

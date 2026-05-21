@@ -51,6 +51,13 @@ type realCorpusRuntimeTotals struct {
 	finalChildRefSingleAccesses       uint64
 	finalChildRefSingleMaterialized   uint64
 	normalizationRewrites             uint64
+	parseWallNanos                    int64
+	parserLoopNanos                   int64
+	tokenNextNanos                    int64
+	actionDispatchNanos               int64
+	actionLookupNanos                 int64
+	glrMergeNanos                     int64
+	glrCullNanos                      int64
 	resultSelectionNanos              int64
 	transientParentMaterializeNanos   int64
 	resultTreeBuildNanos              int64
@@ -110,6 +117,12 @@ type realCorpusIncrementalProfileTotals struct {
 	mergeSlotsUsed                     uint64
 	globalCullStacksIn                 uint64
 	globalCullStacksOut                uint64
+	parserLoopNanos                    int64
+	tokenNextNanos                     int64
+	actionDispatchNanos                int64
+	actionLookupNanos                  int64
+	glrMergeNanos                      int64
+	glrCullNanos                       int64
 	resultSelectionNanos               int64
 	transientParentMaterializeNanos    int64
 	resultTreeBuildNanos               int64
@@ -1017,6 +1030,13 @@ func (t *realCorpusRuntimeTotals) add(rt gotreesitter.ParseRuntime) {
 	t.finalChildRefSingleAccesses += rt.FinalChildRefSingleChildAccesses
 	t.finalChildRefSingleMaterialized += rt.FinalChildRefSingleChildMaterializedChildren
 	t.normalizationRewrites += rt.NormalizationNodesRewritten
+	t.parseWallNanos += rt.ParseWallNanos
+	t.parserLoopNanos += rt.ParserLoopNanos
+	t.tokenNextNanos += rt.TokenNextNanos
+	t.actionDispatchNanos += rt.ActionDispatchNanos
+	t.actionLookupNanos += rt.ActionLookupNanos
+	t.glrMergeNanos += rt.GLRMergeNanos
+	t.glrCullNanos += rt.GLRCullNanos
 	t.resultSelectionNanos += rt.ResultSelectionNanos
 	t.transientParentMaterializeNanos += rt.TransientParentMaterializationNanos
 	t.resultTreeBuildNanos += rt.ResultTreeBuildNanos
@@ -1088,6 +1108,12 @@ func (t *realCorpusIncrementalProfileTotals) add(profile gotreesitter.Incrementa
 	t.mergeSlotsUsed += profile.MergeSlotsUsed
 	t.globalCullStacksIn += profile.GlobalCullStacksIn
 	t.globalCullStacksOut += profile.GlobalCullStacksOut
+	t.parserLoopNanos += profile.ParserLoopNanos
+	t.tokenNextNanos += profile.TokenNextNanos
+	t.actionDispatchNanos += profile.ActionDispatchNanos
+	t.actionLookupNanos += profile.ActionLookupNanos
+	t.glrMergeNanos += profile.GLRMergeNanos
+	t.glrCullNanos += profile.GLRCullNanos
 	t.resultSelectionNanos += profile.ResultSelectionNanos
 	t.transientParentMaterializeNanos += profile.TransientParentMaterializationNanos
 	t.resultTreeBuildNanos += profile.ResultTreeBuildNanos
@@ -1121,6 +1147,17 @@ func (t realCorpusRuntimeTotals) report(b *testing.B, cases []realCorpusBenchmar
 	b.ReportMetric(float64(t.finalChildRefSingleAccesses)/n, "final_child_ref_single_accesses/op")
 	b.ReportMetric(float64(t.finalChildRefSingleMaterialized)/n, "final_child_ref_single_mat/op")
 	b.ReportMetric(float64(t.normalizationRewrites)/n, "normalization_rewrites/op")
+	b.ReportMetric(float64(t.parseWallNanos)/n, "parse_wall_ns/op")
+	reportRealCorpusParserPhaseMetrics(
+		b,
+		n,
+		t.parserLoopNanos,
+		t.tokenNextNanos,
+		t.actionDispatchNanos,
+		t.actionLookupNanos,
+		t.glrMergeNanos,
+		t.glrCullNanos,
+	)
 	reportRealCorpusPhaseMetrics(
 		b,
 		n,
@@ -1193,6 +1230,16 @@ func (t realCorpusIncrementalProfileTotals) report(b *testing.B, benchN int) {
 	b.ReportMetric(float64(t.mergeSlotsUsed)/n, "merge_slots_used/op")
 	b.ReportMetric(float64(t.globalCullStacksIn)/n, "global_cull_stacks_in/op")
 	b.ReportMetric(float64(t.globalCullStacksOut)/n, "global_cull_stacks_out/op")
+	reportRealCorpusParserPhaseMetrics(
+		b,
+		n,
+		t.parserLoopNanos,
+		t.tokenNextNanos,
+		t.actionDispatchNanos,
+		t.actionLookupNanos,
+		t.glrMergeNanos,
+		t.glrCullNanos,
+	)
 	reportRealCorpusPhaseMetrics(
 		b,
 		n,
@@ -1209,6 +1256,39 @@ func (t realCorpusIncrementalProfileTotals) report(b *testing.B, benchN int) {
 		t.resultParentLinkNanos,
 		t.normalizationNanos,
 	)
+}
+
+func reportRealCorpusParserPhaseMetrics(
+	b *testing.B,
+	n float64,
+	parserLoopNanos int64,
+	tokenNextNanos int64,
+	actionDispatchNanos int64,
+	actionLookupNanos int64,
+	glrMergeNanos int64,
+	glrCullNanos int64,
+) {
+	actionApplyNanos := actionDispatchNanos - actionLookupNanos
+	if actionApplyNanos < 0 {
+		actionApplyNanos = 0
+	}
+	parserAccountedNanos := tokenNextNanos +
+		actionDispatchNanos +
+		glrMergeNanos +
+		glrCullNanos
+	parserUnattributedNanos := parserLoopNanos - parserAccountedNanos
+	if parserUnattributedNanos < 0 {
+		parserUnattributedNanos = 0
+	}
+	b.ReportMetric(float64(parserLoopNanos)/n, "parser_loop_ns/op")
+	b.ReportMetric(float64(tokenNextNanos)/n, "token_next_ns/op")
+	b.ReportMetric(float64(actionDispatchNanos)/n, "action_dispatch_ns/op")
+	b.ReportMetric(float64(actionLookupNanos)/n, "action_lookup_ns/op")
+	b.ReportMetric(float64(actionApplyNanos)/n, "action_apply_ns/op")
+	b.ReportMetric(float64(glrMergeNanos)/n, "glr_merge_ns/op")
+	b.ReportMetric(float64(glrCullNanos)/n, "glr_cull_ns/op")
+	b.ReportMetric(float64(parserAccountedNanos)/n, "parser_accounted_ns/op")
+	b.ReportMetric(float64(parserUnattributedNanos)/n, "parser_unattributed_ns/op")
 }
 
 func reportRealCorpusPhaseMetrics(

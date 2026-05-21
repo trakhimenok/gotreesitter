@@ -428,6 +428,15 @@ func topAttribution(suiteMetrics map[string]map[string]float64, limit int) []att
 		"reparse_ns/op",
 		"reuse_ns/op",
 		"unattributed_ns/op",
+		"parser_loop_ns/op",
+		"parser_accounted_ns/op",
+		"parser_unattributed_ns/op",
+		"token_next_ns/op",
+		"action_dispatch_ns/op",
+		"action_apply_ns/op",
+		"action_lookup_ns/op",
+		"glr_merge_ns/op",
+		"glr_cull_ns/op",
 		"result_accounted_ns/op",
 		"result_select_ns/op",
 		"result_tree_build_ns/op",
@@ -528,11 +537,8 @@ func formatAttribution(buckets []attributionBucket) string {
 	if len(buckets) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, min(len(buckets), 3))
-	for i, bucket := range buckets {
-		if i >= 3 {
-			break
-		}
+	parts := make([]string, 0, len(buckets))
+	for _, bucket := range buckets {
 		parts = append(parts, fmt.Sprintf("%s/%s=%s", bucket.Suite, bucket.Name, formatNanos(bucket.Value)))
 	}
 	return strings.Join(parts, "<br>")

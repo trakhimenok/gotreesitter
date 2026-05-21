@@ -162,6 +162,12 @@ type IncrementalParseProfile struct {
 	MergeSlotsUsed                      uint64
 	GlobalCullStacksIn                  uint64
 	GlobalCullStacksOut                 uint64
+	ParserLoopNanos                     int64
+	TokenNextNanos                      int64
+	ActionDispatchNanos                 int64
+	ActionLookupNanos                   int64
+	GLRMergeNanos                       int64
+	GLRCullNanos                        int64
 	ResultSelectionNanos                int64
 	TransientParentMaterializationNanos int64
 	ResultTreeBuildNanos                int64
@@ -227,6 +233,12 @@ type incrementalParseTiming struct {
 	mergeSlotsUsed                      uint64
 	globalCullStacksIn                  uint64
 	globalCullStacksOut                 uint64
+	parserLoopNanos                     int64
+	tokenNextNanos                      int64
+	actionDispatchNanos                 int64
+	actionLookupNanos                   int64
+	glrMergeNanos                       int64
+	glrCullNanos                        int64
 	resultSelectionNanos                int64
 	transientParentMaterializationNanos int64
 	resultTreeBuildNanos                int64
@@ -1491,6 +1503,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	if timing != nil || parseShouldCaptureMaterializationTiming(p, source, reuse, oldTree, arenaClass) {
 		materializationTimingRef = &materializationTiming
 	}
+	phaseTiming := materializationTimingRef != nil
+	var parserLoopNanos int64
+	var tokenNextNanos int64
+	var actionDispatchNanos int64
+	var actionLookupNanos int64
+	var glrMergeNanos int64
+	var glrCullNanos int64
 	prevMaterializationTiming := p.materializationTiming
 	p.materializationTiming = materializationTimingRef
 	defer func() {
@@ -1687,7 +1706,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		}
 		scratchStatsCaptured = true
 	}
+	finishParserLoopTiming := func() {
+		if phaseTiming && parserLoopNanos == 0 {
+			parserLoopNanos = time.Since(parseStart).Nanoseconds()
+		}
+	}
 	finalizeTree := func(tree *Tree, stopReason ParseStopReason) *Tree {
+		finishParserLoopTiming()
 		if p.transientReduceChildren && tree != nil {
 			materializeStart := time.Time{}
 			if materializationTimingRef != nil {
@@ -1741,6 +1766,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		parseRuntime.GlobalCullStacksIn = scratch.audit.globalCullStacksIn
 		parseRuntime.GlobalCullStacksOut = scratch.audit.globalCullStacksOut
 		if materializationTimingRef != nil {
+			parseRuntime.ParseWallNanos = time.Since(parseStart).Nanoseconds()
+			parseRuntime.ParserLoopNanos = parserLoopNanos
+			parseRuntime.TokenNextNanos = tokenNextNanos
+			parseRuntime.ActionDispatchNanos = actionDispatchNanos
+			parseRuntime.ActionLookupNanos = actionLookupNanos
+			parseRuntime.GLRMergeNanos = glrMergeNanos
+			parseRuntime.GLRCullNanos = glrCullNanos
 			parseRuntime.ResultSelectionNanos = materializationTiming.resultSelectionNanos
 			parseRuntime.TransientParentMaterializationNanos = materializationTiming.transientParentMaterializeNanos
 			parseRuntime.ResultTreeBuildNanos = materializationTiming.resultTreeBuildNanos
@@ -1816,6 +1848,12 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			timing.mergeSlotsUsed = parseRuntime.MergeSlotsUsed
 			timing.globalCullStacksIn = parseRuntime.GlobalCullStacksIn
 			timing.globalCullStacksOut = parseRuntime.GlobalCullStacksOut
+			timing.parserLoopNanos = parseRuntime.ParserLoopNanos
+			timing.tokenNextNanos = parseRuntime.TokenNextNanos
+			timing.actionDispatchNanos = parseRuntime.ActionDispatchNanos
+			timing.actionLookupNanos = parseRuntime.ActionLookupNanos
+			timing.glrMergeNanos = parseRuntime.GLRMergeNanos
+			timing.glrCullNanos = parseRuntime.GLRCullNanos
 			timing.resultSelectionNanos = parseRuntime.ResultSelectionNanos
 			timing.transientParentMaterializationNanos = parseRuntime.TransientParentMaterializationNanos
 			timing.resultTreeBuildNanos = parseRuntime.ResultTreeBuildNanos
@@ -1842,6 +1880,7 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		return tree
 	}
 	finalize := func(stacks []glrStack, stopReason ParseStopReason) *Tree {
+		finishParserLoopTiming()
 		if p.noTreeBenchmarkOnly {
 			rootEndByte := expectedEOFByte
 			if stopReason != ParseStopAccepted && stopReason != ParseStopNone {
@@ -1860,11 +1899,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		return finalizeTree(tree, stopReason)
 	}
 	finalizeErrorTree := func(stopReason ParseStopReason) *Tree {
+		finishParserLoopTiming()
 		captureArenaStats()
 		arena.Release()
 		return finalizeTree(parseErrorTree(source, p.language), stopReason)
 	}
 	finalizeRecoveredNodes := func(nodes []*Node) *Tree {
+		finishParserLoopTiming()
 		materializeTransientParentNodes(nodes, arena, scratch.reduce.transientParents, scratch.reduce.transientChildren)
 		tree := p.buildResultFromNodes(nodes, source, arena, oldTree, &reuseState, &scratch.nodeLinks)
 		if root := tree.RootNode(); root != nil {
@@ -2041,7 +2082,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			}
 			// Prune dead stacks and collapse only truly duplicate stack versions.
 			scratch.merge.language = p.language
-			stacks = mergeStacksWithScratch(stacks, &scratch.merge)
+			if phaseTiming {
+				mergeStart := time.Now()
+				stacks = mergeStacksWithScratch(stacks, &scratch.merge)
+				glrMergeNanos += time.Since(mergeStart).Nanoseconds()
+			} else {
+				stacks = mergeStacksWithScratch(stacks, &scratch.merge)
+			}
 			if len(stacks) == 0 {
 				return finalizeErrorTree(ParseStopNoStacksAlive)
 			}
@@ -2062,7 +2109,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			}
 			cullIn := len(stacks)
 			cullLang := stackCullLanguageForArena(p.language, arenaClass)
-			stacks = retainTopStacksForLanguageWithScratch(stacks, maxStacks, cullLang, &scratch.stackPick, &scratch.stackKeep, &scratch.stackCull, &scratch.stateKeep)
+			if phaseTiming {
+				cullStart := time.Now()
+				stacks = retainTopStacksForLanguageWithScratch(stacks, maxStacks, cullLang, &scratch.stackPick, &scratch.stackKeep, &scratch.stackCull, &scratch.stateKeep)
+				glrCullNanos += time.Since(cullStart).Nanoseconds()
+			} else {
+				stacks = retainTopStacksForLanguageWithScratch(stacks, maxStacks, cullLang, &scratch.stackPick, &scratch.stackKeep, &scratch.stackCull, &scratch.stateKeep)
+			}
 			scratch.audit.recordGlobalCull(cullIn, len(stacks))
 			if p.glrTrace {
 				fmt.Printf("[GLR] after cull:\n")
@@ -2157,7 +2210,13 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			} else {
 				multiStackTokens++
 			}
-			tok = ts.Next()
+			if phaseTiming {
+				tokenStart := time.Now()
+				tok = ts.Next()
+				tokenNextNanos += time.Since(tokenStart).Nanoseconds()
+			} else {
+				tok = ts.Next()
+			}
 			p.updateCurrentExternalTokenCheckpoint(ts, tok)
 			if p.logger != nil {
 				p.logf(ParserLogLex, "token sym=%d start=%d end=%d", tok.Symbol, tok.StartByte, tok.EndByte)
@@ -2224,6 +2283,10 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 					si, stacks[si].top().state, stacks[si].dead, stacks[si].shifted, stacks[si].depth(), stacks[si].byteOffset)
 			}
 		}
+		actionDispatchStart := time.Time{}
+		if phaseTiming {
+			actionDispatchStart = time.Now()
+		}
 		parseActions := p.language.ParseActions
 		for si := 0; si < numStacks; si++ {
 			s := &stacks[si]
@@ -2233,10 +2296,20 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 
 			currentState := s.top().state
 		retryAction:
-			actionIdx := p.lookupActionIndex(currentState, tok.Symbol)
+			var actionIdx uint16
 			var actions []ParseAction
-			if actionIdx != 0 && int(actionIdx) < len(parseActions) {
-				actions = parseActions[actionIdx].Actions
+			if phaseTiming {
+				lookupStart := time.Now()
+				actionIdx = p.lookupActionIndex(currentState, tok.Symbol)
+				if actionIdx != 0 && int(actionIdx) < len(parseActions) {
+					actions = parseActions[actionIdx].Actions
+				}
+				actionLookupNanos += time.Since(lookupStart).Nanoseconds()
+			} else {
+				actionIdx = p.lookupActionIndex(currentState, tok.Symbol)
+				if actionIdx != 0 && int(actionIdx) < len(parseActions) {
+					actions = parseActions[actionIdx].Actions
+				}
 			}
 			if p.glrTrace {
 				fmt.Printf("  stack[%d] state=%d actionIdx=%d actions=%d\n", si, currentState, actionIdx, len(actions))
@@ -2590,6 +2663,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 					needToken = true
 				}
 			}
+		}
+		if phaseTiming {
+			actionDispatchNanos += time.Since(actionDispatchStart).Nanoseconds()
 		}
 
 		// After processing all stacks: determine whether to advance the

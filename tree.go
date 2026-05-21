@@ -643,6 +643,13 @@ type ParseRuntime struct {
 	MergeSlotsUsed                               uint64
 	GlobalCullStacksIn                           uint64
 	GlobalCullStacksOut                          uint64
+	ParseWallNanos                               int64
+	ParserLoopNanos                              int64
+	TokenNextNanos                               int64
+	ActionDispatchNanos                          int64
+	ActionLookupNanos                            int64
+	GLRMergeNanos                                int64
+	GLRCullNanos                                 int64
 
 	ExternalScannerCheckpointRecords                 uint64
 	ExternalScannerCheckpointSlotsAllocated          uint64
