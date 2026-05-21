@@ -74,6 +74,7 @@ const (
 type glrMergeScratch struct {
 	result          []glrStack
 	slots           []glrMergeSlot
+	largeSlots      []glrMergeLargeSlot
 	perKeyCap       int
 	language        *Language
 	audit           *runtimeAudit
@@ -83,6 +84,7 @@ type glrMergeScratch struct {
 	budgetBytes     int64
 	resultBytes     int64
 	slotBytes       int64
+	largeSlotBytes  int64
 	equivCacheBytes int64
 }
 
@@ -92,6 +94,15 @@ type glrMergeKey struct {
 }
 
 type glrMergeSlot struct {
+	key        glrMergeKey
+	indices    [maxStacksPerMergeKey]int
+	hashes     [maxStacksPerMergeKey]uint64
+	hashMask   uint64
+	count      int
+	worstIndex int
+}
+
+type glrMergeLargeSlot struct {
 	key        glrMergeKey
 	indices    [maxStacksPerMergeKeyCeiling]int
 	hashes     [maxStacksPerMergeKeyCeiling]uint64
@@ -1223,6 +1234,9 @@ func mergeStacksWithScratch(stacks []glrStack, scratch *glrMergeScratch) []glrSt
 	if perKeyCap > maxStacksPerMergeKeyCeiling {
 		perKeyCap = maxStacksPerMergeKeyCeiling
 	}
+	if perKeyCap > maxStacksPerMergeKey {
+		return mergeStacksWithScratchLargeCap(alive, scratch, perKeyCap)
+	}
 
 	// Merge exact duplicates and keep a bounded number of distinct
 	// alternatives per merge key. This approximates the C runtime's
@@ -1363,7 +1377,140 @@ func mergeStacksWithScratch(stacks []glrStack, scratch *glrMergeScratch) []glrSt
 	return result
 }
 
+func mergeStacksWithScratchLargeCap(alive []glrStack, scratch *glrMergeScratch, perKeyCap int) []glrStack {
+	result := ensureMergeResultCap(scratch, len(alive))
+	slots := ensureMergeLargeSlotCap(scratch, len(alive))
+	slotCount := 0
+	for i := range alive {
+		stack := alive[i]
+		hash := stackHash(stack)
+		key := mergeKeyForStack(stack)
+
+		slotIndex := -1
+		for si := 0; si < slotCount; si++ {
+			if slots[si].key == key {
+				slotIndex = si
+				break
+			}
+		}
+		if slotIndex < 0 {
+			slotIndex = slotCount
+			slotCount++
+			slots[slotIndex].key = key
+			slots[slotIndex].count = 0
+			slots[slotIndex].worstIndex = -1
+			slots[slotIndex].hashMask = 0
+		}
+		slot := &slots[slotIndex]
+
+		duplicateIndex := -1
+		hashMatched := false
+		if slot.count > 0 && (slot.hashMask&mergeHashBit(hash)) != 0 {
+			for j := 0; j < slot.count; j++ {
+				if slot.hashes[j] != hash {
+					continue
+				}
+				hashMatched = true
+				idx := slot.indices[j]
+				existing := &result[idx]
+				if stackEquivalentForLanguageWithScratch(scratch, scratch.language, *existing, stack) {
+					duplicateIndex = idx
+					break
+				}
+			}
+		}
+		if !hashMatched && slot.count > 0 && perfCountersEnabled {
+			perfRecordStackEquivalentHashMissSkip()
+		}
+		if duplicateIndex >= 0 {
+			// Equal-ranked duplicates should not preserve the first-inserted
+			// branch by accident. Let later survivors replace ties so
+			// post-reduce reprocessing can keep the branch that stayed viable.
+			if stackCompareMerge(&stack, &result[duplicateIndex]) >= 0 {
+				result[duplicateIndex] = stack
+				for j := 0; j < slot.count; j++ {
+					if slot.indices[j] == duplicateIndex {
+						slot.hashes[j] = hash
+						break
+					}
+				}
+				if slot.worstIndex == duplicateIndex {
+					slot.worstIndex = recomputeMergeLargeSlotWorst(slot, result)
+				}
+			}
+			continue
+		}
+
+		if slot.count < perKeyCap {
+			idx := len(result)
+			result = append(result, stack)
+			slot.indices[slot.count] = idx
+			slot.hashes[slot.count] = hash
+			slot.hashMask |= mergeHashBit(hash)
+			slot.count++
+			if slot.worstIndex < 0 || stackCompareMerge(&result[idx], &result[slot.worstIndex]) < 0 {
+				slot.worstIndex = idx
+			}
+			continue
+		}
+		if perfCountersEnabled {
+			perfRecordMergePerKeyOverflow()
+		}
+
+		// Per-key alternative budget reached: replace the weakest
+		// retained candidate only if this stack is better.
+		if slot.worstIndex >= 0 {
+			replacedSlot := -1
+			for j := 0; j < slot.count; j++ {
+				if slot.indices[j] == slot.worstIndex {
+					replacedSlot = j
+					break
+				}
+			}
+			incumbentHash := uint64(0)
+			if replacedSlot >= 0 {
+				incumbentHash = slot.hashes[replacedSlot]
+			}
+			if !preferOverflowCandidate(&stack, &result[slot.worstIndex], hash, incumbentHash) {
+				continue
+			}
+			if perfCountersEnabled {
+				perfRecordMergeReplacement()
+			}
+			result[slot.worstIndex] = stack
+			if replacedSlot >= 0 {
+				slot.hashes[replacedSlot] = hash
+				slot.hashMask = recomputeMergeLargeSlotHashMask(slot)
+			}
+			slot.worstIndex = recomputeMergeLargeSlotWorst(slot, result)
+		}
+	}
+	if perfCountersEnabled {
+		perfRecordMergeOut(len(result))
+	}
+	if scratch.audit != nil {
+		scratch.audit.recordMerge(len(alive), len(result), slotCount)
+	}
+	scratch.result = result
+	scratch.largeSlots = slots[:slotCount]
+	return result
+}
+
 func recomputeMergeSlotWorst(slot *glrMergeSlot, result []glrStack) int {
+	if slot == nil || slot.count == 0 {
+		return -1
+	}
+	worst := slot.indices[0]
+	for j := 1; j < slot.count; j++ {
+		idx := slot.indices[j]
+		if stackCompareMerge(&result[idx], &result[worst]) < 0 {
+			worst = idx
+		}
+	}
+	return worst
+}
+
+func recomputeMergeLargeSlotWorst(slot *glrMergeLargeSlot, result []glrStack) int {
 	if slot == nil || slot.count == 0 {
 		return -1
 	}
@@ -1392,6 +1539,17 @@ func recomputeMergeSlotHashMask(slot *glrMergeSlot) uint64 {
 	return mask
 }
 
+func recomputeMergeLargeSlotHashMask(slot *glrMergeLargeSlot) uint64 {
+	if slot == nil || slot.count == 0 {
+		return 0
+	}
+	mask := uint64(0)
+	for j := 0; j < slot.count; j++ {
+		mask |= mergeHashBit(slot.hashes[j])
+	}
+	return mask
+}
+
 func ensureMergeResultCap(scratch *glrMergeScratch, n int) []glrStack {
 	if cap(scratch.result) < n {
 		scratch.result = make([]glrStack, 0, n)
@@ -1409,13 +1567,26 @@ func ensureMergeSlotCap(scratch *glrMergeScratch, n int) []glrMergeSlot {
 	return scratch.slots[:n]
 }
 
+func ensureMergeLargeSlotCap(scratch *glrMergeScratch, n int) []glrMergeLargeSlot {
+	if cap(scratch.largeSlots) < n {
+		scratch.largeSlots = make([]glrMergeLargeSlot, n)
+		scratch.largeSlotBytes = glrMergeLargeSlotBytesForCap(cap(scratch.largeSlots))
+		return scratch.largeSlots
+	}
+	return scratch.largeSlots[:n]
+}
+
 func mergeAliveLimitForScratch(scratch *glrMergeScratch, n int) int {
 	limit := n
 	if limit > maxMergeAliveStacks {
 		limit = maxMergeAliveStacks
 	}
 	if scratch != nil && scratch.budgetBytes > 0 {
-		perStack := int64(unsafe.Sizeof(glrStack{}) + unsafe.Sizeof(glrMergeSlot{}))
+		slotSize := unsafe.Sizeof(glrMergeSlot{})
+		if scratch.perKeyCap > maxStacksPerMergeKey {
+			slotSize = unsafe.Sizeof(glrMergeLargeSlot{})
+		}
+		perStack := int64(unsafe.Sizeof(glrStack{}) + slotSize)
 		if perStack > 0 {
 			allowed := int(scratch.budgetBytes / perStack)
 			if allowed < 1 {
@@ -1433,7 +1604,7 @@ func (s *glrMergeScratch) allocatedBytes() int64 {
 	if s == nil {
 		return 0
 	}
-	return s.resultBytes + s.slotBytes + s.equivCacheBytes
+	return s.resultBytes + s.slotBytes + s.largeSlotBytes + s.equivCacheBytes
 }
 
 func (s *glrMergeScratch) reset() {
@@ -1457,6 +1628,13 @@ func (s *glrMergeScratch) reset() {
 		s.slots = s.slots[:0]
 		s.slotBytes = glrMergeSlotBytesForCap(cap(s.slots))
 	}
+	if cap(s.largeSlots) > maxRetainedMergeSlotCap {
+		s.largeSlots = nil
+		s.largeSlotBytes = 0
+	} else {
+		s.largeSlots = s.largeSlots[:0]
+		s.largeSlotBytes = glrMergeLargeSlotBytesForCap(cap(s.largeSlots))
+	}
 	s.equivCacheBytes = glrNodeEquivCacheBytesForCap(cap(s.equivCache))
 	s.perKeyCap = 0
 	s.language = nil
@@ -1476,6 +1654,13 @@ func glrMergeSlotBytesForCap(n int) int64 {
 		return 0
 	}
 	return int64(n) * int64(unsafe.Sizeof(glrMergeSlot{}))
+}
+
+func glrMergeLargeSlotBytesForCap(n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	return int64(n) * int64(unsafe.Sizeof(glrMergeLargeSlot{}))
 }
 
 func glrNodeEquivCacheBytesForCap(n int) int64 {
