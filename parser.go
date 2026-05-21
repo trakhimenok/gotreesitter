@@ -2098,7 +2098,11 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			if phaseTiming {
 				actionStart = time.Now()
 			}
-			actions := p.actionsForParseState(currentState, tok.Symbol, parseActions)
+			actionIdx := p.lookupActionIndex(currentState, tok.Symbol)
+			var actions []ParseAction
+			if actionIdx != 0 && int(actionIdx) < len(parseActions) {
+				actions = parseActions[actionIdx].Actions
+			}
 			if phaseTiming {
 				actionLookupNanos += time.Since(actionStart).Nanoseconds()
 			}
