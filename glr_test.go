@@ -30,8 +30,8 @@ func TestPendingParentSizeBudget(t *testing.T) {
 }
 
 func TestPendingChildEntrySizeBudget(t *testing.T) {
-	if got := unsafe.Sizeof(pendingChildEntry(0)); got != 8 {
-		t.Fatalf("pendingChildEntry size = %d, want 8", got)
+	if got := unsafe.Sizeof(pendingChildEntry{}); got != 16 {
+		t.Fatalf("pendingChildEntry size = %d, want 16", got)
 	}
 	if stackEntryKindPendingParent > uint32(pendingChildEntryKindMask) {
 		t.Fatalf("pendingChildEntry kind mask = %d does not cover pending-parent kind %d", pendingChildEntryKindMask, stackEntryKindPendingParent)
@@ -58,9 +58,6 @@ func TestPendingChildEntryRoundTripsKindAndState(t *testing.T) {
 		{name: "leaf", entry: newStackEntryCompactFullLeaf(leaf.parseState, leaf)},
 		{name: "parent", entry: newStackEntryPendingParent(parent.parseState, parent)},
 	} {
-		if low := uintptr(unsafe.Pointer(tc.entry.node)) & pendingChildEntryKindMask; low != 0 {
-			t.Fatalf("%s payload pointer low bits = %d, want 0", tc.name, low)
-		}
 		got := newPendingChildEntry(tc.entry).stackEntry()
 		if got.node != tc.entry.node {
 			t.Fatalf("%s node = %p, want %p", tc.name, got.node, tc.entry.node)
@@ -213,8 +210,8 @@ func TestQueryMatcherUsesLazyFinalChildRefs(t *testing.T) {
 	}
 	query := &Query{}
 	steps := []QueryStep{
-		{symbol: 2, captureID: -1, isNamed: true, depth: 0, quantifier: queryQuantifierOne},
-		{symbol: 1, captureID: -1, isNamed: true, depth: 1, quantifier: queryQuantifierOne},
+		{symbol: 2, isNamed: true, depth: 0, quantifier: queryQuantifierOne},
+		{symbol: 1, isNamed: true, depth: 1, quantifier: queryQuantifierOne},
 	}
 	var captures []QueryCapture
 	if !query.matchStepsWithPredicates(steps, 0, node, lang, nil, nil, &captures) {

@@ -22,34 +22,17 @@ func normalizeDartSingleTypeArgumentFreeCalls(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	relExprNamed := false
-	if idx := int(relExprSym); idx < len(lang.SymbolMetadata) {
-		relExprNamed = lang.SymbolMetadata[relExprSym].Named
-	}
-	relOpNamed := false
-	if idx := int(relOpSym); idx < len(lang.SymbolMetadata) {
-		relOpNamed = lang.SymbolMetadata[relOpSym].Named
-	}
-	parenNamed := false
-	if idx := int(parenSym); idx < len(lang.SymbolMetadata) {
-		parenNamed = lang.SymbolMetadata[parenSym].Named
-	}
+	relExprNamed := symbolIsNamed(lang, relExprSym)
+	relOpNamed := symbolIsNamed(lang, relOpSym)
+	parenNamed := symbolIsNamed(lang, parenSym)
 
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		for i := 0; i+1 < len(n.children); i++ {
 			if rewriteDartSingleTypeArgumentFreeCall(n, i, lang, relExprSym, relExprNamed, relOpSym, relOpNamed, parenSym, parenNamed) {
 				break
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeDartConstructorSignatureKinds(root *Node, source []byte, lang *Language) {
@@ -61,15 +44,8 @@ func normalizeDartConstructorSignatureKinds(root *Node, source []byte, lang *Lan
 		return
 	}
 	parametersID, _ := lang.FieldByName("parameters")
-	constructorNamed := false
-	if idx := int(constructorSym); idx < len(lang.SymbolMetadata) {
-		constructorNamed = lang.SymbolMetadata[constructorSym].Named
-	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	constructorNamed := symbolIsNamed(lang, constructorSym)
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "class_definition" {
 			className := n.ChildByFieldName("name", lang)
 			body := n.ChildByFieldName("body", lang)
@@ -105,11 +81,7 @@ func normalizeDartConstructorSignatureKinds(root *Node, source []byte, lang *Lan
 				}
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeDartSwitchExpressionBodyFields(root *Node, lang *Language) {
@@ -120,11 +92,7 @@ func normalizeDartSwitchExpressionBodyFields(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "switch_expression" && len(n.children) > 0 {
 			ensureNodeFieldStorage(n, len(n.children))
 			start := -1
@@ -146,11 +114,7 @@ func normalizeDartSwitchExpressionBodyFields(root *Node, lang *Language) {
 				}
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 func rewriteDartSingleTypeArgumentFreeCall(parent *Node, idx int, lang *Language, relExprSym Symbol, relExprNamed bool, relOpSym Symbol, relOpNamed bool, parenSym Symbol, parenNamed bool) bool {
 	if parent == nil || idx < 0 || idx+1 >= len(parent.children) || lang == nil {
@@ -184,10 +148,7 @@ func rewriteDartSingleTypeArgumentFreeCall(parent *Node, idx int, lang *Language
 		if !ok {
 			return false
 		}
-		identNamed := false
-		if idx := int(identSym); idx < len(lang.SymbolMetadata) {
-			identNamed = lang.SymbolMetadata[identSym].Named
-		}
+		identNamed := symbolIsNamed(lang, identSym)
 		typeIdent = newLeafNodeInArena(arena, identSym, identNamed, typeIdent.startByte, typeIdent.endByte, typeIdent.startPoint, typeIdent.endPoint)
 	}
 	lessOp := newParentNodeInArena(arena, relOpSym, relOpNamed, []*Node{lt}, nil, 0)

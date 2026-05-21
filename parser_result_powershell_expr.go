@@ -3,7 +3,7 @@ package gotreesitter
 import "bytes"
 
 func buildPowerShellLogicalExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	logicalSym, logicalNamed, ok := powerShellSymbolMeta(lang, "logical_expression")
+	logicalSym, logicalNamed, ok := symbolMeta(lang, "logical_expression")
 	if !ok {
 		return nil
 	}
@@ -21,7 +21,7 @@ func buildPowerShellLogicalExpression(arena *nodeArena, source []byte, lang *Lan
 }
 
 func buildPowerShellBitwiseExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	bitwiseSym, bitwiseNamed, ok := powerShellSymbolMeta(lang, "bitwise_expression")
+	bitwiseSym, bitwiseNamed, ok := symbolMeta(lang, "bitwise_expression")
 	if !ok {
 		return nil
 	}
@@ -39,7 +39,7 @@ func buildPowerShellBitwiseExpression(arena *nodeArena, source []byte, lang *Lan
 }
 
 func buildPowerShellComparisonExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	comparisonSym, comparisonNamed, ok := powerShellSymbolMeta(lang, "comparison_expression")
+	comparisonSym, comparisonNamed, ok := symbolMeta(lang, "comparison_expression")
 	if !ok {
 		return nil
 	}
@@ -57,7 +57,7 @@ func buildPowerShellComparisonExpression(arena *nodeArena, source []byte, lang *
 }
 
 func buildPowerShellAdditiveExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	additiveSym, additiveNamed, ok := powerShellSymbolMeta(lang, "additive_expression")
+	additiveSym, additiveNamed, ok := symbolMeta(lang, "additive_expression")
 	if !ok {
 		return nil
 	}
@@ -68,7 +68,7 @@ func buildPowerShellAdditiveExpression(arena *nodeArena, source []byte, lang *La
 	if plus := powerShellFindTopLevelPlus(source, start, end); plus >= 0 {
 		left := buildPowerShellAdditiveExpression(arena, source, lang, start, plus)
 		right := buildPowerShellMultiplicativeExpression(arena, source, lang, plus+1, end)
-		plusSym, plusNamed, ok := powerShellSymbolMeta(lang, "+")
+		plusSym, plusNamed, ok := symbolMeta(lang, "+")
 		if !ok || left == nil || right == nil {
 			return nil
 		}
@@ -98,7 +98,7 @@ func buildPowerShellAdditiveExpression(arena *nodeArena, source []byte, lang *La
 }
 
 func buildPowerShellMultiplicativeExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	multiplicativeSym, multiplicativeNamed, ok := powerShellSymbolMeta(lang, "multiplicative_expression")
+	multiplicativeSym, multiplicativeNamed, ok := symbolMeta(lang, "multiplicative_expression")
 	if !ok {
 		return nil
 	}
@@ -116,7 +116,7 @@ func buildPowerShellMultiplicativeExpression(arena *nodeArena, source []byte, la
 }
 
 func buildPowerShellFormatExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	formatSym, formatNamed, ok := powerShellSymbolMeta(lang, "format_expression")
+	formatSym, formatNamed, ok := symbolMeta(lang, "format_expression")
 	if !ok {
 		return nil
 	}
@@ -134,7 +134,7 @@ func buildPowerShellFormatExpression(arena *nodeArena, source []byte, lang *Lang
 }
 
 func buildPowerShellRangeExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	rangeSym, rangeNamed, ok := powerShellSymbolMeta(lang, "range_expression")
+	rangeSym, rangeNamed, ok := symbolMeta(lang, "range_expression")
 	if !ok {
 		return nil
 	}
@@ -152,7 +152,7 @@ func buildPowerShellRangeExpression(arena *nodeArena, source []byte, lang *Langu
 }
 
 func buildPowerShellArrayLiteralExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	arraySym, arrayNamed, ok := powerShellSymbolMeta(lang, "array_literal_expression")
+	arraySym, arrayNamed, ok := symbolMeta(lang, "array_literal_expression")
 	if !ok {
 		return nil
 	}
@@ -170,7 +170,7 @@ func buildPowerShellArrayLiteralExpression(arena *nodeArena, source []byte, lang
 }
 
 func buildPowerShellUnaryExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	unarySym, unaryNamed, ok := powerShellSymbolMeta(lang, "unary_expression")
+	unarySym, unaryNamed, ok := symbolMeta(lang, "unary_expression")
 	if !ok {
 		return nil
 	}
@@ -194,11 +194,11 @@ func buildPowerShellExpressionCore(arena *nodeArena, source []byte, lang *Langua
 	}
 	switch source[start] {
 	case '!':
-		exprUnarySym, exprUnaryNamed, ok := powerShellSymbolMeta(lang, "expression_with_unary_operator")
+		exprUnarySym, exprUnaryNamed, ok := symbolMeta(lang, "expression_with_unary_operator")
 		if !ok {
 			return nil
 		}
-		bangSym, bangNamed, ok := powerShellSymbolMeta(lang, "!")
+		bangSym, bangNamed, ok := symbolMeta(lang, "!")
 		if !ok {
 			return nil
 		}
@@ -224,7 +224,7 @@ func buildPowerShellExpressionCore(arena *nodeArena, source []byte, lang *Langua
 	case '(':
 		return buildPowerShellParenthesizedExpression(arena, source, lang, start, end)
 	case '"':
-		stringLiteralSym, stringLiteralNamed, ok := powerShellSymbolMeta(lang, "string_literal")
+		stringLiteralSym, stringLiteralNamed, ok := symbolMeta(lang, "string_literal")
 		if !ok {
 			return nil
 		}
@@ -240,12 +240,12 @@ func buildPowerShellExpressionCore(arena *nodeArena, source []byte, lang *Langua
 		}
 		return newParentNodeInArena(arena, stringLiteralSym, stringLiteralNamed, children, nil, 0)
 	case '$':
-		variableSym, variableNamed, ok := powerShellSymbolMeta(lang, "variable")
+		variableSym, variableNamed, ok := symbolMeta(lang, "variable")
 		if !ok {
 			return nil
 		}
-		if bytes.IndexAny(source[start:end], " \t") >= 0 {
-			genericSym, genericNamed, ok := powerShellSymbolMeta(lang, "generic_token")
+		if bytes.ContainsAny(source[start:end], " \t") {
+			genericSym, genericNamed, ok := symbolMeta(lang, "generic_token")
 			if !ok {
 				return nil
 			}
@@ -263,13 +263,13 @@ func buildPowerShellExpressionCore(arena *nodeArena, source []byte, lang *Langua
 				return member
 			}
 		}
-		genericSym, genericNamed, ok := powerShellSymbolMeta(lang, "generic_token")
+		genericSym, genericNamed, ok := symbolMeta(lang, "generic_token")
 		if !ok {
 			return nil
 		}
 		return newLeafNodeInArena(arena, genericSym, genericNamed, uint32(start), uint32(end), advancePointByBytes(Point{}, source[:start]), advancePointByBytes(advancePointByBytes(Point{}, source[:start]), source[start:end]))
 	default:
-		genericSym, genericNamed, ok := powerShellSymbolMeta(lang, "generic_token")
+		genericSym, genericNamed, ok := symbolMeta(lang, "generic_token")
 		if !ok {
 			return nil
 		}
@@ -278,15 +278,15 @@ func buildPowerShellExpressionCore(arena *nodeArena, source []byte, lang *Langua
 }
 
 func buildPowerShellParenthesizedExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	parenthesizedSym, parenthesizedNamed, ok := powerShellSymbolMeta(lang, "parenthesized_expression")
+	parenthesizedSym, parenthesizedNamed, ok := symbolMeta(lang, "parenthesized_expression")
 	if !ok {
 		return nil
 	}
-	openParenSym, _, ok := powerShellSymbolMeta(lang, "(")
+	openParenSym, _, ok := symbolMeta(lang, "(")
 	if !ok {
 		return nil
 	}
-	closeParenSym, _, ok := powerShellSymbolMeta(lang, ")")
+	closeParenSym, _, ok := symbolMeta(lang, ")")
 	if !ok {
 		return nil
 	}
@@ -323,7 +323,7 @@ func buildPowerShellParenthesizedExpression(arena *nodeArena, source []byte, lan
 }
 
 func buildPowerShellInvokationExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	invocationSym, invocationNamed, ok := powerShellSymbolMeta(lang, "invokation_expression")
+	invocationSym, invocationNamed, ok := symbolMeta(lang, "invokation_expression")
 	if !ok {
 		return nil
 	}
@@ -347,7 +347,7 @@ func buildPowerShellInvokationExpression(arena *nodeArena, source []byte, lang *
 	typeLiteral := buildPowerShellTypeLiteral(arena, source, lang, start, typeClose+1)
 	memberName := buildPowerShellMemberName(arena, source, lang, nameStart, openParen)
 	argumentList := buildPowerShellArgumentList(arena, source, lang, openParen, closeParen+1)
-	colonColonSym, colonColonNamed, ok := powerShellSymbolMeta(lang, "::")
+	colonColonSym, colonColonNamed, ok := symbolMeta(lang, "::")
 	if !ok || typeLiteral == nil || memberName == nil || argumentList == nil {
 		return nil
 	}
@@ -366,7 +366,7 @@ func buildPowerShellInvokationExpression(arena *nodeArena, source []byte, lang *
 }
 
 func buildPowerShellMemberAccessExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	memberAccessSym, memberAccessNamed, ok := powerShellSymbolMeta(lang, "member_access")
+	memberAccessSym, memberAccessNamed, ok := symbolMeta(lang, "member_access")
 	if !ok {
 		return nil
 	}
@@ -381,7 +381,7 @@ func buildPowerShellMemberAccessExpression(arena *nodeArena, source []byte, lang
 	nameStart := memberStart + 2
 	typeLiteral := buildPowerShellTypeLiteral(arena, source, lang, start, typeClose+1)
 	memberName := buildPowerShellMemberName(arena, source, lang, nameStart, end)
-	colonColonSym, colonColonNamed, ok := powerShellSymbolMeta(lang, "::")
+	colonColonSym, colonColonNamed, ok := symbolMeta(lang, "::")
 	if !ok || typeLiteral == nil || memberName == nil {
 		return nil
 	}
@@ -399,15 +399,15 @@ func buildPowerShellMemberAccessExpression(arena *nodeArena, source []byte, lang
 }
 
 func buildPowerShellTypeLiteral(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	typeLiteralSym, typeLiteralNamed, ok := powerShellSymbolMeta(lang, "type_literal")
+	typeLiteralSym, typeLiteralNamed, ok := symbolMeta(lang, "type_literal")
 	if !ok {
 		return nil
 	}
-	openBracketSym, openBracketNamed, ok := powerShellSymbolMeta(lang, "[")
+	openBracketSym, openBracketNamed, ok := symbolMeta(lang, "[")
 	if !ok {
 		return nil
 	}
-	closeBracketSym, closeBracketNamed, ok := powerShellSymbolMeta(lang, "]")
+	closeBracketSym, closeBracketNamed, ok := symbolMeta(lang, "]")
 	if !ok {
 		return nil
 	}
@@ -419,7 +419,7 @@ func buildPowerShellTypeLiteral(arena *nodeArena, source []byte, lang *Language,
 	children = append(children, newLeafNodeInArena(arena, openBracketSym, openBracketNamed, uint32(start), uint32(start+1), advancePointByBytes(Point{}, source[:start]), advancePointByBytes(advancePointByBytes(Point{}, source[:start]), source[start:start+1])))
 	children = append(children, typeSpec)
 	if plus := powerShellFindTopLevelPlus(source, start+1, end-1); plus >= 0 {
-		plusSym, plusNamed, ok := powerShellSymbolMeta(lang, "+")
+		plusSym, plusNamed, ok := symbolMeta(lang, "+")
 		if !ok {
 			return nil
 		}
@@ -453,7 +453,7 @@ func buildPowerShellTypeLiteral(arena *nodeArena, source []byte, lang *Language,
 }
 
 func buildPowerShellTypeSpec(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	typeSpecSym, typeSpecNamed, ok := powerShellSymbolMeta(lang, "type_spec")
+	typeSpecSym, typeSpecNamed, ok := symbolMeta(lang, "type_spec")
 	if !ok {
 		return nil
 	}
@@ -474,11 +474,11 @@ func buildPowerShellTypeSpec(arena *nodeArena, source []byte, lang *Language, st
 }
 
 func buildPowerShellTypeName(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	typeNameSym, typeNameNamed, ok := powerShellSymbolMeta(lang, "type_name")
+	typeNameSym, typeNameNamed, ok := symbolMeta(lang, "type_name")
 	if !ok {
 		return nil
 	}
-	typeIdentifierSym, typeIdentifierNamed, ok := powerShellSymbolMeta(lang, "type_identifier")
+	typeIdentifierSym, typeIdentifierNamed, ok := symbolMeta(lang, "type_identifier")
 	if !ok {
 		return nil
 	}
@@ -486,7 +486,7 @@ func buildPowerShellTypeName(arena *nodeArena, source []byte, lang *Language, st
 		dot += start
 		left := buildPowerShellTypeName(arena, source, lang, start, dot)
 		right := newLeafNodeInArena(arena, typeIdentifierSym, typeIdentifierNamed, uint32(dot+1), uint32(end), advancePointByBytes(Point{}, source[:dot+1]), advancePointByBytes(advancePointByBytes(Point{}, source[:dot+1]), source[dot+1:end]))
-		dotSym, dotNamed, ok := powerShellSymbolMeta(lang, ".")
+		dotSym, dotNamed, ok := symbolMeta(lang, ".")
 		if !ok || left == nil {
 			return nil
 		}
@@ -513,7 +513,7 @@ func buildPowerShellTypeName(arena *nodeArena, source []byte, lang *Language, st
 }
 
 func buildPowerShellMemberName(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	memberNameSym, memberNameNamed, ok := powerShellSymbolMeta(lang, "member_name")
+	memberNameSym, memberNameNamed, ok := symbolMeta(lang, "member_name")
 	if !ok {
 		return nil
 	}
@@ -531,7 +531,7 @@ func buildPowerShellMemberName(arena *nodeArena, source []byte, lang *Language, 
 }
 
 func buildPowerShellSimpleName(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	simpleNameSym, simpleNameNamed, ok := powerShellSymbolMeta(lang, "simple_name")
+	simpleNameSym, simpleNameNamed, ok := symbolMeta(lang, "simple_name")
 	if !ok {
 		return nil
 	}
@@ -540,19 +540,19 @@ func buildPowerShellSimpleName(arena *nodeArena, source []byte, lang *Language, 
 }
 
 func buildPowerShellArgumentList(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	argumentListSym, argumentListNamed, ok := powerShellSymbolMeta(lang, "argument_list")
+	argumentListSym, argumentListNamed, ok := symbolMeta(lang, "argument_list")
 	if !ok {
 		return nil
 	}
-	argumentExprListSym, argumentExprListNamed, ok := powerShellSymbolMeta(lang, "argument_expression_list")
+	argumentExprListSym, argumentExprListNamed, ok := symbolMeta(lang, "argument_expression_list")
 	if !ok {
 		return nil
 	}
-	openParenSym, openParenNamed, ok := powerShellSymbolMeta(lang, "(")
+	openParenSym, openParenNamed, ok := symbolMeta(lang, "(")
 	if !ok {
 		return nil
 	}
-	closeParenSym, closeParenNamed, ok := powerShellSymbolMeta(lang, ")")
+	closeParenSym, closeParenNamed, ok := symbolMeta(lang, ")")
 	if !ok {
 		return nil
 	}
@@ -591,35 +591,35 @@ func buildPowerShellArgumentList(arena *nodeArena, source []byte, lang *Language
 }
 
 func buildPowerShellArgumentExpression(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	argumentExprSym, argumentExprNamed, ok := powerShellSymbolMeta(lang, "argument_expression")
+	argumentExprSym, argumentExprNamed, ok := symbolMeta(lang, "argument_expression")
 	if !ok {
 		return nil
 	}
-	logicalArgSym, logicalArgNamed, ok := powerShellSymbolMeta(lang, "logical_argument_expression")
+	logicalArgSym, logicalArgNamed, ok := symbolMeta(lang, "logical_argument_expression")
 	if !ok {
 		return nil
 	}
-	bitwiseArgSym, bitwiseArgNamed, ok := powerShellSymbolMeta(lang, "bitwise_argument_expression")
+	bitwiseArgSym, bitwiseArgNamed, ok := symbolMeta(lang, "bitwise_argument_expression")
 	if !ok {
 		return nil
 	}
-	comparisonArgSym, comparisonArgNamed, ok := powerShellSymbolMeta(lang, "comparison_argument_expression")
+	comparisonArgSym, comparisonArgNamed, ok := symbolMeta(lang, "comparison_argument_expression")
 	if !ok {
 		return nil
 	}
-	additiveArgSym, additiveArgNamed, ok := powerShellSymbolMeta(lang, "additive_argument_expression")
+	additiveArgSym, additiveArgNamed, ok := symbolMeta(lang, "additive_argument_expression")
 	if !ok {
 		return nil
 	}
-	multiplicativeArgSym, multiplicativeArgNamed, ok := powerShellSymbolMeta(lang, "multiplicative_argument_expression")
+	multiplicativeArgSym, multiplicativeArgNamed, ok := symbolMeta(lang, "multiplicative_argument_expression")
 	if !ok {
 		return nil
 	}
-	formatArgSym, formatArgNamed, ok := powerShellSymbolMeta(lang, "format_argument_expression")
+	formatArgSym, formatArgNamed, ok := symbolMeta(lang, "format_argument_expression")
 	if !ok {
 		return nil
 	}
-	rangeArgSym, rangeArgNamed, ok := powerShellSymbolMeta(lang, "range_argument_expression")
+	rangeArgSym, rangeArgNamed, ok := symbolMeta(lang, "range_argument_expression")
 	if !ok {
 		return nil
 	}
@@ -663,7 +663,7 @@ func wrapPowerShellExpression(arena *nodeArena, lang *Language, core *Node, type
 	}
 	node := core
 	for _, typeName := range types {
-		sym, named, ok := powerShellSymbolMeta(lang, typeName)
+		sym, named, ok := symbolMeta(lang, typeName)
 		if !ok {
 			return nil
 		}

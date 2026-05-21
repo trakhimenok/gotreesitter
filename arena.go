@@ -459,23 +459,46 @@ func (a *nodeArena) Release() {
 }
 
 func (a *nodeArena) reset() {
-	// Clear only the high-water range that could have been written since the
-	// previous reset. Slots past the high-water mark are either fresh from
-	// make() or were cleared by an earlier reset.
+	a.resetPrimaryNodes()
+	a.resetParentLinks()
+	a.finalChildRefs = false
+	a.externalScannerNodeCheckpoints.reset()
+	a.resetNodeSlabs()
+	a.resetNoTreeNodeSlabs()
+	a.resetCompactFullLeafSlabs()
+	a.resetPendingParentSlabs()
+	a.resetPendingChildEntrySlabs()
+	a.resetFinalChildSidecars()
+	a.resetCompactCheckpointLeafSlabs()
+	a.resetChildSlabs()
+	a.resetCounters()
+	a.resetFieldSlabs()
+	a.resetFieldSourceSlabs()
+	a.childSlabCursor = 0
+	a.fieldSlabCursor = 0
+	a.fieldSourceSlabCursor = 0
+	a.trimPrimaryNodeCapacity()
+	a.ensureDefaultSliceSlabs()
+	a.clearBudget()
+}
+
+func (a *nodeArena) resetPrimaryNodes() {
 	primaryUsed := a.used
 	if primaryUsed > len(a.nodes) {
 		primaryUsed = len(a.nodes)
 	}
 	clear(a.nodes[:primaryUsed])
 	a.used = 0
+}
+
+func (a *nodeArena) resetParentLinks() {
 	a.parentLinkMu.Lock()
 	a.deferredParentRoot = nil
 	a.parentLinksDeferred = false
 	a.parentLinkMu.Unlock()
-	a.finalChildRefs = false
-	// Checkpoint refs contain only integer fields, but stale refs must not
-	// remain visible when a node slot is reused.
-	a.externalScannerNodeCheckpoints.reset()
+}
+
+func (a *nodeArena) resetNodeSlabs() {
 	if len(a.nodeSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -515,6 +538,9 @@ func (a *nodeArena) reset() {
 		}
 	}
 	a.nodeSlabCursor = 0
+}
+
+func (a *nodeArena) resetNoTreeNodeSlabs() {
 	if len(a.noTreeNodeSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -539,6 +565,9 @@ func (a *nodeArena) reset() {
 		a.noTreeNodeSlabs[i].used = 0
 	}
 	a.noTreeNodeSlabCursor = 0
+}
+
+func (a *nodeArena) resetCompactFullLeafSlabs() {
 	if len(a.compactFullLeafSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -563,6 +592,9 @@ func (a *nodeArena) reset() {
 		a.compactFullLeafSlabs[i].used = 0
 	}
 	a.compactFullLeafSlabCursor = 0
+}
+
+func (a *nodeArena) resetPendingParentSlabs() {
 	if len(a.pendingParentSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -593,6 +625,9 @@ func (a *nodeArena) reset() {
 		slab.used = 0
 	}
 	a.pendingParentSlabCursor = 0
+}
+
+func (a *nodeArena) resetPendingChildEntrySlabs() {
 	if len(a.pendingChildEntrySlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -621,6 +656,9 @@ func (a *nodeArena) reset() {
 		}
 	}
 	a.pendingChildEntrySlabCursor = 0
+}
+
+func (a *nodeArena) resetFinalChildSidecars() {
 	if cap(a.finalChildSidecars) > 0 {
 		if len(a.finalChildSidecars) > 0 {
 			clear(a.finalChildSidecars)
@@ -631,6 +669,9 @@ func (a *nodeArena) reset() {
 			a.finalChildSidecars = a.finalChildSidecars[:0]
 		}
 	}
+}
+
+func (a *nodeArena) resetCompactCheckpointLeafSlabs() {
 	if len(a.compactCheckpointLeafSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -655,7 +696,9 @@ func (a *nodeArena) reset() {
 		a.compactCheckpointLeafSlabs[i].used = 0
 	}
 	a.compactCheckpointLeafSlabCursor = 0
+}
 
+func (a *nodeArena) resetChildSlabs() {
 	if len(a.childSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -687,6 +730,9 @@ func (a *nodeArena) reset() {
 		slab.used = 0
 	}
 	a.skipChildClear = false
+}
+
+func (a *nodeArena) resetCounters() {
 	a.audit = nil
 	a.externalScannerCheckpointRecords = 0
 	a.externalScannerSnapshotPayloadBytes = 0
@@ -816,6 +862,9 @@ func (a *nodeArena) reset() {
 	a.noTreeReduceNodesConstructed = 0
 	a.noTreeLeafNodesConstructed = 0
 	a.noTreePlaceholderNodesConstructed = 0
+}
+
+func (a *nodeArena) resetFieldSlabs() {
 	if len(a.fieldSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -842,6 +891,9 @@ func (a *nodeArena) reset() {
 	for i := range a.fieldSlabs {
 		a.fieldSlabs[i].used = 0
 	}
+}
+
+func (a *nodeArena) resetFieldSourceSlabs() {
 	if len(a.fieldSourceSlabs) > 0 {
 		retained := 0
 		keep := 0
@@ -868,10 +920,9 @@ func (a *nodeArena) reset() {
 	for i := range a.fieldSourceSlabs {
 		a.fieldSourceSlabs[i].used = 0
 	}
-	a.childSlabCursor = 0
-	a.fieldSlabCursor = 0
-	a.fieldSourceSlabCursor = 0
+}
 
+func (a *nodeArena) trimPrimaryNodeCapacity() {
 	if limit := maxRetainedNodeCapacityForClass(a.class); len(a.nodes) > limit {
 		// Drop the oversized primary array entirely. Setting to nil lets the GC
 		// collect it and the next parse will allocate a fresh slab of default
@@ -879,6 +930,9 @@ func (a *nodeArena) reset() {
 		a.nodes = nil
 		a.externalScannerNodeCheckpoints = externalScannerCheckpointSet{}
 	}
+}
+
+func (a *nodeArena) ensureDefaultSliceSlabs() {
 	if len(a.childSlabs) == 0 {
 		a.childSlabs = []childSliceSlab{{data: make([]*Node, defaultChildSliceCap(a.class))}}
 	}
@@ -888,7 +942,6 @@ func (a *nodeArena) reset() {
 	if len(a.fieldSourceSlabs) == 0 {
 		a.fieldSourceSlabs = []fieldSourceSliceSlab{{data: make([]uint8, defaultFieldSliceCap(a.class))}}
 	}
-	a.clearBudget()
 }
 
 func (a *nodeArena) allocNode() *Node {
@@ -2243,7 +2296,7 @@ func maxRetainedPendingParentCapacityForClass(class arenaClass) int {
 }
 
 func maxRetainedPendingChildEntryCapacityForClass(class arenaClass) int {
-	nodeSize := int(unsafe.Sizeof(pendingChildEntry(0)))
+	nodeSize := int(unsafe.Sizeof(pendingChildEntry{}))
 	if nodeSize <= 0 {
 		nodeSize = 1
 	}

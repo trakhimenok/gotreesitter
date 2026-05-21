@@ -102,280 +102,315 @@ func (p *queryParser) parsePattern(depth int, parentSymbolHint Symbol) (*Pattern
 	p.skipWhitespaceAndComments()
 
 	pat := &Pattern{}
-	if p.pos >= len(p.input) {
-		return nil, fmt.Errorf("query: unexpected end of input, expected node type or pattern")
+	rootIdx, err := p.parsePatternRoot(pat, depth, parentSymbolHint)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.parsePatternBody(pat, depth, parentSymbolHint, rootIdx); err != nil {
+		return nil, err
+	}
+	if err := p.parseStepSuffix(pat, rootIdx); err != nil {
+		return nil, err
+	}
+	if err := p.validatePatternPredicates(pat); err != nil {
+		return nil, err
 	}
 
-	rootIdx := -1
+	return pat, nil
+}
 
-	// Parse the root element. This supports:
-	//   - standard node patterns: (identifier ...)
-	//   - parenthesized strings: ("(") @punctuation.bracket
-	//   - grouping wrappers: ((identifier) ... (#set! ...))
+func (p *queryParser) parsePatternRoot(pat *Pattern, depth int, parentSymbolHint Symbol) (int, error) {
+	if p.pos >= len(p.input) {
+		return -1, fmt.Errorf("query: unexpected end of input, expected node type or pattern")
+	}
+
 	switch ch := p.input[p.pos]; {
 	case isIdentStart(ch):
-		nodeType, err := p.readIdentifier()
-		if err != nil {
-			return nil, fmt.Errorf("query: expected node type after '(' at position %d: %w", p.pos, err)
-		}
-		step, err := p.stepFromIdentifierName(depth, nodeType)
-		if err != nil {
-			return nil, err
-		}
-		if nodeType == "_" {
-			// Tree-sitter distinguishes parenthesized `(_)` (named wildcard)
-			// from bare `_` (matches named or anonymous nodes).
-			step.isNamed = true
-		}
-		pat.steps = append(pat.steps, step)
-		rootIdx = 0
-
+		return p.parseIdentifierPatternRoot(pat, depth)
 	case ch == '"':
-		text, err := p.readString()
-		if err != nil {
-			return nil, err
-		}
-		pat.steps = append(pat.steps, QueryStep{
-			captureID: -1,
-			depth:     depth,
-			textMatch: text,
-		})
-		rootIdx = 0
-
+		return p.parseStringPatternRoot(pat, depth)
 	case ch == '(' || ch == '[':
-		innerPat, err := p.parsePatternElement(depth, parentSymbolHint)
-		if err != nil {
-			return nil, err
-		}
-		if len(innerPat.steps) == 0 {
-			return nil, fmt.Errorf("query: empty grouped pattern at position %d", p.pos)
-		}
-
-		if p.peekNextIsPatternElement() {
-			// Multi-sibling group: ((a) (b) ...) — insert wildcard root.
-			pat.steps = append(pat.steps, QueryStep{
-				symbol:    0,
-				isNamed:   false,
-				captureID: -1,
-				depth:     depth,
-			})
-			rootIdx = 0
-			for i := range innerPat.steps {
-				innerPat.steps[i].depth++
-			}
-			pat.steps = append(pat.steps, innerPat.steps...)
-		} else {
-			// Single-element group: ((a) @cap (#pred)) — unchanged.
-			pat.steps = append(pat.steps, innerPat.steps...)
-			rootIdx = 0
-		}
-		pat.predicates = append(pat.predicates, innerPat.predicates...)
-
+		return p.parseGroupedPatternRoot(pat, depth, parentSymbolHint)
 	default:
-		return nil, fmt.Errorf("query: expected node type after '(' at position %d: query: expected identifier at position %d", p.pos, p.pos)
+		return -1, fmt.Errorf("query: expected node type after '(' at position %d: query: expected identifier at position %d", p.pos, p.pos)
+	}
+}
+
+func (p *queryParser) parseIdentifierPatternRoot(pat *Pattern, depth int) (int, error) {
+	nodeType, err := p.readIdentifier()
+	if err != nil {
+		return -1, fmt.Errorf("query: expected node type after '(' at position %d: %w", p.pos, err)
+	}
+	step, err := p.stepFromIdentifierName(depth, nodeType)
+	if err != nil {
+		return -1, err
+	}
+	if nodeType == "_" {
+		// Tree-sitter distinguishes parenthesized `(_)` from bare `_`.
+		step.isNamed = true
+	}
+	pat.steps = append(pat.steps, step)
+	return 0, nil
+}
+
+func (p *queryParser) parseStringPatternRoot(pat *Pattern, depth int) (int, error) {
+	text, err := p.readString()
+	if err != nil {
+		return -1, err
+	}
+	pat.steps = append(pat.steps, QueryStep{
+		depth:     depth,
+		textMatch: text,
+	})
+	return 0, nil
+}
+
+func (p *queryParser) parseGroupedPatternRoot(pat *Pattern, depth int, parentSymbolHint Symbol) (int, error) {
+	innerPat, err := p.parsePatternElement(depth, parentSymbolHint)
+	if err != nil {
+		return -1, err
+	}
+	if len(innerPat.steps) == 0 {
+		return -1, fmt.Errorf("query: empty grouped pattern at position %d", p.pos)
 	}
 
-	// Parse children, fields, and captures until ')'.
-	pendingAnchor := false
-	lastChildRootIdx := -1
-	appendChildPattern := func(childPat *Pattern) {
-		if childPat == nil || len(childPat.steps) == 0 {
-			return
+	if p.peekNextIsPatternElement() {
+		pat.steps = append(pat.steps, QueryStep{
+			symbol:  0,
+			isNamed: false,
+			depth:   depth,
+		})
+		for i := range innerPat.steps {
+			innerPat.steps[i].depth++
 		}
-		if pendingAnchor {
-			childPat.steps[0].anchorBefore = true
-			pendingAnchor = false
-		}
-		childRootIdx := len(pat.steps)
-		pat.predicates = append(pat.predicates, childPat.predicates...)
-		pat.steps = append(pat.steps, childPat.steps...)
-		lastChildRootIdx = childRootIdx
+		pat.steps = append(pat.steps, innerPat.steps...)
+	} else {
+		pat.steps = append(pat.steps, innerPat.steps...)
 	}
+	pat.predicates = append(pat.predicates, innerPat.predicates...)
+	return 0, nil
+}
+
+type patternBodyParser struct {
+	p                *queryParser
+	pat              *Pattern
+	depth            int
+	parentSymbolHint Symbol
+	rootIdx          int
+	pendingAnchor    bool
+	lastChildRootIdx int
+}
+
+func (p *queryParser) parsePatternBody(pat *Pattern, depth int, parentSymbolHint Symbol, rootIdx int) error {
+	body := patternBodyParser{
+		p:                p,
+		pat:              pat,
+		depth:            depth,
+		parentSymbolHint: parentSymbolHint,
+		rootIdx:          rootIdx,
+		lastChildRootIdx: -1,
+	}
+	return body.parse()
+}
+
+func (b *patternBodyParser) parse() error {
 	for {
-		p.skipWhitespaceAndComments()
-		if p.pos >= len(p.input) {
-			return nil, fmt.Errorf("query: unexpected end of input, expected ')'")
+		b.p.skipWhitespaceAndComments()
+		if b.p.pos >= len(b.p.input) {
+			return fmt.Errorf("query: unexpected end of input, expected ')'")
 		}
 
-		ch := p.input[p.pos]
-
-		if ch == ')' {
-			if pendingAnchor && lastChildRootIdx >= 0 {
-				pat.steps[lastChildRootIdx].anchorAfter = true
+		ch := b.p.input[b.p.pos]
+		switch {
+		case ch == ')':
+			b.close()
+			return nil
+		case ch == '.':
+			b.p.pos++
+			b.pendingAnchor = true
+		case ch == '!':
+			if err := b.parseAbsentField(); err != nil {
+				return err
 			}
-			p.pos++ // consume ')'
-			break
+		case ch == '@':
+			if err := b.parseRootCapture(); err != nil {
+				return err
+			}
+		case ch == '(' && b.p.pos+1 < len(b.p.input) && b.p.input[b.p.pos+1] == '#':
+			if err := b.parsePredicate(); err != nil {
+				return err
+			}
+		case ch == '(' || ch == '[' || ch == '"':
+			if err := b.parseChildElement(); err != nil {
+				return err
+			}
+		case isIdentStart(ch):
+			if err := b.parseFieldOrIdentifierChild(); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("query: unexpected character %q at position %d", string(ch), b.p.pos)
 		}
+	}
+}
 
-		if ch == '.' {
-			// Anchor operators:
-			//   - before child: first-child / immediate-sibling anchor
-			//   - after child: last-child anchor
-			// Anchors only affect child constraints at this depth.
-			p.pos++
-			pendingAnchor = true
-			continue
-		}
+func (b *patternBodyParser) close() {
+	if b.pendingAnchor && b.lastChildRootIdx >= 0 {
+		b.pat.steps[b.lastChildRootIdx].anchorAfter = true
+	}
+	b.p.pos++ // consume ')'
+}
 
-		if ch == '!' {
-			// Field-negation constraint like !type_parameters.
-			p.pos++
-			p.skipWhitespaceAndComments()
-			fieldName, err := p.readIdentifier()
-			if err != nil {
-				return nil, err
-			}
-			if rootIdx >= 0 && rootIdx < len(pat.steps) {
-				parentSymbol := pat.steps[rootIdx].symbol
-				fieldID, err := p.resolveField(fieldName, parentSymbol, parentSymbolHint)
-				if err != nil {
-					return nil, err
-				}
-				pat.steps[rootIdx].absentFields = append(pat.steps[rootIdx].absentFields, fieldID)
-			}
-			continue
-		}
+func (b *patternBodyParser) appendChildPattern(childPat *Pattern) {
+	if childPat == nil || len(childPat.steps) == 0 {
+		return
+	}
+	if b.pendingAnchor {
+		childPat.steps[0].anchorBefore = true
+		b.pendingAnchor = false
+	}
+	childRootIdx := len(b.pat.steps)
+	b.pat.predicates = append(b.pat.predicates, childPat.predicates...)
+	b.pat.steps = append(b.pat.steps, childPat.steps...)
+	b.lastChildRootIdx = childRootIdx
+}
 
-		if ch == '@' {
-			// Capture for the current node.
-			capName, err := p.readCapture()
-			if err != nil {
-				return nil, err
-			}
-			capID := p.ensureCapture(capName)
-			if rootIdx >= 0 && rootIdx < len(pat.steps) {
-				p.addCaptureToStep(&pat.steps[rootIdx], capID)
-			}
-			continue
-		}
+func (b *patternBodyParser) rootStep() *QueryStep {
+	if b.rootIdx >= 0 && b.rootIdx < len(b.pat.steps) {
+		return &b.pat.steps[b.rootIdx]
+	}
+	return nil
+}
 
-		if ch == '(' {
-			// Predicate expression.
-			if p.pos+1 < len(p.input) && p.input[p.pos+1] == '#' {
-				pred, err := p.parsePredicate()
-				if err != nil {
-					return nil, err
-				}
-				pat.predicates = append(pat.predicates, pred)
-				continue
-			}
+func (b *patternBodyParser) rootSymbol() Symbol {
+	if root := b.rootStep(); root != nil {
+		return root.symbol
+	}
+	return 0
+}
 
-			// Nested pattern (child constraint).
-			currentRootSymbol := Symbol(0)
-			if rootIdx >= 0 && rootIdx < len(pat.steps) {
-				currentRootSymbol = pat.steps[rootIdx].symbol
-			}
-			childPat, err := p.parsePatternElement(depth+1, currentRootSymbol)
-			if err != nil {
-				return nil, err
-			}
-			appendChildPattern(childPat)
-			continue
-		}
+func (b *patternBodyParser) parseAbsentField() error {
+	b.p.pos++
+	b.p.skipWhitespaceAndComments()
+	fieldName, err := b.p.readIdentifier()
+	if err != nil {
+		return err
+	}
+	root := b.rootStep()
+	if root == nil {
+		return nil
+	}
+	fieldID, err := b.p.resolveField(fieldName, root.symbol, b.parentSymbolHint)
+	if err != nil {
+		return err
+	}
+	root.absentFields = append(root.absentFields, fieldID)
+	return nil
+}
 
-		if ch == '[' {
-			// Alternation child.
-			currentRootSymbol := Symbol(0)
-			if rootIdx >= 0 && rootIdx < len(pat.steps) {
-				currentRootSymbol = pat.steps[rootIdx].symbol
-			}
-			childPat, err := p.parsePatternElement(depth+1, currentRootSymbol)
-			if err != nil {
-				return nil, err
-			}
-			appendChildPattern(childPat)
-			continue
-		}
+func (b *patternBodyParser) parseRootCapture() error {
+	capName, err := b.p.readCapture()
+	if err != nil {
+		return err
+	}
+	if root := b.rootStep(); root != nil {
+		root.captureIDs = append(root.captureIDs, b.p.ensureCapture(capName))
+	}
+	return nil
+}
 
-		if ch == '"' {
-			// String child.
-			currentRootSymbol := Symbol(0)
-			if rootIdx >= 0 && rootIdx < len(pat.steps) {
-				currentRootSymbol = pat.steps[rootIdx].symbol
-			}
-			childPat, err := p.parsePatternElement(depth+1, currentRootSymbol)
-			if err != nil {
-				return nil, err
-			}
-			appendChildPattern(childPat)
-			continue
-		}
+func (b *patternBodyParser) parsePredicate() error {
+	pred, err := b.p.parsePredicate()
+	if err != nil {
+		return err
+	}
+	b.pat.predicates = append(b.pat.predicates, pred)
+	return nil
+}
 
-		// Check for field: syntax (identifier followed by ':')
-		if isIdentStart(ch) {
-			ident, err := p.readIdentifier()
-			if err != nil {
-				return nil, err
-			}
-			afterIdent := p.pos
-			p.skipWhitespaceAndComments()
-			if p.pos < len(p.input) && p.input[p.pos] == ':' {
-				// It's a field constraint.
-				p.pos++ // consume ':'
-				p.skipWhitespaceAndComments()
+func (b *patternBodyParser) parseChildElement() error {
+	childPat, err := b.p.parsePatternElement(b.depth+1, b.rootSymbol())
+	if err != nil {
+		return err
+	}
+	b.appendChildPattern(childPat)
+	return nil
+}
 
-				parentSymbol := Symbol(0)
-				if rootIdx >= 0 && rootIdx < len(pat.steps) {
-					parentSymbol = pat.steps[rootIdx].symbol
-				}
-				fieldID, err := p.resolveField(ident, parentSymbol, parentSymbolHint)
-				if err != nil {
-					return nil, err
-				}
-
-				// The child pattern follows.
-				if p.pos >= len(p.input) {
-					return nil, fmt.Errorf("query: expected child pattern after field %q", ident)
-				}
-
-				childPat, err := p.parsePatternElement(depth+1, parentSymbol)
-				if err != nil {
-					return nil, err
-				}
-				if len(childPat.steps) > 0 {
-					childPat.steps[0].field = fieldID
-				}
-				appendChildPattern(childPat)
-			} else {
-				// Bare shorthand child pattern like `_` or `identifier`.
-				p.pos = afterIdent
-				childPat, err := p.parseIdentifierPatternFromName(depth+1, ident)
-				if err != nil {
-					return nil, err
-				}
-				appendChildPattern(childPat)
-			}
-			continue
-		}
-
-		return nil, fmt.Errorf("query: unexpected character %q at position %d", string(ch), p.pos)
+func (b *patternBodyParser) parseFieldOrIdentifierChild() error {
+	ident, err := b.p.readIdentifier()
+	if err != nil {
+		return err
+	}
+	afterIdent := b.p.pos
+	b.p.skipWhitespaceAndComments()
+	if b.p.pos < len(b.p.input) && b.p.input[b.p.pos] == ':' {
+		return b.parseFieldChild(ident)
 	}
 
-	// Check for capture after the closing paren.
+	b.p.pos = afterIdent
+	childPat, err := b.p.parseIdentifierPatternFromName(b.depth+1, ident)
+	if err != nil {
+		return err
+	}
+	b.appendChildPattern(childPat)
+	return nil
+}
+
+func (b *patternBodyParser) parseFieldChild(fieldName string) error {
+	b.p.pos++ // consume ':'
+	b.p.skipWhitespaceAndComments()
+
+	parentSymbol := b.rootSymbol()
+	fieldID, err := b.p.resolveField(fieldName, parentSymbol, b.parentSymbolHint)
+	if err != nil {
+		return err
+	}
+	if b.p.pos >= len(b.p.input) {
+		return fmt.Errorf("query: expected child pattern after field %q", fieldName)
+	}
+
+	childPat, err := b.p.parsePatternElement(b.depth+1, parentSymbol)
+	if err != nil {
+		return err
+	}
+	if len(childPat.steps) > 0 {
+		childPat.steps[0].field = fieldID
+	}
+	b.appendChildPattern(childPat)
+	return nil
+}
+
+func (p *queryParser) parseStepSuffix(pat *Pattern, rootIdx int) error {
+	return p.parseStepSuffixInto(patternRootStep(pat, rootIdx))
+}
+
+func (p *queryParser) parseStepSuffixInto(step *QueryStep) error {
 	p.skipWhitespaceAndComments()
 	if quantifier, ok := p.readStepQuantifier(); ok {
-		if rootIdx >= 0 && rootIdx < len(pat.steps) {
-			pat.steps[rootIdx].quantifier = quantifier
+		if step != nil {
+			step.quantifier = quantifier
 		}
 		p.skipWhitespaceAndComments()
 	}
 	for p.pos < len(p.input) && p.input[p.pos] == '@' {
 		capName, err := p.readCapture()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		capID := p.ensureCapture(capName)
-		if rootIdx >= 0 && rootIdx < len(pat.steps) {
-			p.addCaptureToStep(&pat.steps[rootIdx], capID)
+		if step != nil {
+			step.captureIDs = append(step.captureIDs, p.ensureCapture(capName))
 		}
 		p.skipWhitespaceAndComments()
 	}
+	return nil
+}
 
-	if err := p.validatePatternPredicates(pat); err != nil {
-		return nil, err
+func patternRootStep(pat *Pattern, rootIdx int) *QueryStep {
+	if pat != nil && rootIdx >= 0 && rootIdx < len(pat.steps) {
+		return &pat.steps[rootIdx]
 	}
-
-	return pat, nil
+	return nil
 }
 
 // parseAlternationPattern parses [...] alternation syntax.
@@ -386,118 +421,113 @@ func (p *queryParser) parseAlternationPattern(depth int, parentSymbolHint Symbol
 	p.pos++ // consume '['
 	p.skipWhitespaceAndComments()
 
-	var alts []alternativeSymbol
-
-	for {
-		p.skipWhitespaceAndComments()
-		if p.pos >= len(p.input) {
-			return nil, fmt.Errorf("query: unexpected end of input in alternation")
-		}
-
-		if p.input[p.pos] == ']' {
-			p.pos++ // consume ']'
-			break
-		}
-
-		ch := p.input[p.pos]
-		if ch == '.' {
-			// Anchors inside alternations are parsed for compatibility and ignored.
-			p.pos++
-			continue
-		}
-
-		var branchPat *Pattern
-		var err error
-		altField := FieldID(0)
-		if ch == '(' || ch == '[' || ch == '"' {
-			branchPat, err = p.parsePatternElement(depth, parentSymbolHint)
-		} else if isIdentStart(ch) {
-			// Alternation may contain field shorthand branches like:
-			// [name: (identifier) alias: (identifier)].
-			ident, readErr := p.readIdentifier()
-			if readErr != nil {
-				return nil, readErr
-			}
-			p.skipWhitespaceAndComments()
-			if p.pos < len(p.input) && p.input[p.pos] == ':' {
-				p.pos++ // consume ':'
-				p.skipWhitespaceAndComments()
-				fieldID, fieldErr := p.resolveField(ident, parentSymbolHint, parentSymbolHint)
-				if fieldErr != nil {
-					return nil, fieldErr
-				}
-				altField = fieldID
-				branchPat, err = p.parsePatternElement(depth, parentSymbolHint)
-			} else {
-				branchPat, err = p.parseIdentifierPatternFromName(depth, ident)
-			}
-		} else {
-			return nil, fmt.Errorf("query: unexpected character %q in alternation at position %d", string(ch), p.pos)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if len(branchPat.steps) == 0 {
-			continue
-		}
-
-		root := branchPat.steps[0]
-		alt := alternativeSymbol{
-			symbol:    root.symbol,
-			isNamed:   root.isNamed,
-			field:     altField,
-			textMatch: root.textMatch,
-			captureID: -1,
-		}
-		if root.field != 0 {
-			alt.field = root.field
-			// Field constraints are evaluated at branch selection time; keep the
-			// branch root itself unconstrained after selection.
-			branchPat.steps[0].field = 0
-		}
-		if len(branchPat.predicates) > 0 || len(branchPat.steps) > 1 || alt.field != 0 {
-			alt.steps = make([]QueryStep, len(branchPat.steps))
-			copy(alt.steps, branchPat.steps)
-			alt.predicates = make([]QueryPredicate, len(branchPat.predicates))
-			copy(alt.predicates, branchPat.predicates)
-		} else {
-			if len(root.captureIDs) > 0 {
-				for _, capID := range root.captureIDs {
-					p.addCaptureToAlternative(&alt, capID)
-				}
-			} else if root.captureID >= 0 {
-				p.addCaptureToAlternative(&alt, root.captureID)
-			}
-		}
-		alts = append(alts, alt)
+	alts, err := p.parseAlternationBranches(depth, parentSymbolHint)
+	if err != nil {
+		return nil, err
 	}
-
 	if len(alts) == 0 {
 		return nil, fmt.Errorf("query: empty alternation")
 	}
 
 	step := QueryStep{
-		captureID:    -1,
 		depth:        depth,
 		alternatives: alts,
 	}
-
-	// Check for capture after ']'.
-	p.skipWhitespaceAndComments()
-	if quantifier, ok := p.readStepQuantifier(); ok {
-		step.quantifier = quantifier
-		p.skipWhitespaceAndComments()
-	}
-	for p.pos < len(p.input) && p.input[p.pos] == '@' {
-		capName, err := p.readCapture()
-		if err != nil {
-			return nil, err
-		}
-		p.addCaptureToStep(&step, p.ensureCapture(capName))
-		p.skipWhitespaceAndComments()
+	if err := p.parseStepSuffixInto(&step); err != nil {
+		return nil, err
 	}
 
 	return &Pattern{steps: []QueryStep{step}}, nil
+}
+
+func (p *queryParser) parseAlternationBranches(depth int, parentSymbolHint Symbol) ([]alternativeSymbol, error) {
+	var alts []alternativeSymbol
+	for {
+		p.skipWhitespaceAndComments()
+		if p.pos >= len(p.input) {
+			return nil, fmt.Errorf("query: unexpected end of input in alternation")
+		}
+		if p.input[p.pos] == ']' {
+			p.pos++ // consume ']'
+			return alts, nil
+		}
+		if p.input[p.pos] == '.' {
+			p.pos++
+			continue
+		}
+
+		alt, ok, err := p.parseAlternationBranch(depth, parentSymbolHint)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			alts = append(alts, alt)
+		}
+	}
+}
+
+func (p *queryParser) parseAlternationBranch(depth int, parentSymbolHint Symbol) (alternativeSymbol, bool, error) {
+	branchPat, altField, err := p.parseAlternationBranchPattern(depth, parentSymbolHint)
+	if err != nil {
+		return alternativeSymbol{}, false, err
+	}
+	if len(branchPat.steps) == 0 {
+		return alternativeSymbol{}, false, nil
+	}
+
+	root := branchPat.steps[0]
+	alt := alternativeSymbol{
+		symbol:    root.symbol,
+		isNamed:   root.isNamed,
+		field:     altField,
+		textMatch: root.textMatch,
+	}
+	if root.field != 0 {
+		alt.field = root.field
+		branchPat.steps[0].field = 0
+	}
+	if len(branchPat.predicates) > 0 || len(branchPat.steps) > 1 || alt.field != 0 {
+		alt.steps = make([]QueryStep, len(branchPat.steps))
+		copy(alt.steps, branchPat.steps)
+		alt.predicates = make([]QueryPredicate, len(branchPat.predicates))
+		copy(alt.predicates, branchPat.predicates)
+	} else {
+		alt.captureIDs = append(alt.captureIDs, root.captureIDs...)
+	}
+	return alt, true, nil
+}
+
+func (p *queryParser) parseAlternationBranchPattern(depth int, parentSymbolHint Symbol) (*Pattern, FieldID, error) {
+	ch := p.input[p.pos]
+	if ch == '(' || ch == '[' || ch == '"' {
+		pat, err := p.parsePatternElement(depth, parentSymbolHint)
+		return pat, 0, err
+	}
+	if !isIdentStart(ch) {
+		return nil, 0, fmt.Errorf("query: unexpected character %q in alternation at position %d", string(ch), p.pos)
+	}
+
+	ident, err := p.readIdentifier()
+	if err != nil {
+		return nil, 0, err
+	}
+	p.skipWhitespaceAndComments()
+	if p.pos < len(p.input) && p.input[p.pos] == ':' {
+		return p.parseAlternationFieldBranch(depth, parentSymbolHint, ident)
+	}
+	pat, err := p.parseIdentifierPatternFromName(depth, ident)
+	return pat, 0, err
+}
+
+func (p *queryParser) parseAlternationFieldBranch(depth int, parentSymbolHint Symbol, fieldName string) (*Pattern, FieldID, error) {
+	p.pos++ // consume ':'
+	p.skipWhitespaceAndComments()
+	fieldID, err := p.resolveField(fieldName, parentSymbolHint, parentSymbolHint)
+	if err != nil {
+		return nil, 0, err
+	}
+	pat, err := p.parsePatternElement(depth, parentSymbolHint)
+	return pat, fieldID, err
 }
 
 // parseStringPattern parses a "string" pattern for matching anonymous nodes.
@@ -508,24 +538,11 @@ func (p *queryParser) parseStringPattern(depth int) (*Pattern, error) {
 	}
 
 	step := QueryStep{
-		captureID: -1,
 		depth:     depth,
 		textMatch: text,
 	}
-
-	// Check for capture after the string.
-	p.skipWhitespaceAndComments()
-	if quantifier, ok := p.readStepQuantifier(); ok {
-		step.quantifier = quantifier
-		p.skipWhitespaceAndComments()
-	}
-	for p.pos < len(p.input) && p.input[p.pos] == '@' {
-		capName, err := p.readCapture()
-		if err != nil {
-			return nil, err
-		}
-		p.addCaptureToStep(&step, p.ensureCapture(capName))
-		p.skipWhitespaceAndComments()
+	if err := p.parseStepSuffixInto(&step); err != nil {
+		return nil, err
 	}
 
 	return &Pattern{steps: []QueryStep{step}}, nil
@@ -567,10 +584,9 @@ func (p *queryParser) stepFromIdentifierName(depth int, name string) (QueryStep,
 	}
 
 	return QueryStep{
-		symbol:    sym,
-		isNamed:   isNamed,
-		captureID: -1,
-		depth:     depth,
+		symbol:  sym,
+		isNamed: isNamed,
+		depth:   depth,
 	}, nil
 }
 
@@ -579,19 +595,8 @@ func (p *queryParser) parseIdentifierPatternFromName(depth int, name string) (*P
 	if err != nil {
 		return nil, err
 	}
-
-	p.skipWhitespaceAndComments()
-	if quantifier, ok := p.readStepQuantifier(); ok {
-		step.quantifier = quantifier
-		p.skipWhitespaceAndComments()
-	}
-	for p.pos < len(p.input) && p.input[p.pos] == '@' {
-		capName, err := p.readCapture()
-		if err != nil {
-			return nil, err
-		}
-		p.addCaptureToStep(&step, p.ensureCapture(capName))
-		p.skipWhitespaceAndComments()
+	if err := p.parseStepSuffixInto(&step); err != nil {
+		return nil, err
 	}
 
 	return &Pattern{steps: []QueryStep{step}}, nil
@@ -625,10 +630,9 @@ func (p *queryParser) parseFieldShorthandPattern(depth int) (*Pattern, error) {
 	// Use a wildcard root so field constraints can still be represented in the
 	// existing matcher shape.
 	root := QueryStep{
-		symbol:    0,
-		isNamed:   false,
-		captureID: -1,
-		depth:     depth,
+		symbol:  0,
+		isNamed: false,
+		depth:   depth,
 	}
 	pat := &Pattern{steps: []QueryStep{root}}
 	pat.steps = append(pat.steps, childPat.steps...)

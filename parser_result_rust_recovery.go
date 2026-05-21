@@ -26,23 +26,10 @@ func normalizeRustTokenBindingPatterns(root *Node, source []byte, lang *Language
 	if !ok {
 		return
 	}
-	tokenBindingPatternNamed := true
-	if int(tokenBindingPatternSym) < len(lang.SymbolMetadata) {
-		tokenBindingPatternNamed = lang.SymbolMetadata[tokenBindingPatternSym].Named
-	}
-	fragmentSpecifierNamed := true
-	if int(fragmentSpecifierSym) < len(lang.SymbolMetadata) {
-		fragmentSpecifierNamed = lang.SymbolMetadata[fragmentSpecifierSym].Named
-	}
+	tokenBindingPatternNamed := symbolIsNamed(lang, tokenBindingPatternSym)
+	fragmentSpecifierNamed := symbolIsNamed(lang, fragmentSpecifierSym)
 
-	var walk func(*Node)
-	walk = func(node *Node) {
-		if node == nil {
-			return
-		}
-		for _, child := range node.children {
-			walk(child)
-		}
+	walkResultTreePostorder(root, func(node *Node) {
 		if node.Type(lang) != "token_tree_pattern" || len(node.children) < 3 {
 			return
 		}
@@ -69,16 +56,12 @@ func normalizeRustTokenBindingPatterns(root *Node, source []byte, lang *Language
 			binding := cloneNodeInArena(node.ownerArena, meta)
 			binding.symbol = tokenBindingPatternSym
 			binding.setNamed(tokenBindingPatternNamed)
-			binding.children = cloneNodeSliceInArena(binding.ownerArena, []*Node{meta, fragClone})
-			binding.fieldIDs = nil
-			binding.fieldSources = nil
+			replaceNodeChildrenUnfielded(binding, cloneNodeSliceInArena(binding.ownerArena, []*Node{meta, fragClone}))
 			binding.productionID = 0
-			populateParentNode(binding, binding.children)
 
 			replaceChildRangeWithSingleNode(node, i, i+3, binding)
 		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeRustRecoveredTokenTrees(root *Node, source []byte, lang *Language) {
@@ -86,14 +69,7 @@ func normalizeRustRecoveredTokenTrees(root *Node, source []byte, lang *Language)
 		return
 	}
 
-	var walk func(*Node)
-	walk = func(node *Node) {
-		if node == nil {
-			return
-		}
-		for _, child := range node.children {
-			walk(child)
-		}
+	walkResultTreePostorder(root, func(node *Node) {
 		if node.Type(lang) != "token_tree" || !node.HasError() {
 			return
 		}
@@ -102,9 +78,7 @@ func normalizeRustRecoveredTokenTrees(root *Node, source []byte, lang *Language)
 			return
 		}
 		*node = *recovered
-	}
-
-	walk(root)
+	})
 	rustRefreshRecoveredErrorFlags(root)
 }
 
@@ -143,12 +117,8 @@ func normalizeRustRecoveredPatternStatementsRoot(root *Node, source []byte, p *P
 	if !ok {
 		return
 	}
-	root.children = cloneNodeSliceInArena(root.ownerArena, recovered)
-	root.fieldIDs = nil
-	root.fieldSources = nil
-	root.symbol = sourceFileSym
-	root.setNamed(rustNamedForSymbol(p.language, sourceFileSym))
-	populateParentNode(root, root.children)
+	retagResultRoot(root, sourceFileSym, rustNamedForSymbol(p.language, sourceFileSym))
+	replaceNodeChildrenUnfielded(root, cloneNodeSliceInArena(root.ownerArena, recovered))
 	root.setHasError(false)
 	if root.endByte < uint32(len(source)) && bytesAreTrivia(source[root.endByte:]) {
 		extendNodeEndTo(root, uint32(len(source)), source)

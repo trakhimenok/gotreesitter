@@ -275,8 +275,22 @@ func resolveOverlapsInto(ranges []HighlightRange, dst []HighlightRange) []Highli
 		return dst[:0]
 	}
 
-	// Filter zero-byte ranges in-place (compact) to avoid an extra allocation.
-	// This mutates the input slice's backing array but not the caller's header.
+	sorted := compactNonEmptyHighlightRanges(ranges)
+	if len(sorted) == 0 {
+		return nil
+	}
+	sortHighlightRanges(sorted)
+
+	resolver := highlightOverlapResolver{
+		ranges: sorted,
+		stack:  make([]HighlightRange, 0, 8),
+		result: prepareHighlightResult(dst, len(sorted)),
+		curPos: sorted[0].StartByte,
+	}
+	return resolver.resolve()
+}
+
+func compactNonEmptyHighlightRanges(ranges []HighlightRange) []HighlightRange {
 	n := 0
 	for i := range ranges {
 		if ranges[i].EndByte > ranges[i].StartByte {
@@ -284,14 +298,11 @@ func resolveOverlapsInto(ranges []HighlightRange, dst []HighlightRange) []Highli
 			n++
 		}
 	}
-	sorted := ranges[:n]
-	if len(sorted) == 0 {
-		return nil
-	}
+	return ranges[:n]
+}
 
-	// slices.SortFunc uses pdqsort with a generic comparison; it avoids the
-	// interface-dispatch overhead that sort.Slice incurs via the closure.
-	slices.SortFunc(sorted, func(a, b HighlightRange) int {
+func sortHighlightRanges(ranges []HighlightRange) {
+	slices.SortFunc(ranges, func(a, b HighlightRange) int {
 		if c := cmp.Compare(a.StartByte, b.StartByte); c != 0 {
 			return c
 		}
@@ -302,75 +313,116 @@ func resolveOverlapsInto(ranges []HighlightRange, dst []HighlightRange) []Highli
 		}
 		return cmp.Compare(a.PatternIndex, b.PatternIndex)
 	})
+}
 
-	// Pre-size both slices to avoid repeated grow-allocations in the hot loop.
-	// stack depth is bounded by the nesting depth (≤ len(sorted));
-	// result has at most one entry per input range.
-	stack := make([]HighlightRange, 0, 8)
+func prepareHighlightResult(dst []HighlightRange, capacity int) []HighlightRange {
 	result := dst[:0]
-	if cap(result) < len(sorted) {
-		result = make([]HighlightRange, 0, len(sorted))
+	if cap(result) < capacity {
+		return make([]HighlightRange, 0, capacity)
 	}
-	emit := func(start, end uint32, capture string) {
-		if capture == "" || end <= start {
-			return
-		}
-		if n := len(result); n > 0 && result[n-1].Capture == capture && result[n-1].EndByte == start {
-			result[n-1].EndByte = end
-			return
-		}
-		result = append(result, HighlightRange{StartByte: start, EndByte: end, Capture: capture})
-	}
-
-	curPos := sorted[0].StartByte
-	nextStartIdx := 0
-
-	for nextStartIdx < len(sorted) || len(stack) > 0 {
-		nextStartPos := ^uint32(0)
-		if nextStartIdx < len(sorted) {
-			nextStartPos = sorted[nextStartIdx].StartByte
-		}
-		nextEndPos := ^uint32(0)
-		if len(stack) > 0 {
-			nextEndPos = stack[len(stack)-1].EndByte
-		}
-		nextPos := nextStartPos
-		if nextEndPos < nextPos {
-			nextPos = nextEndPos
-		}
-
-		if len(stack) > 0 && nextPos > curPos {
-			emit(curPos, nextPos, stack[len(stack)-1].Capture)
-			curPos = nextPos
-		} else if curPos < nextPos {
-			curPos = nextPos
-		}
-
-		// End events at this boundary are processed before start events.
-		for len(stack) > 0 && stack[len(stack)-1].EndByte <= curPos {
-			stack = stack[:len(stack)-1]
-		}
-		for nextStartIdx < len(sorted) && sorted[nextStartIdx].StartByte == curPos {
-			stack = append(stack, sorted[nextStartIdx])
-			nextStartIdx++
-		}
-
-		// Skip forward to the next start when no capture is active.
-		if len(stack) == 0 && nextStartIdx < len(sorted) && curPos < sorted[nextStartIdx].StartByte {
-			curPos = sorted[nextStartIdx].StartByte
-		}
-		if len(stack) == 0 && nextStartIdx >= len(sorted) {
-			break
-		}
-		if len(stack) > 0 && curPos < stack[len(stack)-1].StartByte {
-			curPos = stack[len(stack)-1].StartByte
-		}
-		if len(stack) > 0 && curPos > stack[len(stack)-1].EndByte {
-			for len(stack) > 0 && curPos >= stack[len(stack)-1].EndByte {
-				stack = stack[:len(stack)-1]
-			}
-		}
-	}
-
 	return result
+}
+
+type highlightOverlapResolver struct {
+	ranges       []HighlightRange
+	stack        []HighlightRange
+	result       []HighlightRange
+	curPos       uint32
+	nextStartIdx int
+}
+
+func (r *highlightOverlapResolver) resolve() []HighlightRange {
+	for r.hasPendingEvents() {
+		nextPos := r.nextBoundary()
+		r.emitActiveUntil(nextPos)
+		r.popEndedRanges()
+		r.pushStartingRanges()
+		r.skipInactiveGap()
+		r.clampToActiveRange()
+	}
+	return r.result
+}
+
+func (r *highlightOverlapResolver) hasPendingEvents() bool {
+	return r.nextStartIdx < len(r.ranges) || len(r.stack) > 0
+}
+
+func (r *highlightOverlapResolver) nextBoundary() uint32 {
+	nextStart := noHighlightBoundary
+	if r.nextStartIdx < len(r.ranges) {
+		nextStart = r.ranges[r.nextStartIdx].StartByte
+	}
+	nextEnd := noHighlightBoundary
+	if len(r.stack) > 0 {
+		nextEnd = r.stack[len(r.stack)-1].EndByte
+	}
+	return minHighlightBoundary(nextStart, nextEnd)
+}
+
+const noHighlightBoundary = ^uint32(0)
+
+func minHighlightBoundary(a, b uint32) uint32 {
+	if b < a {
+		return b
+	}
+	return a
+}
+
+func (r *highlightOverlapResolver) emitActiveUntil(nextPos uint32) {
+	if len(r.stack) > 0 && nextPos > r.curPos {
+		r.emit(r.curPos, nextPos, r.stack[len(r.stack)-1].Capture)
+		r.curPos = nextPos
+		return
+	}
+	if r.curPos < nextPos {
+		r.curPos = nextPos
+	}
+}
+
+func (r *highlightOverlapResolver) emit(start, end uint32, capture string) {
+	if capture == "" || end <= start {
+		return
+	}
+	if n := len(r.result); n > 0 && r.result[n-1].Capture == capture && r.result[n-1].EndByte == start {
+		r.result[n-1].EndByte = end
+		return
+	}
+	r.result = append(r.result, HighlightRange{StartByte: start, EndByte: end, Capture: capture})
+}
+
+func (r *highlightOverlapResolver) popEndedRanges() {
+	for len(r.stack) > 0 && r.stack[len(r.stack)-1].EndByte <= r.curPos {
+		r.stack = r.stack[:len(r.stack)-1]
+	}
+}
+
+func (r *highlightOverlapResolver) pushStartingRanges() {
+	for r.nextStartIdx < len(r.ranges) && r.ranges[r.nextStartIdx].StartByte == r.curPos {
+		r.stack = append(r.stack, r.ranges[r.nextStartIdx])
+		r.nextStartIdx++
+	}
+}
+
+func (r *highlightOverlapResolver) skipInactiveGap() {
+	if len(r.stack) == 0 && r.nextStartIdx < len(r.ranges) && r.curPos < r.ranges[r.nextStartIdx].StartByte {
+		r.curPos = r.ranges[r.nextStartIdx].StartByte
+	}
+}
+
+func (r *highlightOverlapResolver) clampToActiveRange() {
+	if len(r.stack) == 0 {
+		return
+	}
+	if r.curPos < r.stack[len(r.stack)-1].StartByte {
+		r.curPos = r.stack[len(r.stack)-1].StartByte
+	}
+	if r.curPos > r.stack[len(r.stack)-1].EndByte {
+		r.popStaleActiveRanges()
+	}
+}
+
+func (r *highlightOverlapResolver) popStaleActiveRanges() {
+	for len(r.stack) > 0 && r.curPos >= r.stack[len(r.stack)-1].EndByte {
+		r.stack = r.stack[:len(r.stack)-1]
+	}
 }

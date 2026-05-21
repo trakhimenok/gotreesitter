@@ -3,6 +3,7 @@ package gotreesitter
 import (
 	"errors"
 	"fmt"
+	"unsafe"
 )
 
 type parseConfig struct {
@@ -13,8 +14,6 @@ type parseConfig struct {
 
 // TokenSourceFactory builds a token source for parser source bytes.
 type TokenSourceFactory func(source []byte) (TokenSource, error)
-
-type normalizationTokenSourceFactory = TokenSourceFactory
 
 // ParserLogType categorizes parser log messages.
 type ParserLogType uint8
@@ -62,7 +61,7 @@ func normalizeReturnedIncrementalTree(tree, oldTree *Tree, source []byte, lang *
 	normalizeReturnedTree(rootOrNil(tree), source, lang)
 }
 
-func (p *Parser) dfaReparseFactory() normalizationTokenSourceFactory {
+func (p *Parser) dfaReparseFactory() TokenSourceFactory {
 	if p == nil || p.language == nil || len(p.language.LexStates) == 0 {
 		return nil
 	}
@@ -72,7 +71,7 @@ func (p *Parser) dfaReparseFactory() normalizationTokenSourceFactory {
 	}
 }
 
-func (p *Parser) tokenSourceReparseFactory(ts TokenSource) normalizationTokenSourceFactory {
+func (p *Parser) tokenSourceReparseFactory(ts TokenSource) TokenSourceFactory {
 	if rebuilder, ok := ts.(TokenSourceRebuilder); ok {
 		return func(source []byte) (TokenSource, error) {
 			return rebuilder.RebuildTokenSource(source, p.language)
@@ -101,22 +100,16 @@ func (p *Parser) parseForRecovery(source []byte) (*Tree, error) {
 	return parser.Parse(source)
 }
 
-func parseWithSnippetParser(lang *Language, source []byte) (*Tree, error) {
-	return parseWithSnippetParserTimed(lang, source, 0)
-}
-
-// parseWithSnippetParserTimed is parseWithSnippetParser with a per-parse
-// timeout. Used by recovery paths (e.g. csharpRecoverNamespaceFromChildren)
-// to inherit the parent parser's timeout — without this, the snippet pool
-// resets timeoutMicros to 0 and recovery sub-parses could run unbounded.
-func parseWithSnippetParserTimed(lang *Language, source []byte, timeoutMicros uint64) (*Tree, error) {
+// parseWithSnippetParser runs a recovery snippet parse. timeoutMicros is
+// optional so callers can inherit a parent parser timeout when needed.
+func parseWithSnippetParser(lang *Language, source []byte, timeoutMicros ...uint64) (*Tree, error) {
 	parser := acquireSnippetParser(lang)
 	if parser == nil {
 		return nil, ErrNoLanguage
 	}
 	defer releaseSnippetParser(parser)
-	if timeoutMicros > 0 {
-		parser.timeoutMicros = timeoutMicros
+	if len(timeoutMicros) > 0 && timeoutMicros[0] > 0 {
+		parser.timeoutMicros = timeoutMicros[0]
 	}
 	return parser.Parse(source)
 }
@@ -133,7 +126,7 @@ func manageTokenSourceLifetime(ts TokenSource) func() {
 	return closer.Close
 }
 
-func (p *Parser) parseWithTokenSource(source []byte, ts TokenSource, reparseFactory normalizationTokenSourceFactory) (*Tree, error) {
+func (p *Parser) parseWithTokenSource(source []byte, ts TokenSource, reparseFactory TokenSourceFactory) (*Tree, error) {
 	if err := p.checkLanguageCompatible(); err != nil {
 		return nil, err
 	}
@@ -162,7 +155,7 @@ func (p *Parser) parseWithTokenSource(source []byte, ts TokenSource, reparseFact
 	return tree, nil
 }
 
-func (p *Parser) parseIncrementalWithTokenSource(source []byte, oldTree *Tree, ts TokenSource, reparseFactory normalizationTokenSourceFactory) (*Tree, error) {
+func (p *Parser) parseIncrementalWithTokenSource(source []byte, oldTree *Tree, ts TokenSource, reparseFactory TokenSourceFactory) (*Tree, error) {
 	if err := p.checkLanguageCompatible(); err != nil {
 		return nil, err
 	}
@@ -395,10 +388,10 @@ type parserStateTokenSource interface {
 }
 
 // stackEntry is a single parser LR-stack entry. The hot path stores real
-// public tree nodes directly; no-tree benchmark reductions can tag the same
-// 16-byte slot as a compact noTreeNode payload.
+// public tree nodes directly; compact parse modes can tag the same 16-byte slot
+// as a noTreeNode, compact leaf, or pending-parent payload.
 type stackEntry struct {
-	node  *Node
+	node  unsafe.Pointer
 	state StateID
 	kind  uint32
 }

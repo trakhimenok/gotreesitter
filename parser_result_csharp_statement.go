@@ -256,19 +256,19 @@ func csharpRecoverRefLocalDeclarationStatementFromRange(source []byte, start, en
 	if !ok {
 		return nil, false
 	}
-	implicitTypeNamed := int(implicitTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[implicitTypeSym].Named
-	refTypeNamed := int(refTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[refTypeSym].Named
-	declaratorNamed := int(declaratorSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[declaratorSym].Named
-	varDeclNamed := int(varDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[varDeclSym].Named
-	localDeclNamed := int(localDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[localDeclSym].Named
+	implicitTypeNamed := symbolIsNamed(lang, implicitTypeSym)
+	refTypeNamed := symbolIsNamed(lang, refTypeSym)
+	declaratorNamed := symbolIsNamed(lang, declaratorSym)
+	varDeclNamed := symbolIsNamed(lang, varDeclSym)
+	localDeclNamed := symbolIsNamed(lang, localDeclSym)
 	implicitType := newParentNodeInArena(arena, implicitTypeSym, implicitTypeNamed, []*Node{typeTok}, nil, 0)
 	refType := newParentNodeInArena(arena, refTypeSym, refTypeNamed, []*Node{refTok, implicitType}, nil, 0)
 	nameID, _ := lang.FieldByName("name")
 	typeID, _ := lang.FieldByName("type")
 	valueID, _ := lang.FieldByName("value")
-	declaratorFields := csharpFieldIDsInArena(arena, []FieldID{nameID, 0, valueID})
+	declaratorFields := cloneFieldIDSliceInArena(arena, []FieldID{nameID, 0, valueID})
 	declarator := newParentNodeInArena(arena, declaratorSym, declaratorNamed, []*Node{nameNode, eqTok, value}, declaratorFields, 0)
-	varDeclFields := csharpFieldIDsInArena(arena, []FieldID{typeID, 0})
+	varDeclFields := cloneFieldIDSliceInArena(arena, []FieldID{typeID, 0})
 	varDecl := newParentNodeInArena(arena, varDeclSym, varDeclNamed, []*Node{refType, declarator}, varDeclFields, 0)
 	stmt := newParentNodeInArena(arena, localDeclSym, localDeclNamed, []*Node{varDecl, semiTok}, nil, 0)
 	recomputeNodePointsFromBytes(stmt, source)
@@ -336,18 +336,18 @@ func csharpRecoverRefTypeLocalDeclarationStatementFromRange(source []byte, start
 	if !ok {
 		return nil, false
 	}
-	pointerTypeNamed := int(pointerTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[pointerTypeSym].Named
-	refTypeNamed := int(refTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[refTypeSym].Named
-	declaratorNamed := int(declaratorSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[declaratorSym].Named
-	varDeclNamed := int(varDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[varDeclSym].Named
-	localDeclNamed := int(localDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[localDeclSym].Named
+	pointerTypeNamed := symbolIsNamed(lang, pointerTypeSym)
+	refTypeNamed := symbolIsNamed(lang, refTypeSym)
+	declaratorNamed := symbolIsNamed(lang, declaratorSym)
+	varDeclNamed := symbolIsNamed(lang, varDeclSym)
+	localDeclNamed := symbolIsNamed(lang, localDeclSym)
 	pointerType := newParentNodeInArena(arena, pointerTypeSym, pointerTypeNamed, []*Node{typeNode, starTok}, nil, 0)
 	refType := newParentNodeInArena(arena, refTypeSym, refTypeNamed, []*Node{refTok, pointerType}, nil, 0)
 	nameID, _ := lang.FieldByName("name")
 	typeID, _ := lang.FieldByName("type")
-	declaratorFields := csharpFieldIDsInArena(arena, []FieldID{nameID})
+	declaratorFields := cloneFieldIDSliceInArena(arena, []FieldID{nameID})
 	declarator := newParentNodeInArena(arena, declaratorSym, declaratorNamed, []*Node{nameNode}, declaratorFields, 0)
-	varDeclFields := csharpFieldIDsInArena(arena, []FieldID{typeID, 0})
+	varDeclFields := cloneFieldIDSliceInArena(arena, []FieldID{typeID, 0})
 	varDecl := newParentNodeInArena(arena, varDeclSym, varDeclNamed, []*Node{refType, declarator}, varDeclFields, 0)
 	stmt := newParentNodeInArena(arena, localDeclSym, localDeclNamed, []*Node{varDecl, semiTok}, nil, 0)
 	recomputeNodePointsFromBytes(stmt, source)
@@ -423,17 +423,17 @@ func csharpBuildLocalDeclarationStatementNode(source []byte, lang *Language, are
 		return nil, false
 	}
 
-	implicitTypeNamed := int(implicitTypeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[implicitTypeSym].Named
-	declaratorNamed := int(declaratorSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[declaratorSym].Named
-	varDeclNamed := int(varDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[varDeclSym].Named
-	localDeclNamed := int(localDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[localDeclSym].Named
+	implicitTypeNamed := symbolIsNamed(lang, implicitTypeSym)
+	declaratorNamed := symbolIsNamed(lang, declaratorSym)
+	varDeclNamed := symbolIsNamed(lang, varDeclSym)
+	localDeclNamed := symbolIsNamed(lang, localDeclSym)
 	typeNode := newParentNodeInArena(arena, implicitTypeSym, implicitTypeNamed, []*Node{typeTok}, nil, 0)
 	nameID, _ := lang.FieldByName("name")
 	typeID, _ := lang.FieldByName("type")
 	valueID, _ := lang.FieldByName("value")
-	declaratorFields := csharpFieldIDsInArena(arena, []FieldID{nameID, 0, valueID})
+	declaratorFields := cloneFieldIDSliceInArena(arena, []FieldID{nameID, 0, valueID})
 	declarator := newParentNodeInArena(arena, declaratorSym, declaratorNamed, []*Node{nameNode, eqTok, value}, declaratorFields, 0)
-	varDeclFields := csharpFieldIDsInArena(arena, []FieldID{typeID, 0})
+	varDeclFields := cloneFieldIDSliceInArena(arena, []FieldID{typeID, 0})
 	varDecl := newParentNodeInArena(arena, varDeclSym, varDeclNamed, []*Node{typeNode, declarator}, varDeclFields, 0)
 	return newParentNodeInArena(arena, localDeclSym, localDeclNamed, []*Node{varDecl, semiTok}, nil, 0), true
 }
@@ -683,21 +683,13 @@ func normalizeCSharpRecoveredMethodBlocks(root *Node, source []byte, p *Parser) 
 	if root == nil || p == nil || p.language == nil || p.language.Name != "c_sharp" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(p.language) == "block" && csharpBlockNeedsSourceStatementRecovery(n, source, p.language) {
 			if recovered, ok := csharpRecoverMethodBlockFromSource(n, source, p); ok {
 				csharpReplaceNodeContents(n, recovered)
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func csharpBlockNeedsSourceStatementRecovery(block *Node, source []byte, lang *Language) bool {
@@ -834,7 +826,7 @@ func csharpRecoverUsingStatementFromRange(source []byte, start, end uint32, p *P
 	if !ok {
 		return nil, false
 	}
-	named := int(sym) < len(p.language.SymbolMetadata) && p.language.SymbolMetadata[sym].Named
+	named := symbolIsNamed(p.language, sym)
 	usingTok, ok := csharpBuildLeafNodeByName(arena, source, p.language, "using", start, start+5)
 	if !ok {
 		return nil, false
@@ -909,8 +901,8 @@ func csharpBuildUsingVariableDeclarationNode(source []byte, start, end uint32, l
 	typeID, _ := lang.FieldByName("type")
 	fields := make([]FieldID, len(children))
 	fields[0] = typeID
-	fieldIDs := csharpFieldIDsInArena(arena, fields)
-	named := int(varDeclSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[varDeclSym].Named
+	fieldIDs := cloneFieldIDSliceInArena(arena, fields)
+	named := symbolIsNamed(lang, varDeclSym)
 	return newParentNodeInArena(arena, varDeclSym, named, buf, fieldIDs, 0), true
 }
 
@@ -929,8 +921,8 @@ func csharpBuildVariableDeclaratorNode(source []byte, lang *Language, arena *nod
 	}
 	nameID, _ := lang.FieldByName("name")
 	valueID, _ := lang.FieldByName("value")
-	fields := csharpFieldIDsInArena(arena, []FieldID{nameID, 0, valueID})
-	named := int(declaratorSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[declaratorSym].Named
+	fields := cloneFieldIDSliceInArena(arena, []FieldID{nameID, 0, valueID})
+	named := symbolIsNamed(lang, declaratorSym)
 	return newParentNodeInArena(arena, declaratorSym, named, []*Node{nameNode, eqTok, value}, fields, 0), true
 }
 
@@ -954,8 +946,8 @@ func csharpRecoverOpaqueMethodStatementFromRange(source []byte, start, end uint3
 	if !ok {
 		return nil, false
 	}
-	exprNamed := int(exprSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[exprSym].Named
-	stmtNamed := int(stmtSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[stmtSym].Named
+	exprNamed := symbolIsNamed(lang, exprSym)
+	stmtNamed := symbolIsNamed(lang, stmtSym)
 	expr := newLeafNodeInArena(arena, exprSym, exprNamed, start, exprEnd, advancePointByBytes(Point{}, source[:start]), advancePointByBytes(Point{}, source[:exprEnd]))
 	children := []*Node{expr}
 	if semi, ok := csharpBuildLeafNodeByName(arena, source, lang, ";", end-1, end); ok && source[end-1] == ';' {
@@ -989,7 +981,7 @@ func csharpWrapRecoveredStatementAsGlobal(arena *nodeArena, lang *Language, stmt
 	if !ok {
 		return nil, false
 	}
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	children := []*Node{stmt}
 	if arena != nil {
 		buf := arena.allocNodeSlice(len(children))
@@ -1018,8 +1010,8 @@ func csharpBuildSimpleTypePatternNode(source []byte, start, end uint32, lang *La
 		return nil, false
 	}
 	typeID, _ := lang.FieldByName("type")
-	fields := csharpFieldIDsInArena(arena, []FieldID{typeID})
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	fields := cloneFieldIDSliceInArena(arena, []FieldID{typeID})
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, []*Node{typeNode}, fields, 0), true
 }
 
@@ -1047,8 +1039,8 @@ func csharpBuildWhenClauseNode(source []byte, whenPos, colonPos uint32, conditio
 		return nil, false
 	}
 	valueID, _ := lang.FieldByName("value")
-	fields := csharpFieldIDsInArena(arena, []FieldID{0, valueID})
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	fields := cloneFieldIDSliceInArena(arena, []FieldID{0, valueID})
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, []*Node{whenTok, condition}, fields, 0), true
 }
 
@@ -1068,7 +1060,7 @@ func csharpBuildBreakStatementNode(source []byte, start, end uint32, lang *Langu
 	if !ok {
 		return nil, false
 	}
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, []*Node{breakTok, semiTok}, nil, 0), true
 }
 
@@ -1088,7 +1080,7 @@ func csharpBuildSwitchSectionNode(source []byte, casePos, colonPos uint32, lang 
 	if !ok {
 		return nil, false
 	}
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, []*Node{caseTok, pattern, whenClause, colonTok, stmt}, nil, 0), true
 }
 
@@ -1112,7 +1104,7 @@ func csharpBuildSwitchBodyNode(source []byte, openBrace, closeBrace uint32, lang
 	children = append(children, openTok)
 	children = append(children, sections...)
 	children = append(children, closeTok)
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, children, nil, 0), true
 }
 
@@ -1137,8 +1129,8 @@ func csharpBuildSwitchStatementNode(source []byte, switchPos, openParen, closePa
 		return nil, false
 	}
 	expressionID, _ := lang.FieldByName("expression")
-	fields := csharpFieldIDsInArena(arena, []FieldID{0, 0, expressionID, 0, 0})
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	fields := cloneFieldIDSliceInArena(arena, []FieldID{0, 0, expressionID, 0, 0})
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, []*Node{switchTok, openTok, expr, closeTok, body}, fields, 0), true
 }
 
@@ -1210,7 +1202,7 @@ func csharpConvertMethodToLocalFunctionStatement(n *Node, lang *Language) bool {
 		return false
 	}
 	n.symbol = sym
-	n.setNamed(int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named)
+	n.setNamed(symbolIsNamed(lang, sym))
 	n.productionID = 0
 	n.setHasError(false)
 	populateParentNode(n, n.children)

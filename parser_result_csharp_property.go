@@ -8,19 +8,11 @@ func normalizeCSharpMissingAttributedProperties(root *Node, source []byte, lang 
 	if root == nil || lang == nil || lang.Name != "c_sharp" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "declaration_list" {
 			csharpInsertMissingAttributedProperties(n, source, lang)
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func csharpInsertMissingAttributedProperties(declList *Node, source []byte, lang *Language) bool {
@@ -98,11 +90,8 @@ func csharpInsertMissingAttributedProperties(declList *Node, source []byte, lang
 	}
 	children := declList.ownerArena.allocNodeSlice(len(rebuilt))
 	copy(children, rebuilt)
-	declList.children = children
-	declList.fieldIDs = nil
-	declList.fieldSources = nil
+	replaceNodeChildrenUnfielded(declList, children)
 	declList.setHasError(false)
-	populateParentNode(declList, declList.children)
 	return true
 }
 
@@ -182,7 +171,7 @@ func csharpRecoverAttributedAutoPropertyFromRange(source []byte, start, end uint
 	if !ok {
 		return nil, false
 	}
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	children := make([]*Node, 0, len(attributeLists)+4)
 	children = append(children, attributeLists...)
 	children = append(children, modifier, typeNode, nameNode, accessors)
@@ -252,7 +241,7 @@ func csharpRecoverAttributedMethodDeclarationFromRange(source []byte, start, end
 	if !ok {
 		return nil, false
 	}
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	children := make([]*Node, 0, len(attributeLists)+5)
 	children = append(children, attributeLists...)
 	children = append(children, modifier, returnType, nameNode, params, block)
@@ -299,7 +288,7 @@ func csharpBuildAccessorListNode(source []byte, start, end uint32, lang *Languag
 	children = append(children, closeTok)
 	buf := arena.allocNodeSlice(len(children))
 	copy(buf, children)
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, buf, nil, 0), true
 }
 
@@ -308,7 +297,7 @@ func csharpBuildAccessorDeclarationNode(source []byte, start, end uint32, lang *
 	if !ok {
 		return nil, false
 	}
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	return newLeafNodeInArena(arena, sym, named, start, end, advancePointByBytes(Point{}, source[:start]), advancePointByBytes(Point{}, source[:end])), true
 }
 
@@ -340,7 +329,7 @@ func csharpBuildMethodParameterListNode(source []byte, start, end uint32, lang *
 	children = append(children, closeTok)
 	buf := arena.allocNodeSlice(len(children))
 	copy(buf, children)
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, buf, nil, 0), true
 }
 
@@ -374,7 +363,7 @@ func csharpBuildMethodParameterNode(source []byte, start, end uint32, lang *Lang
 	children = append(children, typeNode, nameNode)
 	buf := arena.allocNodeSlice(len(children))
 	copy(buf, children)
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, buf, nil, 0), true
 }
 
@@ -397,6 +386,6 @@ func csharpBuildEmptyBlockNode(source []byte, start, end uint32, lang *Language,
 	children := arena.allocNodeSlice(2)
 	children[0] = openTok
 	children[1] = closeTok
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	return newParentNodeInArena(arena, sym, named, children, nil, 0), true
 }

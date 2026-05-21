@@ -4,14 +4,7 @@ func normalizeCSharpQuotedStringContentIdentifiers(root *Node, source []byte, la
 	if root == nil || lang == nil || lang.Name != "c_sharp" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
-		for i := 0; i < resultChildCount(n); i++ {
-			walk(resultChildAt(n, i))
-		}
+	walkResultTreePostorder(root, func(n *Node) {
 		if n.Type(lang) != "identifier" || resultChildCount(n) != 0 || n.startByte == 0 || int(n.endByte) >= len(source) {
 			return
 		}
@@ -23,6 +16,5 @@ func normalizeCSharpQuotedStringContentIdentifiers(root *Node, source []byte, la
 			return
 		}
 		csharpReplaceNodeContents(n, replacement)
-	}
-	walk(root)
+	})
 }

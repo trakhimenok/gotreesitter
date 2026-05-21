@@ -4,6 +4,7 @@ package cgoharness
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -132,6 +133,9 @@ func collectCHighlightCaptures(t *testing.T, cLang *sitter.Language, cTree *sitt
 		if m == nil {
 			break
 		}
+		if !cQueryMatchSatisfiesGeneralPredicates(m, cQuery, source) {
+			continue
+		}
 		for _, c := range m.Captures {
 			name := ""
 			if int(c.Index) < len(captureNames) {
@@ -148,6 +152,258 @@ func collectCHighlightCaptures(t *testing.T, cLang *sitter.Language, cTree *sitt
 		}
 	}
 	return deduplicateCaptures(caps)
+}
+
+func cQueryMatchSatisfiesGeneralPredicates(m *sitter.QueryMatch, query *sitter.Query, source []byte) bool {
+	if m == nil || query == nil {
+		return true
+	}
+	for _, pred := range query.GeneralPredicates(m.PatternIndex) {
+		switch pred.Operator {
+		case "lua-match?":
+			if len(pred.Args) != 2 || pred.Args[0].CaptureId == nil || pred.Args[1].String == nil {
+				return false
+			}
+			text, ok := cFirstCaptureTextForID(m, *pred.Args[0].CaptureId, source)
+			if !ok {
+				return false
+			}
+			rx, err := compileHighlightLuaPattern(*pred.Args[1].String)
+			if err != nil || !rx.MatchString(text) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func cFirstCaptureTextForID(m *sitter.QueryMatch, captureID uint, source []byte) (string, bool) {
+	for _, c := range m.Captures {
+		if uint(c.Index) != captureID {
+			continue
+		}
+		start := uint32(c.Node.StartByte())
+		end := uint32(c.Node.EndByte())
+		if start > end || end > uint32(len(source)) {
+			return "", false
+		}
+		return string(source[start:end]), true
+	}
+	return "", false
+}
+
+func compileHighlightLuaPattern(pattern string) (*regexp.Regexp, error) {
+	var out strings.Builder
+	inClass := false
+	classContentStart := false
+
+	writeLuaClass := func(ch byte, inClass bool, classContentStart bool) bool {
+		inClassText := ""
+		outsideText := ""
+		if inClass {
+			switch ch {
+			case 'a':
+				inClassText = "A-Za-z"
+			case 'A':
+				inClassText = "^A-Za-z"
+			case 'c':
+				inClassText = "[:cntrl:]"
+			case 'C':
+				inClassText = "^[:cntrl:]"
+			case 'd':
+				inClassText = "0-9"
+			case 'D':
+				inClassText = "^0-9"
+			case 'l':
+				inClassText = "a-z"
+			case 'L':
+				inClassText = "^a-z"
+			case 'p':
+				inClassText = "[:punct:]"
+			case 'P':
+				inClassText = "^[:punct:]"
+			case 's':
+				inClassText = "\\s"
+			case 'S':
+				inClassText = "^\\s"
+			case 'u':
+				inClassText = "A-Z"
+			case 'U':
+				inClassText = "^A-Z"
+			case 'w':
+				inClassText = "A-Za-z0-9"
+			case 'W':
+				inClassText = "^A-Za-z0-9"
+			case 'x':
+				inClassText = "A-Fa-f0-9"
+			case 'X':
+				inClassText = "^A-Fa-f0-9"
+			case 'z':
+				inClassText = "\\x00"
+			case 'Z':
+				inClassText = "^\\x00"
+			default:
+				return false
+			}
+			if strings.HasPrefix(inClassText, "^") && !classContentStart {
+				return false
+			}
+			out.WriteString(inClassText)
+			return true
+		}
+
+		switch ch {
+		case 'a':
+			outsideText = "[A-Za-z]"
+		case 'A':
+			outsideText = "[^A-Za-z]"
+		case 'c':
+			outsideText = "[[:cntrl:]]"
+		case 'C':
+			outsideText = "[^[:cntrl:]]"
+		case 'd':
+			outsideText = "[0-9]"
+		case 'D':
+			outsideText = "[^0-9]"
+		case 'l':
+			outsideText = "[a-z]"
+		case 'L':
+			outsideText = "[^a-z]"
+		case 'p':
+			outsideText = "[[:punct:]]"
+		case 'P':
+			outsideText = "[^[:punct:]]"
+		case 's':
+			outsideText = "\\s"
+		case 'S':
+			outsideText = "\\S"
+		case 'u':
+			outsideText = "[A-Z]"
+		case 'U':
+			outsideText = "[^A-Z]"
+		case 'w':
+			outsideText = "[A-Za-z0-9]"
+		case 'W':
+			outsideText = "[^A-Za-z0-9]"
+		case 'x':
+			outsideText = "[A-Fa-f0-9]"
+		case 'X':
+			outsideText = "[^A-Fa-f0-9]"
+		case 'z':
+			outsideText = "\\x00"
+		case 'Z':
+			outsideText = "[^\\x00]"
+		default:
+			return false
+		}
+		out.WriteString(outsideText)
+		return true
+	}
+
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		switch ch {
+		case '[':
+			inClass = true
+			classContentStart = true
+			out.WriteByte(ch)
+		case ']':
+			inClass = false
+			classContentStart = false
+			out.WriteByte(ch)
+		case '%':
+			if i+1 >= len(pattern) {
+				out.WriteString("%")
+				continue
+			}
+			i++
+			next := pattern[i]
+			if writeLuaClass(next, inClass, classContentStart) {
+				if inClass {
+					classContentStart = false
+				}
+				continue
+			}
+			out.WriteString(regexp.QuoteMeta(string(next)))
+			if inClass {
+				classContentStart = false
+			}
+		case '-':
+			if inClass {
+				out.WriteByte(ch)
+				classContentStart = false
+				continue
+			}
+			out.WriteString("*?")
+		default:
+			out.WriteByte(ch)
+			if inClass {
+				classContentStart = false
+			}
+		}
+	}
+
+	return regexp.Compile(out.String())
+}
+
+func TestCompileHighlightLuaPatternUppercaseClassesAndNonGreedy(t *testing.T) {
+	tests := []struct {
+		name      string
+		pattern   string
+		matches   []string
+		nonMatch  []string
+		findInput string
+		findWant  string
+	}{
+		{
+			name:     "non-digit",
+			pattern:  `^%D+$`,
+			matches:  []string{"abc", "_-"},
+			nonMatch: []string{"123", "abc1"},
+		},
+		{
+			name:     "non-space",
+			pattern:  `^%S+$`,
+			matches:  []string{"abc"},
+			nonMatch: []string{"a b", "\t"},
+		},
+		{
+			name:     "non-word",
+			pattern:  `^%W+$`,
+			matches:  []string{"-!", "_"},
+			nonMatch: []string{"abc", "A1"},
+		},
+		{
+			name:      "non-greedy",
+			pattern:   `a.-b`,
+			findInput: "a123b456b",
+			findWant:  "a123b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rx, err := compileHighlightLuaPattern(tt.pattern)
+			if err != nil {
+				t.Fatalf("compileHighlightLuaPattern(%q): %v", tt.pattern, err)
+			}
+			for _, input := range tt.matches {
+				if !rx.MatchString(input) {
+					t.Fatalf("compileHighlightLuaPattern(%q).MatchString(%q) = false, want true", tt.pattern, input)
+				}
+			}
+			for _, input := range tt.nonMatch {
+				if rx.MatchString(input) {
+					t.Fatalf("compileHighlightLuaPattern(%q).MatchString(%q) = true, want false", tt.pattern, input)
+				}
+			}
+			if tt.findInput != "" {
+				if got := rx.FindString(tt.findInput); got != tt.findWant {
+					t.Fatalf("compileHighlightLuaPattern(%q).FindString(%q) = %q, want %q", tt.pattern, tt.findInput, got, tt.findWant)
+				}
+			}
+		})
+	}
 }
 
 // deduplicateCaptures sorts captures by (start, end, name) and removes exact duplicates.

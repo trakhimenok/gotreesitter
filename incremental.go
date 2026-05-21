@@ -261,41 +261,6 @@ func (c *reuseCursor) reusableIndexedEntry(entry stackEntry) bool {
 	return true
 }
 
-func (c *reuseCursor) reusableIndexedNode(cur *Node) bool {
-	if cur == nil {
-		return false
-	}
-	// Top-level candidates are children of root which is always dirty when
-	// edits are present. Only reuse them when their byte content is identical
-	// in old and new source — shifted positions may differ.
-	if c.hasEdits && !nodeBytesEqual(cur.startByte, cur.endByte, c.oldSource, c.newSource) {
-		c.rejectDirty++
-		return false
-	}
-	dirtyHere := cur.dirty()
-	if dirtyHere && nodeBytesEqual(cur.startByte, cur.endByte, c.oldSource, c.newSource) {
-		cur.setDirty(false)
-		dirtyHere = false
-	}
-	if cur.hasError() {
-		c.rejectHasError++
-		return false
-	}
-	if cur.endByte <= cur.startByte {
-		c.rejectInvalidSpan++
-		return false
-	}
-	if cur.endByte > c.sourceLen {
-		c.rejectOutOfBounds++
-		return false
-	}
-	if dirtyHere {
-		c.rejectDirty++
-		return false
-	}
-	return true
-}
-
 func (c *reuseCursor) peek() *Node {
 	if c.next != nil {
 		return c.next

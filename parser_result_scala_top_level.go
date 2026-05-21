@@ -132,7 +132,7 @@ func scalaTemplateBodyFragmentChildren(nodes []*Node, arena *nodeArena, lang *La
 		if !ok {
 			return nil, false
 		}
-		closeNamed := int(closeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[closeSym].Named
+		closeNamed := symbolIsNamed(lang, closeSym)
 		start := closeByte - 1
 		if int(closeByte) > len(source) || start >= closeByte {
 			return nil, false
@@ -189,6 +189,63 @@ func scalaRecoverTopLevelClassNodeFromRange(source []byte, classStart, classEnd 
 	if offsetRoot == nil {
 		return nil, false
 	}
+	if recovered, ok := scalaCloneCompleteClassDefinition(offsetRoot, source, classEnd, lang, arena); ok {
+		return recovered, true
+	}
+	symbols, ok := scalaClassRecoverySymbolsFor(lang)
+	if !ok {
+		return nil, false
+	}
+	indexes := scalaFindClassRecoveryIndexes(offsetRoot, lang)
+	if recovered, ok := scalaBuildClassFromHeaderFragment(offsetRoot, indexes, symbols, source, classEnd, lang, arena); ok {
+		return recovered, true
+	}
+	return scalaBuildClassFromTokenFragments(offsetRoot, indexes, symbols, source, classEnd, lang, arena)
+}
+
+type scalaClassRecoverySymbols struct {
+	classSym          Symbol
+	classNamed        bool
+	templateBodySym   Symbol
+	templateBodyNamed bool
+}
+
+type scalaClassRecoveryIndexes struct {
+	headerIdx      int
+	classIdx       int
+	constructorIdx int
+	openIdx        int
+	extendsIdx     int
+}
+
+func scalaClassRecoverySymbolsFor(lang *Language) (scalaClassRecoverySymbols, bool) {
+	classSym, ok := symbolByName(lang, "class_definition")
+	if !ok {
+		return scalaClassRecoverySymbols{}, false
+	}
+	templateBodySym, ok := symbolByName(lang, "template_body")
+	if !ok {
+		return scalaClassRecoverySymbols{}, false
+	}
+	return scalaClassRecoverySymbols{
+		classSym:          classSym,
+		classNamed:        symbolIsNamed(lang, classSym),
+		templateBodySym:   templateBodySym,
+		templateBodyNamed: symbolIsNamed(lang, templateBodySym),
+	}, true
+}
+
+func scalaNewClassRecoveryIndexes() scalaClassRecoveryIndexes {
+	return scalaClassRecoveryIndexes{
+		headerIdx:      -1,
+		classIdx:       -1,
+		constructorIdx: -1,
+		openIdx:        -1,
+		extendsIdx:     -1,
+	}
+}
+
+func scalaCloneCompleteClassDefinition(offsetRoot *Node, source []byte, classEnd uint32, lang *Language, arena *nodeArena) (*Node, bool) {
 	for i := 0; i < offsetRoot.ChildCount(); i++ {
 		child := offsetRoot.Child(i)
 		if child == nil || child.Type(lang) != "class_definition" || child.HasError() {
@@ -202,21 +259,11 @@ func scalaRecoverTopLevelClassNodeFromRange(source []byte, classStart, classEnd 
 			return recovered, true
 		}
 	}
-	classSym, ok := symbolByName(lang, "class_definition")
-	if !ok {
-		return nil, false
-	}
-	classNamed := int(classSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[classSym].Named
-	templateBodySym, ok := symbolByName(lang, "template_body")
-	if !ok {
-		return nil, false
-	}
-	templateBodyNamed := int(templateBodySym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[templateBodySym].Named
-	headerIdx := -1
-	classIdx := -1
-	constructorIdx := -1
-	openIdx := -1
-	extendsIdx := -1
+	return nil, false
+}
+
+func scalaFindClassRecoveryIndexes(offsetRoot *Node, lang *Language) scalaClassRecoveryIndexes {
+	indexes := scalaNewClassRecoveryIndexes()
 	for i := 0; i < offsetRoot.ChildCount(); i++ {
 		child := offsetRoot.Child(i)
 		if child == nil {
@@ -224,66 +271,69 @@ func scalaRecoverTopLevelClassNodeFromRange(source []byte, classStart, classEnd 
 		}
 		switch child.Type(lang) {
 		case "class_definition":
-			if headerIdx < 0 {
-				headerIdx = i
+			if indexes.headerIdx < 0 {
+				indexes.headerIdx = i
 			}
 		case "class":
-			classIdx = i
+			indexes.classIdx = i
 		case "_class_constructor":
-			if classIdx >= 0 && constructorIdx < 0 {
-				constructorIdx = i
+			if indexes.classIdx >= 0 && indexes.constructorIdx < 0 {
+				indexes.constructorIdx = i
 			}
 		case "extends_clause":
-			if constructorIdx >= 0 && extendsIdx < 0 {
-				extendsIdx = i
+			if indexes.constructorIdx >= 0 && indexes.extendsIdx < 0 {
+				indexes.extendsIdx = i
 			}
 		case "{":
-			if constructorIdx >= 0 || headerIdx >= 0 {
-				openIdx = i
-				i = offsetRoot.ChildCount()
+			if indexes.constructorIdx >= 0 || indexes.headerIdx >= 0 {
+				indexes.openIdx = i
 			}
 		}
-		if openIdx < 0 && headerIdx >= 0 {
+		if indexes.openIdx < 0 && indexes.headerIdx >= 0 {
 			if brace := scalaErrorTokenNode(child, "{", lang); brace != nil {
-				openIdx = i
-				i = offsetRoot.ChildCount()
+				indexes.openIdx = i
 			}
 		}
+		if indexes.openIdx >= 0 {
+			break
+		}
 	}
-	if headerIdx >= 0 && openIdx >= 0 {
-		header := offsetRoot.Child(headerIdx)
-		closeIdx := scalaFindTemplateBodyCloseByByte(offsetRoot.children, openIdx+1, classEnd)
-		if closeIdx < openIdx {
-			closeIdx = len(offsetRoot.children) - 1
-		}
-		bodyChildren, ok := scalaTemplateBodyFragmentChildren(offsetRoot.children[openIdx:closeIdx+1], arena, lang, source, classEnd, true)
-		if !ok {
-			return nil, false
-		}
-		templateBody := newParentNodeInArena(arena, templateBodySym, templateBodyNamed, bodyChildren, nil, 0)
-		children := make([]*Node, 0, len(header.children)+1)
-		for _, child := range header.children {
-			if child == nil {
-				continue
-			}
-			children = append(children, cloneTreeNodesIntoArena(child, arena))
-		}
-		children = append(children, templateBody)
-		if arena != nil {
-			buf := arena.allocNodeSlice(len(children))
-			copy(buf, children)
-			children = buf
-		}
-		recovered := newParentNodeInArena(arena, classSym, classNamed, children, nil, header.productionID)
-		if recovered.endByte < classEnd && bytesAreTrivia(source[recovered.endByte:classEnd]) {
-			extendNodeEndTo(recovered, classEnd, source)
-		}
-		return recovered, true
-	}
-	if classIdx < 0 || constructorIdx < 0 || openIdx < 0 {
+	return indexes
+}
+
+func scalaBuildClassFromHeaderFragment(offsetRoot *Node, indexes scalaClassRecoveryIndexes, symbols scalaClassRecoverySymbols, source []byte, classEnd uint32, lang *Language, arena *nodeArena) (*Node, bool) {
+	if indexes.headerIdx < 0 || indexes.openIdx < 0 {
 		return nil, false
 	}
-	constructor := offsetRoot.Child(constructorIdx)
+	header := offsetRoot.Child(indexes.headerIdx)
+	if header == nil {
+		return nil, false
+	}
+	closeIdx := scalaTemplateBodyCloseIndex(offsetRoot.children, indexes.openIdx, classEnd)
+	bodyChildren, ok := scalaTemplateBodyFragmentChildren(offsetRoot.children[indexes.openIdx:closeIdx+1], arena, lang, source, classEnd, true)
+	if !ok {
+		return nil, false
+	}
+	templateBody := newParentNodeInArena(arena, symbols.templateBodySym, symbols.templateBodyNamed, bodyChildren, nil, 0)
+	children := make([]*Node, 0, len(header.children)+1)
+	for _, child := range header.children {
+		if child == nil {
+			continue
+		}
+		children = append(children, cloneTreeNodesIntoArena(child, arena))
+	}
+	children = append(children, templateBody)
+	children = scalaNodesInArena(children, arena)
+	recovered := newParentNodeInArena(arena, symbols.classSym, symbols.classNamed, children, nil, header.productionID)
+	extendScalaRecoveredNodeEnd(recovered, classEnd, source)
+	return recovered, true
+}
+
+func scalaBuildClassFromTokenFragments(offsetRoot *Node, indexes scalaClassRecoveryIndexes, symbols scalaClassRecoverySymbols, source []byte, classEnd uint32, lang *Language, arena *nodeArena) (*Node, bool) {
+	if indexes.classIdx < 0 || indexes.constructorIdx < 0 || indexes.openIdx < 0 {
+		return nil, false
+	}
+	constructor := offsetRoot.Child(indexes.constructorIdx)
 	if constructor == nil || constructor.ChildCount() < 2 {
 		return nil, false
 	}
@@ -293,48 +343,67 @@ func scalaRecoverTopLevelClassNodeFromRange(source []byte, classStart, classEnd 
 		return nil, false
 	}
 	closeByte := classEnd
-	closeIdx := scalaFindTemplateBodyCloseByByte(offsetRoot.children, openIdx+1, closeByte)
-	if closeIdx < openIdx {
-		closeIdx = len(offsetRoot.children) - 1
-	}
-	synthClose := true
-	if closeIdx >= 0 && closeIdx < len(offsetRoot.children) {
-		if closeNode := scalaErrorTokenNode(offsetRoot.children[closeIdx], "}", lang); closeNode != nil && closeNode.endByte == closeByte {
-			synthClose = false
-		} else if offsetRoot.children[closeIdx] != nil && offsetRoot.children[closeIdx].Type(lang) == "}" && offsetRoot.children[closeIdx].endByte == closeByte {
-			synthClose = false
-		}
-	}
-	bodyChildren, ok := scalaTemplateBodyFragmentChildren(offsetRoot.children[openIdx:closeIdx+1], arena, lang, source, closeByte, synthClose)
+	closeIdx, synthClose := scalaTemplateBodyCloseIndexAndSynth(offsetRoot.children, indexes.openIdx, closeByte, lang)
+	bodyChildren, ok := scalaTemplateBodyFragmentChildren(offsetRoot.children[indexes.openIdx:closeIdx+1], arena, lang, source, closeByte, synthClose)
 	if !ok {
 		return nil, false
 	}
-	templateBody := newParentNodeInArena(arena, templateBodySym, templateBodyNamed, bodyChildren, nil, 0)
+	templateBody := newParentNodeInArena(arena, symbols.templateBodySym, symbols.templateBodyNamed, bodyChildren, nil, 0)
 	children := make([]*Node, 0, 6)
-	if classIdx > 0 {
-		if modifiers := offsetRoot.Child(classIdx - 1); modifiers != nil && modifiers.Type(lang) == "modifiers" {
+	if indexes.classIdx > 0 {
+		if modifiers := offsetRoot.Child(indexes.classIdx - 1); modifiers != nil && modifiers.Type(lang) == "modifiers" {
 			children = append(children, cloneTreeNodesIntoArena(modifiers, arena))
 		}
 	}
-	children = append(children, cloneTreeNodesIntoArena(offsetRoot.Child(classIdx), arena))
+	children = append(children, cloneTreeNodesIntoArena(offsetRoot.Child(indexes.classIdx), arena))
 	children = append(children, cloneTreeNodesIntoArena(nameNode, arena))
 	children = append(children, cloneTreeNodesIntoArena(paramsNode, arena))
-	if extendsIdx >= 0 {
-		if extendsClause := offsetRoot.Child(extendsIdx); extendsClause != nil && extendsClause.Type(lang) == "extends_clause" {
+	if indexes.extendsIdx >= 0 {
+		if extendsClause := offsetRoot.Child(indexes.extendsIdx); extendsClause != nil && extendsClause.Type(lang) == "extends_clause" {
 			children = append(children, cloneTreeNodesIntoArena(extendsClause, arena))
 		}
 	}
 	children = append(children, templateBody)
+	children = scalaNodesInArena(children, arena)
+	recovered := newParentNodeInArena(arena, symbols.classSym, symbols.classNamed, children, nil, 0)
+	extendScalaRecoveredNodeEnd(recovered, classEnd, source)
+	return recovered, true
+}
+
+func scalaTemplateBodyCloseIndex(nodes []*Node, openIdx int, closeByte uint32) int {
+	closeIdx := scalaFindTemplateBodyCloseByByte(nodes, openIdx+1, closeByte)
+	if closeIdx < openIdx {
+		return len(nodes) - 1
+	}
+	return closeIdx
+}
+
+func scalaTemplateBodyCloseIndexAndSynth(nodes []*Node, openIdx int, closeByte uint32, lang *Language) (int, bool) {
+	closeIdx := scalaTemplateBodyCloseIndex(nodes, openIdx, closeByte)
+	synthClose := true
+	if closeIdx >= 0 && closeIdx < len(nodes) {
+		if closeNode := scalaErrorTokenNode(nodes[closeIdx], "}", lang); closeNode != nil && closeNode.endByte == closeByte {
+			synthClose = false
+		} else if nodes[closeIdx] != nil && nodes[closeIdx].Type(lang) == "}" && nodes[closeIdx].endByte == closeByte {
+			synthClose = false
+		}
+	}
+	return closeIdx, synthClose
+}
+
+func scalaNodesInArena(children []*Node, arena *nodeArena) []*Node {
 	if arena != nil {
 		buf := arena.allocNodeSlice(len(children))
 		copy(buf, children)
-		children = buf
+		return buf
 	}
-	recovered := newParentNodeInArena(arena, classSym, classNamed, children, nil, 0)
-	if recovered.endByte < classEnd && bytesAreTrivia(source[recovered.endByte:classEnd]) {
+	return children
+}
+
+func extendScalaRecoveredNodeEnd(recovered *Node, classEnd uint32, source []byte) {
+	if recovered != nil && recovered.endByte < classEnd && bytesAreTrivia(source[recovered.endByte:classEnd]) {
 		extendNodeEndTo(recovered, classEnd, source)
 	}
-	return recovered, true
 }
 
 func scalaRecoverTopLevelObjectNodeFromRange(source []byte, objectStart, objectEnd uint32, lang *Language, arena *nodeArena) (*Node, bool) {
@@ -368,12 +437,12 @@ func scalaRecoverTopLevelObjectNodeFromRange(source []byte, objectStart, objectE
 	if !ok {
 		return nil, false
 	}
-	objectNamed := int(objectSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[objectSym].Named
+	objectNamed := symbolIsNamed(lang, objectSym)
 	templateBodySym, ok := symbolByName(lang, "template_body")
 	if !ok {
 		return nil, false
 	}
-	templateBodyNamed := int(templateBodySym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[templateBodySym].Named
+	templateBodyNamed := symbolIsNamed(lang, templateBodySym)
 	objectIdx := -1
 	identifierIdx := -1
 	openIdx := -1

@@ -14,21 +14,6 @@ func powerShellReuseExactNode(nodes []*Node, lang *Language, typ string, start, 
 	return nil
 }
 
-func powerShellSymbolMeta(lang *Language, name string) (Symbol, bool, bool) {
-	if lang == nil {
-		return 0, false, false
-	}
-	sym, ok := symbolByName(lang, name)
-	if !ok {
-		return 0, false, false
-	}
-	named := false
-	if int(sym) < len(lang.SymbolMetadata) {
-		named = lang.SymbolMetadata[sym].Named
-	}
-	return sym, named, true
-}
-
 func powerShellKeywordAt(source []byte, pos int, kw string) bool {
 	if pos < 0 || pos+len(kw) > len(source) || !bytes.HasPrefix(source[pos:], []byte(kw)) {
 		return false
@@ -166,7 +151,7 @@ func powerShellLooksLikeCommandText(source []byte, start, end int) bool {
 	if !((source[start] >= 'a' && source[start] <= 'z') || (source[start] >= 'A' && source[start] <= 'Z') || source[start] == '_') {
 		return false
 	}
-	return bytes.IndexAny(source[start:end], " \t") >= 0
+	return bytes.ContainsAny(source[start:end], " \t")
 }
 
 func findMatchingDelimitedByte(source []byte, openPos, limit int, open, close byte) int {
@@ -242,7 +227,7 @@ func buildPowerShellPipelineFromLine(arena *nodeArena, source []byte, lang *Lang
 	}
 	commandNameStartPoint := advancePointByBytes(Point{}, source[:start])
 	commandNameEndPoint := advancePointByBytes(commandNameStartPoint, source[start:commandNameEnd])
-	commandNameNamed := int(commandNameSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[commandNameSym].Named
+	commandNameNamed := symbolIsNamed(lang, commandNameSym)
 	commandName := newLeafNodeInArena(arena, commandNameSym, commandNameNamed, uint32(start), uint32(commandNameEnd), commandNameStartPoint, commandNameEndPoint)
 
 	commandChildren := []*Node{commandName}
@@ -255,7 +240,7 @@ func buildPowerShellPipelineFromLine(arena *nodeArena, source []byte, lang *Lang
 		copy(buf, commandChildren)
 		commandChildren = buf
 	}
-	commandNamed := int(commandSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[commandSym].Named
+	commandNamed := symbolIsNamed(lang, commandSym)
 	command := newParentNodeInArena(arena, commandSym, commandNamed, commandChildren, nil, 0)
 	command.endByte = uint32(end)
 	command.endPoint = advancePointByBytes(command.startPoint, source[start:end])
@@ -280,7 +265,7 @@ func buildPowerShellPipelineFromLine(arena *nodeArena, source []byte, lang *Lang
 		buf[0] = command
 		chainChildren = buf
 	}
-	pipelineChainNamed := int(pipelineChainSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[pipelineChainSym].Named
+	pipelineChainNamed := symbolIsNamed(lang, pipelineChainSym)
 	chain := newParentNodeInArena(arena, pipelineChainSym, pipelineChainNamed, chainChildren, nil, 0)
 	pipelineChildren := []*Node{chain}
 	if arena != nil {
@@ -288,7 +273,7 @@ func buildPowerShellPipelineFromLine(arena *nodeArena, source []byte, lang *Lang
 		buf[0] = chain
 		pipelineChildren = buf
 	}
-	pipelineNamed := int(pipelineSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[pipelineSym].Named
+	pipelineNamed := symbolIsNamed(lang, pipelineSym)
 	return newParentNodeInArena(arena, pipelineSym, pipelineNamed, pipelineChildren, nil, 0)
 }
 
@@ -312,7 +297,7 @@ func buildPowerShellCommandElements(arena *nodeArena, source []byte, lang *Langu
 			buf[0] = spaceLeaf
 			sepChildren = buf
 		}
-		sepNamed := int(commandArgSepSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[commandArgSepSym].Named
+		sepNamed := symbolIsNamed(lang, commandArgSepSym)
 		sep := newParentNodeInArena(arena, commandArgSepSym, sepNamed, sepChildren, nil, 0)
 		children = append(children, sep)
 
@@ -332,7 +317,7 @@ func buildPowerShellCommandElements(arena *nodeArena, source []byte, lang *Langu
 		copy(buf, children)
 		children = buf
 	}
-	elementsNamed := int(commandElementsSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[commandElementsSym].Named
+	elementsNamed := symbolIsNamed(lang, commandElementsSym)
 	return newParentNodeInArena(arena, commandElementsSym, elementsNamed, children, nil, 0)
 }
 
@@ -340,13 +325,13 @@ func buildPowerShellCommandElement(arena *nodeArena, source []byte, lang *Langua
 	startPoint := advancePointByBytes(Point{}, source[:start])
 	endPoint := advancePointByBytes(startPoint, source[start:end])
 	if source[start] == '-' {
-		named := int(commandParameterSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[commandParameterSym].Named
+		named := symbolIsNamed(lang, commandParameterSym)
 		return newLeafNodeInArena(arena, commandParameterSym, named, uint32(start), uint32(end), startPoint, endPoint)
 	}
 	if source[start] == '$' {
 		variable := buildPowerShellVariableMemberAccess(arena, source, lang, start, end)
 		if variable == nil {
-			variableNamed := int(variableSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[variableSym].Named
+			variableNamed := symbolIsNamed(lang, variableSym)
 			variable = newLeafNodeInArena(arena, variableSym, variableNamed, uint32(start), uint32(end), startPoint, endPoint)
 		}
 		unaryChildren := []*Node{variable}
@@ -355,7 +340,7 @@ func buildPowerShellCommandElement(arena *nodeArena, source []byte, lang *Langua
 			buf[0] = variable
 			unaryChildren = buf
 		}
-		unaryNamed := int(unaryExprSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[unaryExprSym].Named
+		unaryNamed := symbolIsNamed(lang, unaryExprSym)
 		unary := newParentNodeInArena(arena, unaryExprSym, unaryNamed, unaryChildren, nil, 0)
 		arrayChildren := []*Node{unary}
 		if arena != nil {
@@ -363,7 +348,7 @@ func buildPowerShellCommandElement(arena *nodeArena, source []byte, lang *Langua
 			buf[0] = unary
 			arrayChildren = buf
 		}
-		arrayNamed := int(arrayLiteralSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[arrayLiteralSym].Named
+		arrayNamed := symbolIsNamed(lang, arrayLiteralSym)
 		return newParentNodeInArena(arena, arrayLiteralSym, arrayNamed, arrayChildren, nil, 0)
 	}
 	if source[start] == '(' && source[end-1] == ')' {
@@ -375,7 +360,7 @@ func buildPowerShellCommandElement(arena *nodeArena, source []byte, lang *Langua
 				buf[0] = parenthesized
 				unaryChildren = buf
 			}
-			unaryNamed := int(unaryExprSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[unaryExprSym].Named
+			unaryNamed := symbolIsNamed(lang, unaryExprSym)
 			unary := newParentNodeInArena(arena, unaryExprSym, unaryNamed, unaryChildren, nil, 0)
 			arrayChildren := []*Node{unary}
 			if arena != nil {
@@ -383,7 +368,7 @@ func buildPowerShellCommandElement(arena *nodeArena, source []byte, lang *Langua
 				buf[0] = unary
 				arrayChildren = buf
 			}
-			arrayNamed := int(arrayLiteralSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[arrayLiteralSym].Named
+			arrayNamed := symbolIsNamed(lang, arrayLiteralSym)
 			return newParentNodeInArena(arena, arrayLiteralSym, arrayNamed, arrayChildren, nil, 0)
 		}
 	}
@@ -398,7 +383,7 @@ func buildPowerShellCommandElement(arena *nodeArena, source []byte, lang *Langua
 			buf[0] = expandable
 			stringChildren = buf
 		}
-		stringNamed := int(stringLiteralSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[stringLiteralSym].Named
+		stringNamed := symbolIsNamed(lang, stringLiteralSym)
 		stringNode := newParentNodeInArena(arena, stringLiteralSym, stringNamed, stringChildren, nil, 0)
 		unaryChildren := []*Node{stringNode}
 		if arena != nil {
@@ -406,7 +391,7 @@ func buildPowerShellCommandElement(arena *nodeArena, source []byte, lang *Langua
 			buf[0] = stringNode
 			unaryChildren = buf
 		}
-		unaryNamed := int(unaryExprSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[unaryExprSym].Named
+		unaryNamed := symbolIsNamed(lang, unaryExprSym)
 		unary := newParentNodeInArena(arena, unaryExprSym, unaryNamed, unaryChildren, nil, 0)
 		arrayChildren := []*Node{unary}
 		if arena != nil {
@@ -414,27 +399,27 @@ func buildPowerShellCommandElement(arena *nodeArena, source []byte, lang *Langua
 			buf[0] = unary
 			arrayChildren = buf
 		}
-		arrayNamed := int(arrayLiteralSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[arrayLiteralSym].Named
+		arrayNamed := symbolIsNamed(lang, arrayLiteralSym)
 		return newParentNodeInArena(arena, arrayLiteralSym, arrayNamed, arrayChildren, nil, 0)
 	}
-	genericNamed := int(genericTokenSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[genericTokenSym].Named
+	genericNamed := symbolIsNamed(lang, genericTokenSym)
 	return newLeafNodeInArena(arena, genericTokenSym, genericNamed, uint32(start), uint32(end), startPoint, endPoint)
 }
 
 func buildPowerShellVariableMemberAccess(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	memberAccessSym, memberAccessNamed, ok := powerShellSymbolMeta(lang, "member_access")
+	memberAccessSym, memberAccessNamed, ok := symbolMeta(lang, "member_access")
 	if !ok {
 		return nil
 	}
-	variableSym, variableNamed, ok := powerShellSymbolMeta(lang, "variable")
+	variableSym, variableNamed, ok := symbolMeta(lang, "variable")
 	if !ok {
 		return nil
 	}
-	backslashSym, backslashNamed, ok := powerShellSymbolMeta(lang, "\\")
+	backslashSym, backslashNamed, ok := symbolMeta(lang, "\\")
 	if !ok {
 		return nil
 	}
-	dotSym, dotNamed, ok := powerShellSymbolMeta(lang, ".")
+	dotSym, dotNamed, ok := symbolMeta(lang, ".")
 	if !ok {
 		return nil
 	}
@@ -488,7 +473,7 @@ func buildPowerShellVariableMemberAccess(arena *nodeArena, source []byte, lang *
 }
 
 func buildPowerShellExpandableStringLiteral(arena *nodeArena, source []byte, lang *Language, start, end int) *Node {
-	expandableSym, _, ok := powerShellSymbolMeta(lang, "expandable_string_literal")
+	expandableSym, _, ok := symbolMeta(lang, "expandable_string_literal")
 	if !ok {
 		return nil
 	}
@@ -499,8 +484,8 @@ func buildPowerShellExpandableStringLiteralFromSymbol(arena *nodeArena, source [
 	if start >= end {
 		return nil
 	}
-	expandableNamed := int(expandableSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[expandableSym].Named
-	variableSym, variableNamed, ok := powerShellSymbolMeta(lang, "variable")
+	expandableNamed := symbolIsNamed(lang, expandableSym)
+	variableSym, variableNamed, ok := symbolMeta(lang, "variable")
 	if !ok {
 		return newLeafNodeInArena(arena, expandableSym, expandableNamed, uint32(start), uint32(end), advancePointByBytes(Point{}, source[:start]), advancePointByBytes(advancePointByBytes(Point{}, source[:start]), source[start:end]))
 	}

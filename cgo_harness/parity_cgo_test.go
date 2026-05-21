@@ -42,7 +42,6 @@ var knownDegradedStructural = map[string]string{
 	"cue":  "named wrapper/runtime alias shape still diverges from C reference",
 	"hare": "fresh parse structural parity still diverges from C reference",
 	"rst":  "fresh parse structural parity still diverges from C reference",
-	"toml": "fresh parse structural parity still diverges from C reference",
 }
 
 type parityCase struct {

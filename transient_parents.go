@@ -121,11 +121,11 @@ func (s *transientParentScratch) materializeEntries(entries []stackEntry, arena 
 			continue
 		}
 		if replacement := s.transientReplacement(node); replacement != nil {
-			entries[i].node = replacement
+			setStackEntryNode(&entries[i], replacement)
 			continue
 		}
 		if replacement, ok := s.seen[node]; ok {
-			entries[i].node = replacement
+			setStackEntryNode(&entries[i], replacement)
 		}
 	}
 	s.clearMaterializeScratch()

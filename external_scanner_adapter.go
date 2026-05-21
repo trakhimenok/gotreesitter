@@ -63,21 +63,31 @@ func (a *externalScannerOrderAdapter) Scan(payload any, lexer *ExternalLexer, va
 		return false
 	}
 
-	adapterPayload, _ := payload.(*externalScannerOrderAdapterPayload)
-	var sourceValid []bool
-	innerPayload := payload
-	if adapterPayload != nil {
-		innerPayload = adapterPayload.inner
-		if cap(adapterPayload.sourceValid) < a.sourceCount {
-			adapterPayload.sourceValid = make([]bool, a.sourceCount)
-		}
-		sourceValid = adapterPayload.sourceValid[:a.sourceCount]
-		for i := range sourceValid {
-			sourceValid[i] = false
-		}
-	} else {
-		sourceValid = make([]bool, a.sourceCount)
+	innerPayload, sourceValid := a.prepareScanPayload(payload)
+	a.mapValidSymbols(validSymbols, sourceValid)
+	ok := a.inner.Scan(innerPayload, lexer, sourceValid)
+	if !ok {
+		return false
 	}
+
+	a.mapResultSymbol(lexer)
+	return true
+}
+
+func (a *externalScannerOrderAdapter) prepareScanPayload(payload any) (any, []bool) {
+	adapterPayload, _ := payload.(*externalScannerOrderAdapterPayload)
+	if adapterPayload == nil {
+		return payload, make([]bool, a.sourceCount)
+	}
+	if cap(adapterPayload.sourceValid) < a.sourceCount {
+		adapterPayload.sourceValid = make([]bool, a.sourceCount)
+	}
+	sourceValid := adapterPayload.sourceValid[:a.sourceCount]
+	clear(sourceValid)
+	return adapterPayload.inner, sourceValid
+}
+
+func (a *externalScannerOrderAdapter) mapValidSymbols(validSymbols []bool, sourceValid []bool) {
 	for targetIdx, isValid := range validSymbols {
 		if !isValid || targetIdx < 0 || targetIdx >= len(a.targetToSource) {
 			continue
@@ -87,19 +97,14 @@ func (a *externalScannerOrderAdapter) Scan(payload any, lexer *ExternalLexer, va
 			sourceValid[sourceIdx] = true
 		}
 	}
+}
 
-	ok := a.inner.Scan(innerPayload, lexer, sourceValid)
-	if !ok {
-		return false
-	}
-
-	// Map scanner result symbol from source language ID to target language ID.
+func (a *externalScannerOrderAdapter) mapResultSymbol(lexer *ExternalLexer) {
 	if lexer != nil && lexer.hasResult {
 		if mapped, exists := a.sourceResultToTarget[lexer.resultSymbol]; exists {
 			lexer.resultSymbol = mapped
 		}
 	}
-	return true
 }
 
 func (a *externalScannerOrderAdapter) innerPayload(payload any) any {
@@ -125,111 +130,156 @@ func (a *externalScannerOrderAdapter) innerPayload(payload any) any {
 //
 // Returns (nil, false) when adaptation is not possible.
 func AdaptExternalScannerByExternalOrder(sourceLang, targetLang *Language) (ExternalScanner, bool) {
-	if sourceLang == nil || targetLang == nil || sourceLang.ExternalScanner == nil {
+	if !canAdaptExternalScanner(sourceLang, targetLang) {
 		return nil, false
 	}
 
 	sourceExt := sourceLang.ExternalSymbols
-	targetExt := targetLang.ExternalSymbols
-	if len(sourceExt) == 0 || len(targetExt) == 0 {
-		return nil, false
-	}
-
 	nSource := len(sourceExt)
-	nTarget := len(targetExt)
-	targetToSource := make([]int, nTarget)
-	usedSource := make([]bool, nSource)
+	mapping := buildExternalScannerOrderMapping(sourceLang, targetLang)
+
+	return &externalScannerOrderAdapter{
+		inner:                sourceLang.ExternalScanner,
+		targetToSource:       mapping.targetToSource,
+		sourceCount:          nSource,
+		sourceResultToTarget: mapping.sourceResultToTarget,
+	}, true
+}
+
+func canAdaptExternalScanner(sourceLang, targetLang *Language) bool {
+	if sourceLang == nil || targetLang == nil || sourceLang.ExternalScanner == nil {
+		return false
+	}
+	return len(sourceLang.ExternalSymbols) > 0 && len(targetLang.ExternalSymbols) > 0
+}
+
+type externalScannerOrderMapping struct {
+	targetToSource       []int
+	sourceResultToTarget map[Symbol]Symbol
+}
+
+func buildExternalScannerOrderMapping(sourceLang, targetLang *Language) externalScannerOrderMapping {
+	sourceExt := sourceLang.ExternalSymbols
+	targetExt := targetLang.ExternalSymbols
+	targetToSource := newExternalTargetMap(len(targetExt))
+	usedSource := make([]bool, len(sourceExt))
+
+	if externalScannerUsesIndexOnlyMapping(sourceLang, targetLang) {
+		mapExternalSymbolsByIndex(targetToSource, usedSource)
+	} else {
+		mapExternalSymbolsByName(sourceLang, targetLang, targetToSource, usedSource)
+		fillExternalSymbolIndexFallback(targetToSource, usedSource)
+	}
+	fillUnmatchedExternalTargets(targetToSource, usedSource)
+
+	return externalScannerOrderMapping{
+		targetToSource:       targetToSource,
+		sourceResultToTarget: buildExternalResultSymbolMap(sourceExt, targetExt, targetToSource),
+	}
+}
+
+func newExternalTargetMap(n int) []int {
+	targetToSource := make([]int, n)
 	for i := range targetToSource {
 		targetToSource[i] = -1
 	}
+	return targetToSource
+}
 
-	// Index-only mapping is only safe when both sides have the same count
-	// AND there are duplicate names that make name matching ambiguous.
-	// When counts differ, name-based matching (which consumes duplicates
-	// in order) is always more correct than positional mapping.
-	useIndexOnly := nSource == nTarget &&
+func externalScannerUsesIndexOnlyMapping(sourceLang, targetLang *Language) bool {
+	sourceExt := sourceLang.ExternalSymbols
+	targetExt := targetLang.ExternalSymbols
+	// Equal-length duplicate-name tables are ambiguous; preserve the old
+	// positional contract instead of trying to infer by name.
+	return len(sourceExt) == len(targetExt) &&
 		(hasDuplicateExternalNames(sourceLang, sourceExt) ||
 			hasDuplicateExternalNames(targetLang, targetExt))
+}
 
-	if useIndexOnly {
-		for i := 0; i < nSource; i++ {
+func mapExternalSymbolsByIndex(targetToSource []int, usedSource []bool) {
+	for i := 0; i < len(targetToSource) && i < len(usedSource); i++ {
+		targetToSource[i] = i
+		usedSource[i] = true
+	}
+}
+
+func mapExternalSymbolsByName(sourceLang, targetLang *Language, targetToSource []int, usedSource []bool) {
+	sourceByName := externalSymbolBuckets(sourceLang)
+	for targetIdx, targetSym := range targetLang.ExternalSymbols {
+		candidates := sourceByName[externalSymbolName(targetLang, targetSym)]
+		assignFirstUnusedExternalSource(targetIdx, candidates, targetToSource, usedSource)
+	}
+}
+
+func externalSymbolBuckets(lang *Language) map[string][]int {
+	sourceByName := make(map[string][]int, len(lang.ExternalSymbols))
+	for i, sym := range lang.ExternalSymbols {
+		name := externalSymbolName(lang, sym)
+		sourceByName[name] = append(sourceByName[name], i)
+	}
+	return sourceByName
+}
+
+func assignFirstUnusedExternalSource(targetIdx int, candidates []int, targetToSource []int, usedSource []bool) {
+	for _, sourceIdx := range candidates {
+		if !usedSource[sourceIdx] {
+			targetToSource[targetIdx] = sourceIdx
+			usedSource[sourceIdx] = true
+			return
+		}
+	}
+}
+
+func fillExternalSymbolIndexFallback(targetToSource []int, usedSource []bool) {
+	for i := 0; i < len(targetToSource) && i < len(usedSource); i++ {
+		if targetToSource[i] == -1 && !usedSource[i] {
 			targetToSource[i] = i
 			usedSource[i] = true
 		}
-	} else {
-		// Build source symbol-name buckets (for exact-name alignment).
-		sourceByName := make(map[string][]int, nSource)
-		for i, sym := range sourceExt {
-			name := externalSymbolName(sourceLang, sym)
-			sourceByName[name] = append(sourceByName[name], i)
-		}
-
-		// Pass 1: name-based matching.
-		for targetIdx, targetSym := range targetExt {
-			candidates := sourceByName[externalSymbolName(targetLang, targetSym)]
-			for _, sourceIdx := range candidates {
-				if !usedSource[sourceIdx] {
-					targetToSource[targetIdx] = sourceIdx
-					usedSource[sourceIdx] = true
-					break
-				}
-			}
-		}
-
-		// Pass 2: index fallback for unmatched target slots whose
-		// corresponding source index is also unmatched.
-		for i := 0; i < nTarget && i < nSource; i++ {
-			if targetToSource[i] != -1 {
-				continue
-			}
-			if !usedSource[i] {
-				targetToSource[i] = i
-				usedSource[i] = true
-			}
-		}
 	}
+}
 
-	// Pass 3: assign remaining unmatched target slots to unused source
-	// indices. Target slots that cannot be paired remain -1.
+func fillUnmatchedExternalTargets(targetToSource []int, usedSource []bool) {
 	nextUnused := 0
-	for i := 0; i < nTarget; i++ {
+	for i := 0; i < len(targetToSource); i++ {
 		if targetToSource[i] != -1 {
 			continue
 		}
-		for nextUnused < nSource && usedSource[nextUnused] {
-			nextUnused++
-		}
-		if nextUnused >= nSource {
-			break // remaining target externals stay -1 (no source match)
+		nextUnused = nextUnusedExternalSource(nextUnused, usedSource)
+		if nextUnused >= len(usedSource) {
+			return
 		}
 		targetToSource[i] = nextUnused
 		usedSource[nextUnused] = true
 		nextUnused++
 	}
+}
 
-	// Build mapping from source scanner result symbols to target symbols.
-	sourceResultToTarget := make(map[Symbol]Symbol, nSource)
-	sourceAssigned := make([]bool, nSource)
+func nextUnusedExternalSource(start int, usedSource []bool) int {
+	for start < len(usedSource) && usedSource[start] {
+		start++
+	}
+	return start
+}
+
+func buildExternalResultSymbolMap(sourceExt, targetExt []Symbol, targetToSource []int) map[Symbol]Symbol {
+	sourceResultToTarget := make(map[Symbol]Symbol, len(sourceExt))
+	sourceAssigned := make([]bool, len(sourceExt))
 	for targetIdx, sourceIdx := range targetToSource {
-		if sourceIdx < 0 || sourceIdx >= nSource {
+		if sourceIdx < 0 || sourceIdx >= len(sourceExt) {
 			continue
 		}
 		sourceAssigned[sourceIdx] = true
 		sourceResultToTarget[sourceExt[sourceIdx]] = targetExt[targetIdx]
 	}
-	for sourceIdx, assigned := range sourceAssigned {
-		if assigned {
-			continue
-		}
-		// Source external with no target match: map to itself (harmless;
-		// the result symbol won't appear in the target parse table).
-		sourceResultToTarget[sourceExt[sourceIdx]] = sourceExt[sourceIdx]
-	}
+	addUnassignedExternalResultSymbols(sourceExt, sourceAssigned, sourceResultToTarget)
+	return sourceResultToTarget
+}
 
-	return &externalScannerOrderAdapter{
-		inner:                sourceLang.ExternalScanner,
-		targetToSource:       targetToSource,
-		sourceCount:          nSource,
-		sourceResultToTarget: sourceResultToTarget,
-	}, true
+func addUnassignedExternalResultSymbols(sourceExt []Symbol, sourceAssigned []bool, sourceResultToTarget map[Symbol]Symbol) {
+	for sourceIdx, assigned := range sourceAssigned {
+		if !assigned {
+			sourceResultToTarget[sourceExt[sourceIdx]] = sourceExt[sourceIdx]
+		}
+	}
 }

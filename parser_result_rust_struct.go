@@ -17,12 +17,8 @@ func normalizeRustRecoveredStructExpressionRoot(root *Node, source []byte, lang 
 	if !ok {
 		return
 	}
-	root.children = cloneNodeSliceInArena(root.ownerArena, stmts)
-	root.fieldIDs = nil
-	root.fieldSources = nil
-	root.symbol = sourceFileSym
-	root.setNamed(rustNamedForSymbol(lang, sourceFileSym))
-	populateParentNode(root, root.children)
+	retagResultRoot(root, sourceFileSym, rustNamedForSymbol(lang, sourceFileSym))
+	replaceNodeChildrenUnfielded(root, cloneNodeSliceInArena(root.ownerArena, stmts))
 	root.setHasError(false)
 	if root.endByte < uint32(len(source)) && bytesAreTrivia(source[root.endByte:]) {
 		extendNodeEndTo(root, uint32(len(source)), source)
@@ -1086,15 +1082,7 @@ func normalizeRustSourceFileRoot(root *Node, source []byte, lang *Language) {
 	if !ok || !rustRootLooksLikeTopLevel(root, lang) {
 		return
 	}
-	root.symbol = sourceFileSym
-	root.setNamed(rustNamedForSymbol(lang, sourceFileSym))
-	root.setHasError(false)
-	for _, child := range root.children {
-		if child != nil && (child.IsError() || child.HasError()) {
-			root.setHasError(true)
-			break
-		}
-	}
+	retagResultRootAndRefreshError(root, sourceFileSym, rustNamedForSymbol(lang, sourceFileSym))
 	if !root.hasError() && root.endByte < uint32(len(source)) && bytesAreTrivia(source[root.endByte:]) {
 		extendNodeEndTo(root, uint32(len(source)), source)
 	}
@@ -1175,7 +1163,7 @@ func rustNamedForSymbol(lang *Language, sym Symbol) bool {
 			return true
 		}
 	}
-	return int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	return symbolIsNamed(lang, sym)
 }
 
 func rustTrimSpaceBounds(source []byte, start, end uint32) (uint32, uint32) {
@@ -1245,8 +1233,5 @@ func rustFragmentSpecifierFollowsColon(meta, colon, frag *Node, source []byte) b
 		return false
 	}
 	betweenMetaAndFrag := strings.TrimSpace(string(source[meta.endByte:frag.startByte]))
-	if !strings.Contains(betweenMetaAndFrag, ":") {
-		return false
-	}
-	return true
+	return strings.Contains(betweenMetaAndFrag, ":")
 }

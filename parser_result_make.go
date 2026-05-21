@@ -8,11 +8,7 @@ func normalizeMakeConditionalConsequenceFields(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		switch n.Type(lang) {
 		case "conditional", "elsif_directive", "else_directive":
 			ensureNodeFieldStorage(n, len(n.children))
@@ -45,9 +41,5 @@ func normalizeMakeConditionalConsequenceFields(root *Node, lang *Language) {
 				}
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }

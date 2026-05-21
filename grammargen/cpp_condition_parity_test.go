@@ -1,11 +1,7 @@
 package grammargen
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/odvcencio/gotreesitter"
 )
@@ -25,45 +21,7 @@ func TestCPPWhileAssignmentConditionParity(t *testing.T) {
 		},
 	}
 
-	var grammarSpec importParityGrammar
-	for _, g := range importParityGrammars {
-		if g.name == "cpp" {
-			grammarSpec = g
-			break
-		}
-	}
-	if grammarSpec.name == "" {
-		t.Fatal("cpp import parity grammar not found")
-	}
-	if grammarSpec.jsonPath != "" {
-		if _, err := os.Stat(grammarSpec.jsonPath); err != nil && strings.HasPrefix(grammarSpec.jsonPath, "/tmp/grammar_parity/") {
-			relSeedPath := filepath.Join(".parity_seed", strings.TrimPrefix(grammarSpec.jsonPath, "/tmp/grammar_parity/"))
-			switch {
-			case fileExists(relSeedPath):
-				grammarSpec.jsonPath = relSeedPath
-			case fileExists(filepath.Join("..", relSeedPath)):
-				grammarSpec.jsonPath = filepath.Join("..", relSeedPath)
-			default:
-				t.Skipf("cpp grammar.json not available: %v", err)
-			}
-		}
-	}
-
-	gram, err := importParityGrammarSource(grammarSpec)
-	if err != nil {
-		t.Fatalf("import cpp grammar: %v", err)
-	}
-
-	timeout := grammarSpec.genTimeout
-	if timeout == 0 {
-		timeout = 300 * time.Second
-	}
-	genLang, err := generateWithTimeout(gram, timeout)
-	if err != nil {
-		t.Fatalf("generate cpp language: %v", err)
-	}
-	refLang := grammarSpec.blobFunc()
-	adaptExternalScanner(refLang, genLang)
+	genLang, refLang := loadImportedParityLanguages(t, "cpp")
 
 	for _, tc := range cases {
 		tc := tc

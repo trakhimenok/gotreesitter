@@ -63,12 +63,8 @@ var top50CorrectnessLanguages = []string{
 	"d",
 }
 
-// top50SmokeKnownErrorNodes tracks languages whose current smoke fixtures
-// still produce parser error nodes. Keep this list small and temporary.
-var top50SmokeKnownErrorNodes = map[string]string{}
-
 func TestTop50ParseSmokeNoErrors(t *testing.T) {
-	testParseSmokeNoErrors(t, top50CorrectnessLanguages, top50SmokeKnownErrorNodes)
+	testParseSmokeNoErrors(t, top50CorrectnessLanguages, nil)
 }
 
 func TestTop50CorrectnessListMatchesLockFile(t *testing.T) {

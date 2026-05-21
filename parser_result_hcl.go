@@ -38,14 +38,7 @@ func normalizeHCLConfigFileRoot(root *Node, lang *Language) {
 				}
 				filtered = append(filtered, child)
 			}
-			if root.ownerArena != nil {
-				buf := root.ownerArena.allocNodeSlice(len(filtered))
-				copy(buf, filtered)
-				filtered = buf
-			}
-			root.children = filtered
-			root.fieldIDs = nil
-			root.fieldSources = nil
+			replaceNodeChildrenUnfielded(root, cloneNodeSliceIfArena(root.ownerArena, filtered))
 		}
 	}
 	for i := 0; i < resultChildCount(root); i++ {

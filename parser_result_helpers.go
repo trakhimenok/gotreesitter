@@ -1,5 +1,9 @@
 package gotreesitter
 
+func isCobolLanguage(lang *Language) bool {
+	return lang != nil && (lang.Name == "cobol" || lang.Name == "COBOL")
+}
+
 func cloneNodeSliceInArena(arena *nodeArena, nodes []*Node) []*Node {
 	if len(nodes) == 0 {
 		return nil
@@ -464,6 +468,27 @@ func symbolTypeName(lang *Language, sym Symbol) string {
 	return unescapePunctuationSymbolName(lang.SymbolNames[sym])
 }
 
+func cloneNodeSliceIfArena(arena *nodeArena, nodes []*Node) []*Node {
+	if arena == nil {
+		return nodes
+	}
+	return cloneNodeSliceInArena(arena, nodes)
+}
+
+func cloneFieldIDSliceInArena(arena *nodeArena, fieldIDs []FieldID) []FieldID {
+	if len(fieldIDs) == 0 {
+		return nil
+	}
+	if arena != nil {
+		out := arena.allocFieldIDSlice(len(fieldIDs))
+		copy(out, fieldIDs)
+		return out
+	}
+	out := make([]FieldID, len(fieldIDs))
+	copy(out, fieldIDs)
+	return out
+}
+
 func symbolByName(lang *Language, name string) (Symbol, bool) {
 	if lang == nil {
 		return 0, false
@@ -474,6 +499,56 @@ func symbolByName(lang *Language, name string) (Symbol, bool) {
 		}
 	}
 	return 0, false
+}
+
+func symbolIsNamed(lang *Language, sym Symbol) bool {
+	return lang != nil && int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+}
+
+func symbolHasMetadata(lang *Language, sym Symbol) bool {
+	return lang != nil && int(sym) < len(lang.SymbolMetadata)
+}
+
+func symbolIsVisible(lang *Language, sym Symbol) bool {
+	return lang != nil && int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Visible
+}
+
+func symbolMeta(lang *Language, name string) (Symbol, bool, bool) {
+	sym, ok := symbolByName(lang, name)
+	if !ok {
+		return 0, false, false
+	}
+	return sym, symbolIsNamed(lang, sym), true
+}
+
+func languageSymbols(lang *Language, names ...string) ([]Symbol, bool) {
+	if lang == nil {
+		return nil, false
+	}
+	syms := make([]Symbol, len(names))
+	for i, name := range names {
+		sym, ok := lang.SymbolByName(name)
+		if !ok {
+			return nil, false
+		}
+		syms[i] = sym
+	}
+	return syms, true
+}
+
+func visibleLanguageSymbols(lang *Language, named bool, names ...string) ([]Symbol, bool) {
+	if lang == nil {
+		return nil, false
+	}
+	syms := make([]Symbol, len(names))
+	for i, name := range names {
+		sym, ok := findVisibleSymbolByName(lang, name, named)
+		if !ok {
+			return nil, false
+		}
+		syms[i] = sym
+	}
+	return syms, true
 }
 
 func extendNodeEndTo(n *Node, end uint32, source []byte) {

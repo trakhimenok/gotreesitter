@@ -184,10 +184,6 @@ func goImportAlias(spec, pathNode *Node, lang *Language, source []byte) string {
 	return ""
 }
 
-func extractGoImportsFromSource(lang *Language, source []byte) []ImportRef {
-	return extractGoImportsFromSourceWithReport(lang, source).Imports
-}
-
 func extractGoImportsFromSourceWithReport(lang *Language, source []byte) ImportExtractResult {
 	fset := gotoken.NewFileSet()
 	file, err := goparser.ParseFile(fset, "", source, goparser.ImportsOnly)
@@ -359,10 +355,6 @@ func extractPythonImportNode(n *Node, lang *Language, source []byte, refs *[]Imp
 	return true
 }
 
-func extractPythonImportsFromSource(lang *Language, source []byte) []ImportRef {
-	return extractPythonImportsFromSourceWithReport(lang, source).Imports
-}
-
 func extractPythonImportsFromSourceWithReport(lang *Language, source []byte) ImportExtractResult {
 	var refs []ImportRef
 	status := ImportExtractOK
@@ -479,10 +471,6 @@ func extractStarlarkImportNode(n *Node, lang *Language, source []byte, refs *[]I
 	startAdjust := len(raw) - len(text)
 	appendStarlarkLoadRefs(lang, text, n.StartByte()+uint32(startAdjust), n.EndByte(), refs)
 	return false
-}
-
-func extractStarlarkImportsFromSource(lang *Language, source []byte) []ImportRef {
-	return extractStarlarkImportsFromSourceWithReport(lang, source).Imports
 }
 
 func extractStarlarkImportsFromSourceWithReport(lang *Language, source []byte) ImportExtractResult {

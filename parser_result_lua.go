@@ -6,17 +6,10 @@ func normalizeLuaChunkLocalDeclarationFields(root *Node, source []byte, lang *La
 	if root == nil || lang == nil || lang.Name != "lua" || root.Type(lang) != "chunk" || len(source) == 0 {
 		return
 	}
-	localDeclID := FieldID(0)
-	for i, fieldName := range lang.FieldNames {
-		if fieldName == "local_declaration" {
-			localDeclID = FieldID(i)
-			break
-		}
-	}
-	if localDeclID == 0 {
+	localDeclID, ok := lang.FieldByName("local_declaration")
+	if !ok {
 		return
 	}
-	ensureNodeFieldStorage(root, len(root.children))
 	for i, child := range root.children {
 		if child == nil || child.IsExtra() {
 			continue
@@ -29,8 +22,7 @@ func normalizeLuaChunkLocalDeclarationFields(root *Node, source []byte, lang *La
 		if !luaNodeStartsWithLocalKeyword(child, source) {
 			continue
 		}
-		root.fieldIDs[i] = localDeclID
-		root.fieldSources[i] = fieldSourceDirect
+		setNodeChildFieldDirect(root, i, localDeclID)
 	}
 }
 

@@ -4,82 +4,6 @@ package gotreesitter
 
 const perfCountersEnabled = false
 
-type PerfCounters struct {
-	MergeCalls             uint64
-	MergeDeadPruned        uint64
-	MergePerKeyOverflow    uint64
-	MergeReplacements      uint64
-	StackEquivalentCalls   uint64
-	StackEquivalentTrue    uint64
-	StackEqHashMissSkips   uint64
-	StackCompareCalls      uint64
-	ConflictRR             uint64
-	ConflictRS             uint64
-	ConflictOther          uint64
-	ForkCount              uint64
-	FirstConflictToken     uint64
-	MaxConcurrentStacks    uint64
-	LexBytes               uint64
-	LexTokens              uint64
-	ReuseNodesVisited      uint64
-	ReuseNodesPushed       uint64
-	ReuseNodesPopped       uint64
-	ReuseCandidatesChecked uint64
-	ReuseSuccesses         uint64
-	ReuseLeafSuccesses     uint64
-	ReuseNonLeafChecks     uint64
-	ReuseNonLeafSuccesses  uint64
-	ReuseNonLeafBytes      uint64
-	ReuseNonLeafNoGoto     uint64
-	ReuseNonLeafNoGotoTerm uint64
-	ReuseNonLeafNoGotoNt   uint64
-	ReuseNonLeafStateMiss  uint64
-	ReuseNonLeafStateZero  uint64
-	MergeHashZero          uint64
-	GlobalCapCulls         uint64
-	GlobalCapCullDropped   uint64
-	ReduceChainSteps       uint64
-	ReduceChainMaxLen      uint64
-	ReduceChainBreakMulti  uint64
-	ReduceChainBreakShift  uint64
-	ReduceChainBreakAccept uint64
-	ParentChildPointers    uint64
-	ReduceChildrenFastGSS  uint64
-	ReduceChildrenAllVis   uint64
-	ReduceChildrenNoAlias  uint64
-	ReduceChildrenScratch  uint64
-	ReduceScratchNoAlias   uint64
-	ReduceScratchGeneral   uint64
-	ExtraNodes             uint64
-	ErrorNodes             uint64
-	MergeStacksInHist      [maxGLRStacks + 2]uint64
-	MergeAliveHist         [maxGLRStacks + 2]uint64
-	MergeOutHist           [maxGLRStacks + 2]uint64
-	ForkActionsHist        [8]uint64
-	CloneTreeCalls         uint64
-	CloneTreePublicNodes   uint64
-	CloneTreeFinalRefs     uint64
-	CloneTreeCompactCopies uint64
-	CloneTreeChildRefs     uint64
-	CloneTreeChildAt       uint64
-	CloneOffsetCalls       uint64
-	CloneOffsetPublicNodes uint64
-	CloneOffsetCopies      uint64
-	CloneOffsetShifted     uint64
-	CloneOffsetChildAt     uint64
-	NodeEditCalls          uint64
-	NodeEditNoopCalls      uint64
-	NodeEditCompactRefs    uint64
-	NodeEditShifted        uint64
-	NodeEditMarked         uint64
-	NodeEditPublicNodes    uint64
-	NodeEditChildAt        uint64
-	NodeEditFallbackFull   uint64
-	DenseMutationCalls     uint64
-	DenseMutationDrains    uint64
-	MutationChildRefCOW    uint64
-}
-
 func ResetPerfCounters()                 {}
 func PerfCountersSnapshot() PerfCounters { return PerfCounters{} }
 
@@ -131,20 +55,15 @@ func perfRecordCloneTreePublicNode()            {}
 func perfRecordCloneTreeFinalRefs(int)          {}
 func perfRecordCloneTreeCompactCopy()           {}
 func perfRecordCloneTreeChildRefs(int)          {}
-func perfRecordCloneTreeChildAt()               {}
 func perfRecordCloneOffsetCall()                {}
 func perfRecordCloneOffsetPublicNode()          {}
 func perfRecordCloneOffsetCompactCopy()         {}
 func perfRecordCloneOffsetShifted()             {}
-func perfRecordCloneOffsetChildAt()             {}
 func perfRecordNodeEditCall()                   {}
 func perfRecordNodeEditNoopCall()               {}
 func perfRecordNodeEditCompactRef()             {}
 func perfRecordNodeEditShifted()                {}
 func perfRecordNodeEditMarked()                 {}
-func perfRecordNodeEditPublicNode()             {}
-func perfRecordNodeEditChildAt()                {}
-func perfRecordNodeEditFallbackFull()           {}
 func perfRecordDenseMutationChildrenCall()      {}
 func perfRecordDenseMutationChildrenDrain()     {}
 func perfRecordMutationChildRefCopyOnWrite(int) {}

@@ -108,14 +108,11 @@ func splitBashCommandNameArguments(node *Node, commandSym, commandNameSym, conca
 	if arena != nil {
 		nameChildren = cloneNodeSliceInArena(arena, nameChildren)
 	}
-	commandName.children = nameChildren
-	commandName.fieldIDs = nil
-	commandName.fieldSources = nil
+	replaceNodeChildrenUnfielded(commandName, nameChildren)
 	commandName.startByte = commandWord.startByte
 	commandName.endByte = commandWord.endByte
 	commandName.startPoint = commandWord.startPoint
 	commandName.endPoint = commandWord.endPoint
-	populateParentNode(commandName, nameChildren)
 
 	commandChildren := make([]*Node, 0, len(parts))
 	commandChildren = append(commandChildren, commandName)
@@ -123,10 +120,7 @@ func splitBashCommandNameArguments(node *Node, commandSym, commandNameSym, conca
 	if arena != nil {
 		commandChildren = cloneNodeSliceInArena(arena, commandChildren)
 	}
-	node.children = commandChildren
-	node.fieldIDs = nil
-	node.fieldSources = nil
-	populateParentNode(node, commandChildren)
+	replaceNodeChildrenUnfielded(node, commandChildren)
 	return true
 }
 

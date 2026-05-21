@@ -26,20 +26,12 @@ func normalizeRubyThenStarts(root *Node, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "ruby" {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		switch n.Type(lang) {
 		case "elsif", "if", "unless", "when":
 			normalizeRubyThenChildStarts(n, lang)
 		}
-		for i := 0; i < resultChildCount(n); i++ {
-			walk(resultChildAt(n, i))
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeRubyThenChildStarts(parent *Node, lang *Language) {

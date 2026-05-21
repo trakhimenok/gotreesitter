@@ -9,11 +9,7 @@ func normalizePHPSingletonTypeWrappers(root *Node, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "php" {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		for i, child := range n.children {
 			if child == nil {
 				continue
@@ -22,14 +18,12 @@ func normalizePHPSingletonTypeWrappers(root *Node, lang *Language) {
 			case "intersection_type", "union_type":
 				if len(child.children) == 1 && child.children[0] != nil && child.children[0].IsNamed() {
 					n.children[i] = child.children[0]
-					child = n.children[i]
 				}
 			}
-			walk(child)
 		}
-	}
-	walk(root)
+	})
 }
+
 func normalizePHPStaticFunctionFragments(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "php" || len(root.children) == 0 {
 		return
@@ -104,11 +98,7 @@ func normalizePHPStaticFunctionFragments(root *Node, source []byte, lang *Langua
 	if !changed {
 		return
 	}
-	if arena != nil {
-		buf := arena.allocNodeSlice(len(out))
-		copy(buf, out)
-		out = buf
-	}
+	out = cloneNodeSliceIfArena(arena, out)
 	root.children = out
 	root.fieldIDs = nil
 	root.fieldSources = nil
@@ -227,7 +217,7 @@ func rewritePHPStaticNamedFunctionFragments(nodes []*Node, source []byte, lang *
 	if !ok {
 		return nil, 0, false
 	}
-	callSym, callNamed, ok := phpSymbolMeta(lang, "function_call_expression")
+	callSym, callNamed, ok := symbolMeta(lang, "function_call_expression")
 	if !ok {
 		return nil, 0, false
 	}
@@ -256,7 +246,7 @@ func rewritePHPStaticNamedFunctionFragments(nodes []*Node, source []byte, lang *
 		semi := newLeafNodeInArena(arena, semiSym, false, call.endByte, call.endByte, call.endPoint, call.endPoint)
 		semi.setHasError(true)
 
-		exprSym, exprNamed, ok := phpSymbolMeta(lang, "expression_statement")
+		exprSym, exprNamed, ok := symbolMeta(lang, "expression_statement")
 		if !ok {
 			return nil, 0, false
 		}
@@ -337,7 +327,7 @@ func rewritePHPStaticNamedFunctionFragmentsWithTrailingMalformedSibling(nodes []
 	if !ok {
 		return nil, 0, false
 	}
-	callSym, callNamed, ok := phpSymbolMeta(lang, "function_call_expression")
+	callSym, callNamed, ok := symbolMeta(lang, "function_call_expression")
 	if !ok {
 		return nil, 0, false
 	}
@@ -367,7 +357,7 @@ func rewritePHPStaticNamedFunctionFragmentsWithTrailingMalformedSibling(nodes []
 		semi := newLeafNodeInArena(arena, semiSym, false, call.endByte, call.endByte, call.endPoint, call.endPoint)
 		semi.setHasError(true)
 
-		exprSym, exprNamed, ok := phpSymbolMeta(lang, "expression_statement")
+		exprSym, exprNamed, ok := symbolMeta(lang, "expression_statement")
 		if !ok {
 			return nil, 0, false
 		}
@@ -421,7 +411,7 @@ func rewritePHPStaticAnonymousFunctionFragments(nodes []*Node, source []byte, la
 	if openBrace.Type(lang) != "{" || closeBrace.Type(lang) != "}" {
 		return nil, 0, false
 	}
-	compoundSym, compoundNamed, ok := phpSymbolMeta(lang, "compound_statement")
+	compoundSym, compoundNamed, ok := symbolMeta(lang, "compound_statement")
 	if !ok {
 		return nil, 0, false
 	}
@@ -430,7 +420,7 @@ func rewritePHPStaticAnonymousFunctionFragments(nodes []*Node, source []byte, la
 	bodyChildren[1] = closeBrace
 	body := newParentNodeInArena(arena, compoundSym, compoundNamed, bodyChildren, nil, 0)
 
-	anonSym, anonNamed, ok := phpSymbolMeta(lang, "anonymous_function")
+	anonSym, anonNamed, ok := symbolMeta(lang, "anonymous_function")
 	if !ok {
 		return nil, 0, false
 	}
@@ -468,7 +458,7 @@ func rewritePHPStaticAnonymousFunctionFragments(nodes []*Node, source []byte, la
 	semi := newLeafNodeInArena(arena, semiSym, false, semiStartByte, semiStartByte, semiStartPoint, semiStartPoint)
 	semi.setHasError(true)
 
-	exprSym, exprNamed, ok := phpSymbolMeta(lang, "expression_statement")
+	exprSym, exprNamed, ok := symbolMeta(lang, "expression_statement")
 	if !ok {
 		return nil, 0, false
 	}
@@ -489,7 +479,7 @@ func phpSyntheticNamedFunctionName(errNode *Node, lang *Language, arena *nodeAre
 	if errNode == nil || errNode.startByte >= errNode.endByte {
 		return nil, false
 	}
-	nameSym, nameNamed, ok := phpSymbolMeta(lang, "name")
+	nameSym, nameNamed, ok := symbolMeta(lang, "name")
 	if !ok {
 		return nil, false
 	}
@@ -500,7 +490,7 @@ func phpSyntheticArgumentsFromFormals(formals *Node, lang *Language, arena *node
 	if formals == nil || formals.Type(lang) != "formal_parameters" || len(formals.children) != 2 {
 		return nil, false
 	}
-	argsSym, argsNamed, ok := phpSymbolMeta(lang, "arguments")
+	argsSym, argsNamed, ok := symbolMeta(lang, "arguments")
 	if !ok {
 		return nil, false
 	}
@@ -518,7 +508,7 @@ func phpSyntheticCompoundStatementFromError(errNode *Node, source []byte, lang *
 	if len(body) < 2 || body[0] != '{' || body[len(body)-1] != '}' {
 		return nil, false
 	}
-	compoundSym, compoundNamed, ok := phpSymbolMeta(lang, "compound_statement")
+	compoundSym, compoundNamed, ok := symbolMeta(lang, "compound_statement")
 	if !ok {
 		return nil, false
 	}
@@ -563,21 +553,6 @@ func phpAllocChildren(arena *nodeArena, n int) []*Node {
 		return arena.allocNodeSlice(n)
 	}
 	return make([]*Node, n)
-}
-
-func phpSymbolMeta(lang *Language, name string) (Symbol, bool, bool) {
-	if lang == nil {
-		return 0, false, false
-	}
-	sym, ok := lang.SymbolByName(name)
-	if !ok {
-		return 0, false, false
-	}
-	named := false
-	if idx := int(sym); idx < len(lang.SymbolMetadata) {
-		named = lang.SymbolMetadata[sym].Named
-	}
-	return sym, named, true
 }
 
 func phpCountsAsPriorTopLevelNode(n *Node, lang *Language) bool {

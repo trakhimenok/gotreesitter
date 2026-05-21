@@ -1,41 +1,56 @@
 package gotreesitter
 
 func normalizeJavaCompatibility(root *Node, source []byte, lang *Language) {
+	normalizeJavaPrimitiveTypeTokens(root, source, lang)
 	normalizeJavaCollapsedLeafChildren(root, source, lang)
 }
 
-func normalizeJavaCollapsedLeafChildren(root *Node, source []byte, lang *Language) normalizationPassCounters {
-	var counters normalizationPassCounters
-	if root == nil || lang == nil || lang.Name != "java" || len(source) == 0 {
-		return counters
+func normalizeJavaPrimitiveTypeTokens(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "java" {
+		return
 	}
-	modifiersSym, ok := symbolByName(lang, "modifiers")
-	if !ok {
-		return counters
-	}
-	asteriskSym, ok := symbolByName(lang, "asterisk")
-	if !ok {
-		return counters
-	}
-
-	childSymsByParent := map[Symbol]map[string]Symbol{}
-	childNamed := map[Symbol]bool{}
-	addChild := func(parent Symbol, name string) {
-		childSym, ok := symbolByName(lang, name)
-		if !ok {
+	var walk func(*Node)
+	walk = func(n *Node) {
+		if n == nil {
 			return
 		}
-		children := childSymsByParent[parent]
-		if children == nil {
-			children = map[string]Symbol{}
-			childSymsByParent[parent] = children
+		if len(n.children) == 0 && javaPrimitiveTypeWrapper(n.Type(lang)) {
+			normalizeCollapsedTextToken(n, source, lang, javaPrimitiveTypeToken)
 		}
-		children[name] = childSym
-		if int(childSym) < len(lang.SymbolMetadata) {
-			childNamed[childSym] = lang.SymbolMetadata[childSym].Named
+		for _, child := range n.children {
+			walk(child)
 		}
 	}
-	for _, keyword := range []string{
+	walk(root)
+}
+
+func javaPrimitiveTypeWrapper(name string) bool {
+	switch name {
+	case "boolean_type", "integral_type", "floating_point_type", "void_type":
+		return true
+	default:
+		return false
+	}
+}
+
+func javaPrimitiveTypeToken(text string) bool {
+	switch text {
+	case "boolean", "byte", "short", "int", "long", "char", "float", "double", "void":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeJavaCollapsedLeafChildren(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "java" || len(source) == 0 {
+		return
+	}
+	normalizeCollapsedNamedLeafChildrenBySource(
+		root,
+		source,
+		lang,
+		"modifiers",
 		"abstract",
 		"default",
 		"final",
@@ -50,35 +65,6 @@ func normalizeJavaCollapsedLeafChildren(root *Node, source []byte, lang *Languag
 		"synchronized",
 		"transient",
 		"volatile",
-	} {
-		addChild(modifiersSym, keyword)
-	}
-	addChild(asteriskSym, "*")
-	if len(childSymsByParent) == 0 {
-		return counters
-	}
-
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
-		counters.nodesVisited++
-		childCount := resultChildCount(n)
-		if childCount == 0 && int(n.startByte) <= len(source) && int(n.endByte) <= len(source) && n.startByte <= n.endByte {
-			if childSyms := childSymsByParent[n.symbol]; len(childSyms) > 0 {
-				if childSym, ok := childSyms[string(source[n.startByte:n.endByte])]; ok {
-					child := newLeafNodeInArena(n.ownerArena, childSym, childNamed[childSym], n.startByte, n.endByte, n.startPoint, n.endPoint)
-					n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
-					counters.nodesRewritten++
-					childCount = 1
-				}
-			}
-		}
-		for i := 0; i < childCount; i++ {
-			walk(resultChildAt(n, i))
-		}
-	}
-	walk(root)
-	return counters
+	)
+	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "asterisk", "*")
 }

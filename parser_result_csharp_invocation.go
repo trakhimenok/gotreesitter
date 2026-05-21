@@ -31,17 +31,13 @@ func normalizeCSharpInvocationStatements(root *Node, source []byte, lang *Langua
 	if !hasFunctionField || !hasArgumentsField || !hasExpressionField || !hasNameField {
 		return
 	}
-	exprStmtNamed := int(exprStmtSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[exprStmtSym].Named
-	invocationNamed := int(invocationSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[invocationSym].Named
-	memberAccessNamed := int(memberAccessSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[memberAccessSym].Named
-	argumentListNamed := int(argumentListSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[argumentListSym].Named
-	argumentNamed := int(argumentSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[argumentSym].Named
+	exprStmtNamed := symbolIsNamed(lang, exprStmtSym)
+	invocationNamed := symbolIsNamed(lang, invocationSym)
+	memberAccessNamed := symbolIsNamed(lang, memberAccessSym)
+	argumentListNamed := symbolIsNamed(lang, argumentListSym)
+	argumentNamed := symbolIsNamed(lang, argumentSym)
 
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "argument_list" {
 			csharpPopulateMissingInvocationArguments(n, source, lang)
 		}
@@ -63,36 +59,19 @@ func normalizeCSharpInvocationStatements(root *Node, source []byte, lang *Langua
 						function = csharpRewriteQualifiedNameAsMemberAccess(target, lang, memberAccessSym, memberAccessNamed, expressionFieldID, nameFieldID)
 					}
 					if arguments, ok := csharpBuildArgumentListFromTuplePattern(varDecl.children[0], lang, argumentListSym, argumentListNamed, argumentSym, argumentNamed); ok {
-						invocationFields := []FieldID{functionFieldID, argumentsFieldID}
-						if n.ownerArena != nil {
-							buf := n.ownerArena.allocFieldIDSlice(len(invocationFields))
-							copy(buf, invocationFields)
-							invocationFields = buf
-						}
+						invocationFields := cloneFieldIDSliceInArena(n.ownerArena, []FieldID{functionFieldID, argumentsFieldID})
 						invocation := newParentNodeInArena(n.ownerArena, invocationSym, invocationNamed, []*Node{function, arguments}, invocationFields, 0)
 						invocation.fieldSources = defaultFieldSourcesInArena(n.ownerArena, invocationFields)
 						n.symbol = exprStmtSym
 						n.setNamed(exprStmtNamed)
-						n.children = []*Node{invocation, semi}
-						if n.ownerArena != nil {
-							buf := n.ownerArena.allocNodeSlice(len(n.children))
-							copy(buf, n.children)
-							n.children = buf
-						}
-						n.fieldIDs = nil
-						n.fieldSources = nil
+						replaceNodeChildrenUnfielded(n, cloneNodeSliceIfArena(n.ownerArena, []*Node{invocation, semi}))
 						n.productionID = 0
 						n.setHasError(false)
-						populateParentNode(n, n.children)
 					}
 				}
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func csharpPopulateMissingInvocationArguments(n *Node, source []byte, lang *Language) bool {
@@ -153,8 +132,8 @@ func csharpRecoverTopLevelInvocationStatementFromRange(source []byte, start, end
 	if !ok {
 		return nil, false
 	}
-	exprStmtNamed := int(exprStmtSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[exprStmtSym].Named
-	globalNamed := int(globalSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[globalSym].Named
+	exprStmtNamed := symbolIsNamed(lang, exprStmtSym)
+	globalNamed := symbolIsNamed(lang, globalSym)
 	expressionFieldID, _ := lang.FieldByName("expression")
 	exprChildren := []*Node{invocation, semiTok}
 	if arena != nil {
@@ -162,7 +141,7 @@ func csharpRecoverTopLevelInvocationStatementFromRange(source []byte, start, end
 		copy(buf, exprChildren)
 		exprChildren = buf
 	}
-	exprFieldIDs := csharpFieldIDsInArena(arena, []FieldID{expressionFieldID, 0})
+	exprFieldIDs := cloneFieldIDSliceInArena(arena, []FieldID{expressionFieldID, 0})
 	exprStmt := newParentNodeInArena(arena, exprStmtSym, exprStmtNamed, exprChildren, exprFieldIDs, 0)
 	exprStmt.setHasError(false)
 	globalChildren := []*Node{exprStmt}
@@ -216,11 +195,7 @@ func csharpBuildArgumentListFromTuplePattern(tuple *Node, lang *Language, argume
 		}
 		if child.IsNamed() {
 			argChildren := []*Node{child}
-			if tuple.ownerArena != nil {
-				buf := tuple.ownerArena.allocNodeSlice(len(argChildren))
-				copy(buf, argChildren)
-				argChildren = buf
-			}
+			argChildren = cloneNodeSliceIfArena(tuple.ownerArena, argChildren)
 			arg := newParentNodeInArena(tuple.ownerArena, argumentSym, argumentNamed, argChildren, nil, 0)
 			arg.setHasError(false)
 			children = append(children, arg)
@@ -229,11 +204,7 @@ func csharpBuildArgumentListFromTuplePattern(tuple *Node, lang *Language, argume
 		children = append(children, child)
 	}
 	children = append(children, tuple.children[len(tuple.children)-1])
-	if tuple.ownerArena != nil {
-		buf := tuple.ownerArena.allocNodeSlice(len(children))
-		copy(buf, children)
-		children = buf
-	}
+	children = cloneNodeSliceIfArena(tuple.ownerArena, children)
 	args := newParentNodeInArena(tuple.ownerArena, argumentListSym, argumentListNamed, children, nil, 0)
 	args.setHasError(false)
 	return args, true
@@ -259,27 +230,11 @@ func normalizeCSharpSwitchTupleCasePatterns(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	named := false
-	if idx := int(patternSym); idx < len(lang.SymbolMetadata) {
-		named = lang.SymbolMetadata[patternSym].Named
-	}
-	tupleNamed := false
-	if idx := int(tupleExprSym); idx < len(lang.SymbolMetadata) {
-		tupleNamed = lang.SymbolMetadata[tupleExprSym].Named
-	}
-	positionalNamed := false
-	if idx := int(positionalSym); idx < len(lang.SymbolMetadata) {
-		positionalNamed = lang.SymbolMetadata[positionalSym].Named
-	}
-	subpatternNamed := false
-	if idx := int(subpatternSym); idx < len(lang.SymbolMetadata) {
-		subpatternNamed = lang.SymbolMetadata[subpatternSym].Named
-	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	named := symbolIsNamed(lang, patternSym)
+	tupleNamed := symbolIsNamed(lang, tupleExprSym)
+	positionalNamed := symbolIsNamed(lang, positionalSym)
+	subpatternNamed := symbolIsNamed(lang, subpatternSym)
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "switch_section" && len(n.children) > 1 {
 			pat := n.children[1]
 			if n.children[0] != nil && n.children[0].Type(lang) == "case" &&
@@ -312,11 +267,7 @@ func normalizeCSharpSwitchTupleCasePatterns(root *Node, lang *Language) {
 				csharpRewriteSwitchTupleLiteralPatternArguments(pat.children[0], lang, positionalSym, positionalNamed, subpatternSym, subpatternNamed, patternSym, named)
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func csharpShouldWrapSwitchCaseConstantPattern(n *Node, lang *Language) bool {
@@ -355,20 +306,12 @@ func csharpRewriteSwitchTupleLiteralPatternArguments(tuple *Node, lang *Language
 		patternChild := child.children[0]
 		if patternChild.Type(lang) != "discard" && patternChild.Type(lang) != "constant_pattern" {
 			patternChildren := []*Node{patternChild}
-			if tuple.ownerArena != nil {
-				buf := tuple.ownerArena.allocNodeSlice(len(patternChildren))
-				copy(buf, patternChildren)
-				patternChildren = buf
-			}
+			patternChildren = cloneNodeSliceIfArena(tuple.ownerArena, patternChildren)
 			patternChild = newParentNodeInArena(tuple.ownerArena, constantPatternSym, constantPatternNamed, patternChildren, nil, 0)
 			patternChild.setHasError(false)
 		}
 		subChildren := []*Node{patternChild}
-		if tuple.ownerArena != nil {
-			buf := tuple.ownerArena.allocNodeSlice(len(subChildren))
-			copy(buf, subChildren)
-			subChildren = buf
-		}
+		subChildren = cloneNodeSliceIfArena(tuple.ownerArena, subChildren)
 		sub := newParentNodeInArena(tuple.ownerArena, subpatternSym, subpatternNamed, subChildren, nil, 0)
 		sub.setHasError(false)
 		clauseChildren = append(clauseChildren, sub)
@@ -376,24 +319,13 @@ func csharpRewriteSwitchTupleLiteralPatternArguments(tuple *Node, lang *Language
 	if len(clauseChildren) == 0 {
 		return false
 	}
-	if tuple.ownerArena != nil {
-		buf := tuple.ownerArena.allocNodeSlice(len(clauseChildren))
-		copy(buf, clauseChildren)
-		clauseChildren = buf
-	}
+	clauseChildren = cloneNodeSliceIfArena(tuple.ownerArena, clauseChildren)
 	clause := newParentNodeInArena(tuple.ownerArena, positionalSym, positionalNamed, clauseChildren, nil, 0)
 	clause.setHasError(false)
 	children := []*Node{tuple.children[0], clause, tuple.children[len(tuple.children)-1]}
-	if tuple.ownerArena != nil {
-		buf := tuple.ownerArena.allocNodeSlice(len(children))
-		copy(buf, children)
-		children = buf
-	}
-	tuple.children = children
-	tuple.fieldIDs = nil
-	tuple.fieldSources = nil
+	children = cloneNodeSliceIfArena(tuple.ownerArena, children)
+	replaceNodeChildrenUnfielded(tuple, children)
 	tuple.productionID = 0
 	tuple.setHasError(false)
-	populateParentNode(tuple, tuple.children)
 	return true
 }

@@ -30,19 +30,9 @@ func normalizeScalaCompilationUnitRoot(root *Node, source []byte, lang *Language
 		return
 	}
 	if children, ok := scalaRebuildCompilationUnitChildren(source, lang, root.ownerArena); ok {
-		root.children = children
-		root.fieldIDs = nil
-		root.fieldSources = nil
-		root.symbol = sym
-		root.setNamed(int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named)
-		populateParentNode(root, root.children)
-		root.setHasError(false)
-		for _, child := range root.children {
-			if child != nil && (child.IsError() || child.HasError()) {
-				root.setHasError(true)
-				break
-			}
-		}
+		retagResultRoot(root, sym, symbolIsNamed(lang, sym))
+		replaceNodeChildrenUnfielded(root, children)
+		refreshResultRootError(root)
 		if !root.hasError() {
 			return
 		}
@@ -50,15 +40,7 @@ func normalizeScalaCompilationUnitRoot(root *Node, source []byte, lang *Language
 	if !rootLooksLikeScalaCompilationUnit(root, lang) {
 		return
 	}
-	root.symbol = sym
-	root.setNamed(int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named)
-	root.setHasError(false)
-	for _, child := range root.children {
-		if child != nil && (child.IsError() || child.HasError()) {
-			root.setHasError(true)
-			break
-		}
-	}
+	retagResultRootAndRefreshError(root, sym, symbolIsNamed(lang, sym))
 }
 
 func scalaRebuildCompilationUnitChildren(source []byte, lang *Language, arena *nodeArena) ([]*Node, bool) {
@@ -342,11 +324,7 @@ func normalizeScalaImportPathFields(root *Node, lang *Language) {
 	if !ok || pathID == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "import_declaration" && len(n.children) > 0 {
 			for i, child := range n.children {
 				if child == nil || child.Type(lang) != "." {
@@ -362,11 +340,7 @@ func normalizeScalaImportPathFields(root *Node, lang *Language) {
 				n.fieldSources[i] = fieldSourceDirect
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeScalaDefinitionFields(root *Node, source []byte, lang *Language) {
@@ -388,11 +362,7 @@ func normalizeScalaDefinitionFields(root *Node, source []byte, lang *Language) {
 	conditionID, _ := lang.FieldByName("condition")
 	consequenceID, _ := lang.FieldByName("consequence")
 	alternativeID, _ := lang.FieldByName("alternative")
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		switch n.Type(lang) {
 		case "object_definition", "class_definition", "trait_definition", "enum_definition":
 			for i, child := range n.children {
@@ -561,22 +531,14 @@ func normalizeScalaDefinitionFields(root *Node, source []byte, lang *Language) {
 				extendNodeEndTo(curr, next.startByte, source)
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeScalaTemplateBodyFunctionAnnotations(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "scala" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "template_body" {
 			for i, child := range n.children {
 				if child == nil || child.Type(lang) != "function_definition" || len(child.children) == 0 {
@@ -621,22 +583,14 @@ func normalizeScalaTemplateBodyFunctionAnnotations(root *Node, source []byte, la
 				populateParentNode(child, child.children)
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeScalaCaseClauseEnds(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "scala" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "case_block" {
 			for i := 0; i+1 < len(n.children); i++ {
 				curr := n.children[i]
@@ -657,22 +611,14 @@ func normalizeScalaCaseClauseEnds(root *Node, source []byte, lang *Language) {
 				extendNodeEndTo(curr, next.startByte, source)
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeScalaTemplateBodyFunctionEnds(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "scala" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "template_body" {
 			for i := 0; i+1 < len(n.children); i++ {
 				curr := n.children[i]
@@ -698,11 +644,7 @@ func normalizeScalaTemplateBodyFunctionEnds(root *Node, source []byte, lang *Lan
 				extendNodeEndTo(curr, next.startByte, source)
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func scalaNextCaseClauseBoundaryNode(children []*Node, start int, lang *Language) *Node {
@@ -755,17 +697,9 @@ func normalizeScalaTrailingCommentOwnership(root *Node, source []byte, lang *Lan
 	if root == nil || len(source) == 0 || lang == nil || lang.Name != "scala" {
 		return
 	}
-	var walk func(*Node, int)
-	walk = func(n *Node, depth int) {
-		if n == nil || depth > maxTreeWalkDepth {
-			return
-		}
+	walkResultTreeBounded(root, func(n *Node) {
 		normalizeScalaTrailingCommentSiblings(n, source, lang)
-		for _, child := range n.children {
-			walk(child, depth+1)
-		}
-	}
-	walk(root, 0)
+	})
 }
 
 func normalizeScalaTrailingCommentSiblings(parent *Node, source []byte, lang *Language) {
@@ -895,11 +829,7 @@ func normalizeScalaFunctionModifierFields(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	var walk func(*Node, int)
-	walk = func(n *Node, depth int) {
-		if n == nil || depth > maxTreeWalkDepth {
-			return
-		}
+	walkResultTreeBounded(root, func(n *Node) {
 		if n.Type(lang) == "function_definition" {
 			for i, child := range n.children {
 				if child == nil || child.Type(lang) != "modifiers" {
@@ -913,11 +843,7 @@ func normalizeScalaFunctionModifierFields(root *Node, lang *Language) {
 				}
 			}
 		}
-		for _, child := range n.children {
-			walk(child, depth+1)
-		}
-	}
-	walk(root, 0)
+	})
 }
 
 func normalizeScalaInterpolatedStringTail(root *Node, source []byte, lang *Language) {

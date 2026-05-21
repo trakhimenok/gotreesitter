@@ -4,14 +4,8 @@ func normalizeErlangSourceFileForms(root *Node, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "erlang" || root.Type(lang) != "source_file" {
 		return
 	}
-	formsOnlyID := FieldID(0)
-	for i, fieldName := range lang.FieldNames {
-		if fieldName == "forms_only" {
-			formsOnlyID = FieldID(i)
-			break
-		}
-	}
-	if formsOnlyID == 0 || !erlangSourceFileLooksLikeForms(root, lang) {
+	formsOnlyID, ok := lang.FieldByName("forms_only")
+	if !ok || !erlangSourceFileLooksLikeForms(root, lang) {
 		return
 	}
 	view := resultMutableChildrenForMutation(root)

@@ -49,9 +49,7 @@ func normalizeInjectionLanguageHint(raw string) string {
 	if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") && len(s) > 2 {
 		s = strings.TrimSpace(s[1 : len(s)-1])
 	}
-	if strings.HasPrefix(s, "language-") {
-		s = strings.TrimPrefix(s, "language-")
-	}
+	s = strings.TrimPrefix(s, "language-")
 	s = strings.TrimPrefix(s, ".")
 	parts := strings.Fields(s)
 	if len(parts) > 0 {

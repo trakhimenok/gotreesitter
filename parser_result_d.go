@@ -13,11 +13,7 @@ func normalizeDModuleDefinitionBounds(root *Node, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "d" {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "module_def" {
 			if first := pythonBlockStartAnchor(n.children, lang); first != nil && n.startByte < first.startByte {
 				n.startByte = first.startByte
@@ -28,11 +24,7 @@ func normalizeDModuleDefinitionBounds(root *Node, lang *Language) {
 				n.endPoint = last.endPoint
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeDSourceFileLeadingTrivia(root *Node, source []byte, lang *Language) {
@@ -58,15 +50,8 @@ func normalizeDVariableStorageClassWrappers(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	storageClassNamed := false
-	if idx := int(storageClassSym); idx < len(lang.SymbolMetadata) {
-		storageClassNamed = lang.SymbolMetadata[storageClassSym].Named
-	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	storageClassNamed := symbolIsNamed(lang, storageClassSym)
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "variable_declaration" {
 			for i, child := range n.children {
 				if child == nil || child.Type(lang) != "static" {
@@ -76,11 +61,7 @@ func normalizeDVariableStorageClassWrappers(root *Node, lang *Language) {
 				n.children[i] = wrapper
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeDCallExpressionTemplateTypes(root *Node, lang *Language) {
@@ -91,37 +72,22 @@ func normalizeDCallExpressionTemplateTypes(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	typeNamed := false
-	if idx := int(typeSym); idx < len(lang.SymbolMetadata) {
-		typeNamed = lang.SymbolMetadata[typeSym].Named
-	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	typeNamed := symbolIsNamed(lang, typeSym)
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "call_expression" && len(n.children) > 0 {
 			child := n.children[0]
 			if child != nil && child.Type(lang) == "template_instance" {
 				n.children[0] = newParentNodeInArena(n.ownerArena, typeSym, typeNamed, []*Node{child}, nil, 0)
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeDVariableTypeQualifiers(root *Node, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "d" {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "variable_declaration" && len(n.children) >= 3 {
 			for i := 0; i+1 < len(n.children); i++ {
 				left := n.children[i]
@@ -149,11 +115,7 @@ func normalizeDVariableTypeQualifiers(root *Node, lang *Language) {
 				break
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeDCallExpressionPropertyTypes(root *Node, lang *Language) {
@@ -164,15 +126,8 @@ func normalizeDCallExpressionPropertyTypes(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	typeNamed := false
-	if idx := int(typeSym); idx < len(lang.SymbolMetadata) {
-		typeNamed = lang.SymbolMetadata[typeSym].Named
-	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	typeNamed := symbolIsNamed(lang, typeSym)
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "call_expression" && len(n.children) > 0 {
 			child := n.children[0]
 			if parts, ok := flattenDPropertyTypeChain(child, lang); ok {
@@ -184,33 +139,21 @@ func normalizeDCallExpressionPropertyTypes(root *Node, lang *Language) {
 				n.children[0] = newParentNodeInArena(n.ownerArena, typeSym, typeNamed, parts, nil, 0)
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeDCallExpressionSimpleTypeCallees(root *Node, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "d" {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "call_expression" && len(n.children) > 0 {
 			child := n.children[0]
 			if child != nil && child.Type(lang) == "type" && len(child.children) == 1 && child.children[0] != nil && child.children[0].Type(lang) == "identifier" {
 				n.children[0] = child.children[0]
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 func flattenDPropertyTypeChain(n *Node, lang *Language) ([]*Node, bool) {
 	if n == nil || lang == nil {

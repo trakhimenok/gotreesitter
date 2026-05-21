@@ -67,102 +67,21 @@ type perfCountersData struct {
 	cloneTreeFinalRefs     atomic.Uint64
 	cloneTreeCompactCopies atomic.Uint64
 	cloneTreeChildRefs     atomic.Uint64
-	cloneTreeChildAt       atomic.Uint64
 	cloneOffsetCalls       atomic.Uint64
 	cloneOffsetPublicNodes atomic.Uint64
 	cloneOffsetCopies      atomic.Uint64
 	cloneOffsetShifted     atomic.Uint64
-	cloneOffsetChildAt     atomic.Uint64
 	nodeEditCalls          atomic.Uint64
 	nodeEditNoopCalls      atomic.Uint64
 	nodeEditCompactRefs    atomic.Uint64
 	nodeEditShifted        atomic.Uint64
 	nodeEditMarked         atomic.Uint64
-	nodeEditPublicNodes    atomic.Uint64
-	nodeEditChildAt        atomic.Uint64
-	nodeEditFallbackFull   atomic.Uint64
 	denseMutationCalls     atomic.Uint64
 	denseMutationDrains    atomic.Uint64
 	mutationChildRefCOW    atomic.Uint64
 }
 
 var perfCounters perfCountersData
-
-type PerfCounters struct {
-	MergeCalls             uint64
-	MergeDeadPruned        uint64
-	MergePerKeyOverflow    uint64
-	MergeReplacements      uint64
-	StackEquivalentCalls   uint64
-	StackEquivalentTrue    uint64
-	StackEqHashMissSkips   uint64
-	StackCompareCalls      uint64
-	ConflictRR             uint64
-	ConflictRS             uint64
-	ConflictOther          uint64
-	ForkCount              uint64
-	FirstConflictToken     uint64
-	MaxConcurrentStacks    uint64
-	LexBytes               uint64
-	LexTokens              uint64
-	ReuseNodesVisited      uint64
-	ReuseNodesPushed       uint64
-	ReuseNodesPopped       uint64
-	ReuseCandidatesChecked uint64
-	ReuseSuccesses         uint64
-	ReuseLeafSuccesses     uint64
-	ReuseNonLeafChecks     uint64
-	ReuseNonLeafSuccesses  uint64
-	ReuseNonLeafBytes      uint64
-	ReuseNonLeafNoGoto     uint64
-	ReuseNonLeafNoGotoTerm uint64
-	ReuseNonLeafNoGotoNt   uint64
-	ReuseNonLeafStateMiss  uint64
-	ReuseNonLeafStateZero  uint64
-	MergeHashZero          uint64
-	GlobalCapCulls         uint64
-	GlobalCapCullDropped   uint64
-	ReduceChainSteps       uint64
-	ReduceChainMaxLen      uint64
-	ReduceChainBreakMulti  uint64
-	ReduceChainBreakShift  uint64
-	ReduceChainBreakAccept uint64
-	ParentChildPointers    uint64
-	ReduceChildrenFastGSS  uint64
-	ReduceChildrenAllVis   uint64
-	ReduceChildrenNoAlias  uint64
-	ReduceChildrenScratch  uint64
-	ReduceScratchNoAlias   uint64
-	ReduceScratchGeneral   uint64
-	ExtraNodes             uint64
-	ErrorNodes             uint64
-	MergeStacksInHist      [perfMergeHistBins]uint64
-	MergeAliveHist         [perfMergeHistBins]uint64
-	MergeOutHist           [perfMergeHistBins]uint64
-	ForkActionsHist        [perfForkHistBins]uint64
-	CloneTreeCalls         uint64
-	CloneTreePublicNodes   uint64
-	CloneTreeFinalRefs     uint64
-	CloneTreeCompactCopies uint64
-	CloneTreeChildRefs     uint64
-	CloneTreeChildAt       uint64
-	CloneOffsetCalls       uint64
-	CloneOffsetPublicNodes uint64
-	CloneOffsetCopies      uint64
-	CloneOffsetShifted     uint64
-	CloneOffsetChildAt     uint64
-	NodeEditCalls          uint64
-	NodeEditNoopCalls      uint64
-	NodeEditCompactRefs    uint64
-	NodeEditShifted        uint64
-	NodeEditMarked         uint64
-	NodeEditPublicNodes    uint64
-	NodeEditChildAt        uint64
-	NodeEditFallbackFull   uint64
-	DenseMutationCalls     uint64
-	DenseMutationDrains    uint64
-	MutationChildRefCOW    uint64
-}
 
 func ResetPerfCounters() {
 	perfCounters.mergeCalls.Store(0)
@@ -229,20 +148,15 @@ func ResetPerfCounters() {
 	perfCounters.cloneTreeFinalRefs.Store(0)
 	perfCounters.cloneTreeCompactCopies.Store(0)
 	perfCounters.cloneTreeChildRefs.Store(0)
-	perfCounters.cloneTreeChildAt.Store(0)
 	perfCounters.cloneOffsetCalls.Store(0)
 	perfCounters.cloneOffsetPublicNodes.Store(0)
 	perfCounters.cloneOffsetCopies.Store(0)
 	perfCounters.cloneOffsetShifted.Store(0)
-	perfCounters.cloneOffsetChildAt.Store(0)
 	perfCounters.nodeEditCalls.Store(0)
 	perfCounters.nodeEditNoopCalls.Store(0)
 	perfCounters.nodeEditCompactRefs.Store(0)
 	perfCounters.nodeEditShifted.Store(0)
 	perfCounters.nodeEditMarked.Store(0)
-	perfCounters.nodeEditPublicNodes.Store(0)
-	perfCounters.nodeEditChildAt.Store(0)
-	perfCounters.nodeEditFallbackFull.Store(0)
 	perfCounters.denseMutationCalls.Store(0)
 	perfCounters.denseMutationDrains.Store(0)
 	perfCounters.mutationChildRefCOW.Store(0)
@@ -314,20 +228,15 @@ func PerfCountersSnapshot() PerfCounters {
 	out.CloneTreeFinalRefs = perfCounters.cloneTreeFinalRefs.Load()
 	out.CloneTreeCompactCopies = perfCounters.cloneTreeCompactCopies.Load()
 	out.CloneTreeChildRefs = perfCounters.cloneTreeChildRefs.Load()
-	out.CloneTreeChildAt = perfCounters.cloneTreeChildAt.Load()
 	out.CloneOffsetCalls = perfCounters.cloneOffsetCalls.Load()
 	out.CloneOffsetPublicNodes = perfCounters.cloneOffsetPublicNodes.Load()
 	out.CloneOffsetCopies = perfCounters.cloneOffsetCopies.Load()
 	out.CloneOffsetShifted = perfCounters.cloneOffsetShifted.Load()
-	out.CloneOffsetChildAt = perfCounters.cloneOffsetChildAt.Load()
 	out.NodeEditCalls = perfCounters.nodeEditCalls.Load()
 	out.NodeEditNoopCalls = perfCounters.nodeEditNoopCalls.Load()
 	out.NodeEditCompactRefs = perfCounters.nodeEditCompactRefs.Load()
 	out.NodeEditShifted = perfCounters.nodeEditShifted.Load()
 	out.NodeEditMarked = perfCounters.nodeEditMarked.Load()
-	out.NodeEditPublicNodes = perfCounters.nodeEditPublicNodes.Load()
-	out.NodeEditChildAt = perfCounters.nodeEditChildAt.Load()
-	out.NodeEditFallbackFull = perfCounters.nodeEditFallbackFull.Load()
 	out.DenseMutationCalls = perfCounters.denseMutationCalls.Load()
 	out.DenseMutationDrains = perfCounters.denseMutationDrains.Load()
 	out.MutationChildRefCOW = perfCounters.mutationChildRefCOW.Load()
@@ -593,10 +502,6 @@ func perfRecordCloneTreeChildRefs(n int) {
 	}
 }
 
-func perfRecordCloneTreeChildAt() {
-	perfCounters.cloneTreeChildAt.Add(1)
-}
-
 func perfRecordCloneOffsetCall() {
 	perfCounters.cloneOffsetCalls.Add(1)
 }
@@ -611,10 +516,6 @@ func perfRecordCloneOffsetCompactCopy() {
 
 func perfRecordCloneOffsetShifted() {
 	perfCounters.cloneOffsetShifted.Add(1)
-}
-
-func perfRecordCloneOffsetChildAt() {
-	perfCounters.cloneOffsetChildAt.Add(1)
 }
 
 func perfRecordNodeEditCall() {
@@ -635,18 +536,6 @@ func perfRecordNodeEditShifted() {
 
 func perfRecordNodeEditMarked() {
 	perfCounters.nodeEditMarked.Add(1)
-}
-
-func perfRecordNodeEditPublicNode() {
-	perfCounters.nodeEditPublicNodes.Add(1)
-}
-
-func perfRecordNodeEditChildAt() {
-	perfCounters.nodeEditChildAt.Add(1)
-}
-
-func perfRecordNodeEditFallbackFull() {
-	perfCounters.nodeEditFallbackFull.Add(1)
 }
 
 func perfRecordDenseMutationChildrenCall() {

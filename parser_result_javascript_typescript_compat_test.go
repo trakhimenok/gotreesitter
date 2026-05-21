@@ -94,6 +94,49 @@ func TestNormalizeJavaScriptTopLevelExpressionStatementBoundsSnapToChildren(t *t
 	}
 }
 
+func TestNormalizeJavaScriptTopLevelDeclarationBoundsSnapToChildren(t *testing.T) {
+	lang := &Language{
+		Name:        "javascript",
+		SymbolNames: []string{"EOF", "program", "comment", "lexical_declaration", "const", "variable_declarator", ";"},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF", Visible: false, Named: false},
+			{Name: "program", Visible: true, Named: true},
+			{Name: "comment", Visible: true, Named: true},
+			{Name: "lexical_declaration", Visible: true, Named: true},
+			{Name: "const", Visible: true, Named: false},
+			{Name: "variable_declarator", Visible: true, Named: true},
+			{Name: ";", Visible: true, Named: false},
+		},
+	}
+
+	arena := newNodeArena(arenaClassFull)
+	comment := newLeafNodeInArena(arena, 2, true, 0, 6, Point{}, Point{Column: 6})
+	constTok := newLeafNodeInArena(arena, 4, false, 7, 12, Point{Row: 1}, Point{Row: 1, Column: 5})
+	decl := newLeafNodeInArena(arena, 5, true, 13, 22, Point{Row: 1, Column: 6}, Point{Row: 1, Column: 15})
+	semi := newLeafNodeInArena(arena, 6, false, 22, 23, Point{Row: 1, Column: 15}, Point{Row: 1, Column: 16})
+	lex := newParentNodeInArena(arena, 3, true, []*Node{constTok, decl, semi}, nil, 0)
+	lex.startByte = 0
+	lex.startPoint = Point{}
+	lex.endByte = 23
+	lex.endPoint = Point{Row: 1, Column: 16}
+	root := newParentNodeInArena(arena, 1, true, []*Node{comment, lex}, nil, 0)
+
+	normalizeJavaScriptTopLevelDeclarationBounds(root, lang)
+
+	if got, want := lex.StartByte(), uint32(7); got != want {
+		t.Fatalf("lex.StartByte = %d, want %d", got, want)
+	}
+	if got, want := lex.EndByte(), uint32(23); got != want {
+		t.Fatalf("lex.EndByte = %d, want %d", got, want)
+	}
+	if got, want := lex.StartPoint(), (Point{Row: 1}); got != want {
+		t.Fatalf("lex.StartPoint = %#v, want %#v", got, want)
+	}
+	if got, want := lex.EndPoint(), (Point{Row: 1, Column: 16}); got != want {
+		t.Fatalf("lex.EndPoint = %#v, want %#v", got, want)
+	}
+}
+
 func TestNormalizeTypeScriptRecoveredNamespaceRootRewrapsNamespaceBody(t *testing.T) {
 	lang := &Language{
 		Name:        "typescript",

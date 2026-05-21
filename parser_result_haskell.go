@@ -99,15 +99,8 @@ func normalizeHaskellRootImportField(root *Node, lang *Language) {
 		if !ok {
 			continue
 		}
-		fid := FieldID(0)
-		childType := symbolTypeName(lang, stackEntryNodeSymbol(entry))
-		for j, name := range lang.FieldNames {
-			if name == childType {
-				fid = FieldID(j)
-				break
-			}
-		}
-		if fid == 0 {
+		fid, ok := lang.FieldByName(symbolTypeName(lang, stackEntryNodeSymbol(entry)))
+		if !ok {
 			continue
 		}
 		if !fieldStorageReady {
@@ -143,11 +136,7 @@ func normalizeHaskellLocalBindsStarts(root *Node, source []byte, lang *Language)
 	if root == nil || lang == nil || lang.Name != "haskell" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "let_in" && resultChildCount(n) >= 2 {
 			letNode := resultChildAt(n, 0)
 			localBinds := resultChildAt(n, 1)
@@ -159,22 +148,14 @@ func normalizeHaskellLocalBindsStarts(root *Node, source []byte, lang *Language)
 				}
 			}
 		}
-		for i := 0; i < resultChildCount(n); i++ {
-			walk(resultChildAt(n, i))
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeHaskellQuasiquoteStarts(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "haskell" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "quasiquote" && n.startByte > 0 {
 			start := int(n.startByte)
 			if source[start-1] == ' ' && start < len(source) && source[start] == '[' {
@@ -186,9 +167,5 @@ func normalizeHaskellQuasiquoteStarts(root *Node, source []byte, lang *Language)
 				}
 			}
 		}
-		for i := 0; i < resultChildCount(n); i++ {
-			walk(resultChildAt(n, i))
-		}
-	}
-	walk(root)
+	})
 }

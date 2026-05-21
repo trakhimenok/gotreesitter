@@ -123,7 +123,7 @@ func csharpBuildAttributeListNodeFromSource(source []byte, start, end uint32, la
 	if !ok {
 		return nil, false
 	}
-	attrListNamed := int(attrListSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[attrListSym].Named
+	attrListNamed := symbolIsNamed(lang, attrListSym)
 	openTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "[", start, start+1)
 	if !ok {
 		return nil, false
@@ -205,7 +205,7 @@ func csharpBuildAttributeTargetSpecifierFromSource(source []byte, start, end uin
 	if !ok {
 		return nil, start, false
 	}
-	named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+	named := symbolIsNamed(lang, sym)
 	target := newLeafNodeInArena(arena, sym, named, targetStart, colonPos+1, advancePointByBytes(Point{}, source[:targetStart]), advancePointByBytes(Point{}, source[:colonPos+1]))
 	return target, csharpSkipSpaceBytes(source, colonPos+1), true
 }
@@ -218,7 +218,7 @@ func csharpBuildAttributeNodeFromSource(source []byte, start, end uint32, lang *
 	if !ok {
 		return nil, false
 	}
-	attrNamed := int(attrSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[attrSym].Named
+	attrNamed := symbolIsNamed(lang, attrSym)
 	nameFieldID, _ := lang.FieldByName("name")
 	nameStart, nameEnd := csharpTrimSpaceBounds(source, start, end)
 	if nameStart >= nameEnd {
@@ -251,7 +251,7 @@ func csharpBuildAttributeNodeFromSource(source []byte, start, end uint32, lang *
 		copy(buf, children)
 		children = buf
 	}
-	fields := csharpFieldIDsInArena(arena, fieldIDs)
+	fields := cloneFieldIDSliceInArena(arena, fieldIDs)
 	return newParentNodeInArena(arena, attrSym, attrNamed, children, fields, 0), true
 }
 
@@ -263,7 +263,7 @@ func csharpBuildAttributeArgumentListNodeFromSource(source []byte, start, end ui
 	if !ok {
 		return nil, false
 	}
-	argListNamed := int(argListSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[argListSym].Named
+	argListNamed := symbolIsNamed(lang, argListSym)
 	openTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "(", start, start+1)
 	if !ok {
 		return nil, false
@@ -323,7 +323,7 @@ func csharpBuildAttributeArgumentNodeFromSource(source []byte, start, end uint32
 	if !ok {
 		return nil, false
 	}
-	argNamed := int(argSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[argSym].Named
+	argNamed := symbolIsNamed(lang, argSym)
 	if opPos, opName, ok := csharpFindAttributeNamedArgumentOperator(source, start, end); ok {
 		nameStart, nameEnd := csharpTrimSpaceBounds(source, start, opPos)
 		valueStart, valueEnd := csharpTrimSpaceBounds(source, opPos+uint32(len(opName)), end)
@@ -344,7 +344,7 @@ func csharpBuildAttributeArgumentNodeFromSource(source []byte, start, end uint32
 			return nil, false
 		}
 		nameFieldID, _ := lang.FieldByName("name")
-		fields := csharpFieldIDsInArena(arena, []FieldID{nameFieldID, 0, 0})
+		fields := cloneFieldIDSliceInArena(arena, []FieldID{nameFieldID, 0, 0})
 		children := []*Node{nameNode, opTok, valueNode}
 		if arena != nil {
 			buf := arena.allocNodeSlice(len(children))
@@ -404,7 +404,7 @@ func csharpBuildQualifiedNameNode(source []byte, start, end uint32, lang *Langua
 	if !ok {
 		return nil, false
 	}
-	qualifiedNameNamed := int(qualifiedNameSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[qualifiedNameSym].Named
+	qualifiedNameNamed := symbolIsNamed(lang, qualifiedNameSym)
 	segStart, segEnd, ok := csharpScanIdentifierAt(source, start)
 	if !ok || segStart != start {
 		return nil, false
@@ -434,7 +434,7 @@ func csharpBuildQualifiedNameNode(source []byte, start, end uint32, lang *Langua
 		if !ok {
 			return nil, false
 		}
-		fields := csharpFieldIDsInArena(arena, []FieldID{qualifierFieldID, 0, nameFieldID})
+		fields := cloneFieldIDSliceInArena(arena, []FieldID{qualifierFieldID, 0, nameFieldID})
 		current = newParentNodeInArena(arena, qualifiedNameSym, qualifiedNameNamed, []*Node{current, dotTok, ident}, fields, 0)
 		cursor = segEnd
 	}
@@ -455,7 +455,7 @@ func csharpBuildMemberAccessNodeFromSource(source []byte, start, end uint32, lan
 	if !hasExpressionField || !hasNameField || !hasMemberAccess {
 		return nil, false
 	}
-	memberAccessNamed := int(memberAccessSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[memberAccessSym].Named
+	memberAccessNamed := symbolIsNamed(lang, memberAccessSym)
 	leftStart, leftEnd, ok := csharpScanIdentifierAt(source, start)
 	if !ok || leftStart != start {
 		return nil, false
@@ -487,7 +487,7 @@ func csharpBuildMemberAccessNodeFromSource(source []byte, start, end uint32, lan
 		if !ok {
 			return nil, false
 		}
-		fields := csharpFieldIDsInArena(arena, []FieldID{expressionFieldID, 0, nameFieldID})
+		fields := cloneFieldIDSliceInArena(arena, []FieldID{expressionFieldID, 0, nameFieldID})
 		current = newParentNodeInArena(arena, memberAccessSym, memberAccessNamed, []*Node{current, dotTok, nameNode}, fields, 0)
 		cursor = nameEnd
 	}
@@ -513,7 +513,7 @@ func csharpPrependAttributeListsToDeclaration(decl *Node, attributeLists []*Node
 	if len(decl.fieldIDs) > 0 {
 		fieldIDs := make([]FieldID, len(children))
 		copy(fieldIDs[len(attributeLists):], decl.fieldIDs)
-		decl.fieldIDs = csharpFieldIDsInArena(arena, fieldIDs)
+		decl.fieldIDs = cloneFieldIDSliceInArena(arena, fieldIDs)
 		decl.fieldSources = defaultFieldSourcesInArena(arena, decl.fieldIDs)
 	}
 	populateParentNode(decl, decl.children)

@@ -10,7 +10,7 @@ func normalizeScalaObjectTemplateBodyFragments(root *Node, source []byte, lang *
 	if !ok {
 		return
 	}
-	templateBodyNamed := int(templateBodySym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[templateBodySym].Named
+	templateBodyNamed := symbolIsNamed(lang, templateBodySym)
 	arena := root.ownerArena
 	changed := false
 	for i := 0; i+2 < len(root.children); i++ {
@@ -58,11 +58,7 @@ func normalizeScalaTemplateBodyObjectFragments(root *Node, source []byte, lang *
 	if root == nil || lang == nil || lang.Name != "scala" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "template_body" && len(n.children) >= 4 {
 			for i := 0; i+2 < len(n.children); i++ {
 				objTok := n.children[i]
@@ -107,11 +103,7 @@ func normalizeScalaTemplateBodyObjectFragments(root *Node, source []byte, lang *
 				i = startIdx
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 type scalaTemplateMemberKind uint8
@@ -140,30 +132,18 @@ func normalizeScalaTemplateBodyRecoveredMembers(root *Node, source []byte, lang 
 	if root == nil || lang == nil || lang.Name != "scala" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "template_body" && n.HasError() {
 			scalaRecoverTemplateBodyMembers(n, source, lang)
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func normalizeScalaRecoveredObjectTemplateBodies(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || lang.Name != "scala" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if scalaDefinitionTemplateBodyNeedsRecovery(n, lang) {
 			for i, child := range n.children {
 				if child == nil || child.Type(lang) != "template_body" {
@@ -183,11 +163,7 @@ func normalizeScalaRecoveredObjectTemplateBodies(root *Node, source []byte, lang
 				break
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func scalaDefinitionTemplateBodyNeedsRecovery(n *Node, lang *Language) bool {
@@ -315,9 +291,9 @@ closeLeafDone:
 	if !ok {
 		return nil, false
 	}
-	commentNamed := int(commentSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[commentSym].Named
-	openNamed := int(openSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[openSym].Named
-	closeNamed := int(closeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[closeSym].Named
+	commentNamed := symbolIsNamed(lang, commentSym)
+	openNamed := symbolIsNamed(lang, openSym)
+	closeNamed := symbolIsNamed(lang, closeSym)
 	openNode := newLeafNodeInArena(
 		arena,
 		openSym,
@@ -351,19 +327,11 @@ func normalizeScalaSplitFunctionDefinitions(root *Node, source []byte, lang *Lan
 	if root == nil || lang == nil || lang.Name != "scala" || len(source) == 0 {
 		return
 	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "template_body" && n.HasError() {
 			scalaRecoverSplitFunctionDefinition(n, source, lang)
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func scalaRecoverSplitFunctionDefinition(body *Node, source []byte, lang *Language) {
@@ -713,138 +681,181 @@ func scalaFindNextTemplateBodyMemberStart(source []byte, pos, limit int) (int, s
 }
 
 func scalaFindTemplateBodyMemberEnd(source []byte, start, limit int) int {
-	if start+1 < limit && source[start] == '/' {
-		switch source[start+1] {
-		case '/':
-			end := start + 2
-			for end < limit && source[end] != '\n' && source[end] != '\r' {
-				end++
-			}
-			return trimTrailingHorizontalAndVerticalTrivia(source, start, end)
-		case '*':
-			end := start + 2
-			for end+1 < limit {
-				if source[end] == '*' && source[end+1] == '/' {
-					end += 2
-					return trimTrailingHorizontalAndVerticalTrivia(source, start, end)
-				}
-				end++
-			}
-			return trimTrailingHorizontalAndVerticalTrivia(source, start, limit)
-		}
+	if end, ok := scalaTemplateBodyLeadingCommentEnd(source, start, limit); ok {
+		return end
 	}
-	braceDepth := 0
-	parenDepth := 0
-	bracketDepth := 0
-	inLineComment := false
-	inBlockComment := false
-	var stringQuote byte
-	tripleQuote := false
-	lineStart := false
+	var scan scalaTemplateMemberEndScan
 	for i := start + 1; i < limit; i++ {
 		ch := source[i]
 		next := byte(0)
 		if i+1 < limit {
 			next = source[i+1]
 		}
-		if inLineComment {
-			if ch == '\n' {
-				inLineComment = false
-				lineStart = true
-			}
+		if scan.consumeTriviaOrString(source, &i, limit, ch, next) {
 			continue
 		}
-		if inBlockComment {
-			if ch == '*' && next == '/' {
-				inBlockComment = false
-				i++
-				continue
-			}
-			if ch == '\n' {
-				lineStart = true
-			}
-			continue
-		}
-		if stringQuote != 0 {
-			if tripleQuote {
-				if i+2 < limit && source[i] == stringQuote && source[i+1] == stringQuote && source[i+2] == stringQuote {
-					stringQuote = 0
-					tripleQuote = false
-					i += 2
-				}
-				continue
-			}
-			if ch == '\\' {
-				i++
-				continue
-			}
-			if ch == stringQuote {
-				stringQuote = 0
-			}
-			continue
-		}
-		if braceDepth == 0 && parenDepth == 0 && bracketDepth == 0 && ch == '/' && (next == '/' || next == '*') {
+		if scan.atTopLevel() && scalaStartsLineOrBlockComment(source, i, limit) {
 			return trimTrailingHorizontalAndVerticalTrivia(source, start, i)
 		}
-		if lineStart {
-			j := skipHorizontalTrivia(source, i, limit)
-			if braceDepth == 0 && parenDepth == 0 && bracketDepth == 0 {
-				switch {
-				case j < limit && source[j] == '}':
-					return j
-				case j+1 < limit && source[j] == '/' && (source[j+1] == '/' || source[j+1] == '*'):
-					return trimTrailingHorizontalAndVerticalTrivia(source, start, i)
-				default:
-					if _, ok := scalaTemplateMemberKindAt(source, j, limit); ok {
-						return trimTrailingHorizontalAndVerticalTrivia(source, start, i)
-					}
-				}
+		if scan.lineStart {
+			if end, ok := scalaTemplateBodyMemberEndAtLineStart(source, start, i, limit, scan); ok {
+				return end
 			}
-			lineStart = false
+			scan.lineStart = false
 		}
-		switch {
-		case ch == '/' && next == '/':
-			inLineComment = true
-			i++
+		if scan.startTriviaOrString(source, &i, limit, ch, next) {
 			continue
-		case ch == '/' && next == '*':
-			inBlockComment = true
-			i++
-			continue
-		case ch == '"' || ch == '\'':
-			if i+2 < limit && source[i+1] == ch && source[i+2] == ch {
-				stringQuote = ch
-				tripleQuote = true
-				i += 2
-				continue
-			}
-			stringQuote = ch
-			tripleQuote = false
-			continue
-		case ch == '{':
-			braceDepth++
-		case ch == '}':
-			if braceDepth > 0 {
-				braceDepth--
-			}
-		case ch == '(':
-			parenDepth++
-		case ch == ')':
-			if parenDepth > 0 {
-				parenDepth--
-			}
-		case ch == '[':
-			bracketDepth++
-		case ch == ']':
-			if bracketDepth > 0 {
-				bracketDepth--
-			}
 		}
+		scan.updateDepth(ch)
 		if ch == '\n' {
-			lineStart = true
+			scan.lineStart = true
 		}
 	}
 	return trimTrailingHorizontalAndVerticalTrivia(source, start, limit)
+}
+
+type scalaTemplateMemberEndScan struct {
+	braceDepth     int
+	parenDepth     int
+	bracketDepth   int
+	inLineComment  bool
+	inBlockComment bool
+	stringQuote    byte
+	tripleQuote    bool
+	lineStart      bool
+}
+
+func (scan scalaTemplateMemberEndScan) atTopLevel() bool {
+	return scan.braceDepth == 0 && scan.parenDepth == 0 && scan.bracketDepth == 0
+}
+
+func (scan *scalaTemplateMemberEndScan) consumeTriviaOrString(source []byte, i *int, limit int, ch, next byte) bool {
+	if scan.inLineComment {
+		if ch == '\n' {
+			scan.inLineComment = false
+			scan.lineStart = true
+		}
+		return true
+	}
+	if scan.inBlockComment {
+		if ch == '*' && next == '/' {
+			scan.inBlockComment = false
+			*i = *i + 1
+			return true
+		}
+		if ch == '\n' {
+			scan.lineStart = true
+		}
+		return true
+	}
+	if scan.stringQuote == 0 {
+		return false
+	}
+	if scan.tripleQuote {
+		if *i+2 < limit && source[*i] == scan.stringQuote && source[*i+1] == scan.stringQuote && source[*i+2] == scan.stringQuote {
+			scan.stringQuote = 0
+			scan.tripleQuote = false
+			*i += 2
+		}
+		return true
+	}
+	if ch == '\\' {
+		*i = *i + 1
+		return true
+	}
+	if ch == scan.stringQuote {
+		scan.stringQuote = 0
+	}
+	return true
+}
+
+func (scan *scalaTemplateMemberEndScan) startTriviaOrString(source []byte, i *int, limit int, ch, next byte) bool {
+	switch {
+	case ch == '/' && next == '/':
+		scan.inLineComment = true
+		*i = *i + 1
+		return true
+	case ch == '/' && next == '*':
+		scan.inBlockComment = true
+		*i = *i + 1
+		return true
+	case ch == '"' || ch == '\'':
+		scan.stringQuote = ch
+		scan.tripleQuote = *i+2 < limit && source[*i+1] == ch && source[*i+2] == ch
+		if scan.tripleQuote {
+			*i += 2
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func (scan *scalaTemplateMemberEndScan) updateDepth(ch byte) {
+	switch ch {
+	case '{':
+		scan.braceDepth++
+	case '}':
+		if scan.braceDepth > 0 {
+			scan.braceDepth--
+		}
+	case '(':
+		scan.parenDepth++
+	case ')':
+		if scan.parenDepth > 0 {
+			scan.parenDepth--
+		}
+	case '[':
+		scan.bracketDepth++
+	case ']':
+		if scan.bracketDepth > 0 {
+			scan.bracketDepth--
+		}
+	}
+}
+
+func scalaTemplateBodyLeadingCommentEnd(source []byte, start, limit int) (int, bool) {
+	if !scalaStartsLineOrBlockComment(source, start, limit) {
+		return 0, false
+	}
+	if source[start+1] == '/' {
+		end := start + 2
+		for end < limit && source[end] != '\n' && source[end] != '\r' {
+			end++
+		}
+		return trimTrailingHorizontalAndVerticalTrivia(source, start, end), true
+	}
+	end := start + 2
+	for end+1 < limit {
+		if source[end] == '*' && source[end+1] == '/' {
+			end += 2
+			return trimTrailingHorizontalAndVerticalTrivia(source, start, end), true
+		}
+		end++
+	}
+	return trimTrailingHorizontalAndVerticalTrivia(source, start, limit), true
+}
+
+func scalaStartsLineOrBlockComment(source []byte, pos, limit int) bool {
+	return pos+1 < limit && source[pos] == '/' && (source[pos+1] == '/' || source[pos+1] == '*')
+}
+
+func scalaTemplateBodyMemberEndAtLineStart(source []byte, start, i, limit int, scan scalaTemplateMemberEndScan) (int, bool) {
+	j := skipHorizontalTrivia(source, i, limit)
+	if !scan.atTopLevel() {
+		return 0, false
+	}
+	switch {
+	case j < limit && source[j] == '}':
+		return j, true
+	case scalaStartsLineOrBlockComment(source, j, limit):
+		return trimTrailingHorizontalAndVerticalTrivia(source, start, i), true
+	default:
+		if _, ok := scalaTemplateMemberKindAt(source, j, limit); ok {
+			return trimTrailingHorizontalAndVerticalTrivia(source, start, i), true
+		}
+		return 0, false
+	}
 }
 
 func scalaTemplateMemberKindAt(source []byte, pos, limit int) (scalaTemplateMemberKind, bool) {
@@ -963,7 +974,7 @@ func scalaRecoverSplitFunctionDefinitionFromRange(source []byte, fnStart, fnEnd 
 	if !ok {
 		return nil, false
 	}
-	functionNamed := int(functionSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[functionSym].Named
+	functionNamed := symbolIsNamed(lang, functionSym)
 	children := make([]*Node, 0, len(header.children)+2)
 	for _, child := range header.children {
 		if child == nil {
@@ -989,17 +1000,17 @@ func scalaRecoverFunctionBlockFromRange(source []byte, blockStart, blockEnd uint
 	if !ok {
 		return nil, false
 	}
-	blockNamed := int(blockSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[blockSym].Named
+	blockNamed := symbolIsNamed(lang, blockSym)
 	openSym, ok := symbolByName(lang, "{")
 	if !ok {
 		return nil, false
 	}
-	openNamed := int(openSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[openSym].Named
+	openNamed := symbolIsNamed(lang, openSym)
 	closeSym, ok := symbolByName(lang, "}")
 	if !ok {
 		return nil, false
 	}
-	closeNamed := int(closeSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[closeSym].Named
+	closeNamed := symbolIsNamed(lang, closeSym)
 	open := newLeafNodeInArena(arena, openSym, openNamed, blockStart, blockStart+1, advancePointByBytes(Point{}, source[:blockStart]), advancePointByBytes(Point{}, source[:blockStart+1]))
 	close := newLeafNodeInArena(arena, closeSym, closeNamed, blockEnd-1, blockEnd, advancePointByBytes(Point{}, source[:blockEnd-1]), advancePointByBytes(Point{}, source[:blockEnd]))
 	statementSpans := scalaBlockStatementSpans(source, blockStart+1, blockEnd-1)
@@ -1231,13 +1242,13 @@ func scalaRecoverValDefinitionIfExpressionFromRange(source []byte, start, end ui
 	if !ok {
 		return nil, false
 	}
-	valNamed := int(valSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[valSym].Named
-	identifierNamed := int(identifierSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[identifierSym].Named
-	eqNamed := int(eqSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[eqSym].Named
-	valDefNamed := int(valDefSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[valDefSym].Named
-	ifExprNamed := int(ifExprSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[ifExprSym].Named
-	ifNamed := int(ifSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[ifSym].Named
-	elseNamed := int(elseSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[elseSym].Named
+	valNamed := symbolIsNamed(lang, valSym)
+	identifierNamed := symbolIsNamed(lang, identifierSym)
+	eqNamed := symbolIsNamed(lang, eqSym)
+	valDefNamed := symbolIsNamed(lang, valDefSym)
+	ifExprNamed := symbolIsNamed(lang, ifExprSym)
+	ifNamed := symbolIsNamed(lang, ifSym)
+	elseNamed := symbolIsNamed(lang, elseSym)
 
 	ifPos := bytes.Index(source[start:end], []byte("if "))
 	elsePos := bytes.Index(source[start:end], []byte(" else "))
@@ -1323,7 +1334,7 @@ func scalaRecoverSingleExpressionNode(source []byte, start, end uint32, lang *La
 		if !ok {
 			return nil, false
 		}
-		named := int(sym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[sym].Named
+		named := symbolIsNamed(lang, sym)
 		return newLeafNodeInArena(arena, sym, named, start, end, advancePointByBytes(Point{}, source[:start]), advancePointByBytes(Point{}, source[:end])), true
 	}
 	return nil, false

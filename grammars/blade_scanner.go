@@ -183,10 +183,6 @@ func htmlSerializeTags(tags []htmlTag, buf []byte) int {
 	return size
 }
 
-func htmlDeserializeTags(buf []byte) []htmlTag {
-	return htmlDeserializeTagsInto(nil, buf)
-}
-
 func htmlDeserializeTagsInto(dst []htmlTag, buf []byte) []htmlTag {
 	if len(buf) < 4 {
 		return nil

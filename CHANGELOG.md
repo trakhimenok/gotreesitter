@@ -7,7 +7,20 @@ for tags and release notes while still in `0.x`.
 
 ## [Unreleased]
 
-- Nothing yet.
+- Removed legacy generated grammar register stubs that were hidden behind the
+  obsolete `legacy_generated_register_stubs` build tag; the generated registry
+  is now the single checked-in grammar registration surface.
+- Folded the one-off Go blob regeneration command into `cmd/grammargen` via
+  `-lr-split`, reducing the public command set while keeping the regeneration
+  path available.
+- Removed the legacy host-side race wrapper in favor of CI or Docker-scoped
+  race validation.
+- Removed the obsolete scoped Canopy Docker runner; Canopy now runs directly on
+  host for structural analysis.
+- Removed the undocumented `grammarlsp` side package and its LSP/SegmentIO
+  dependencies from the root module.
+- Collapsed stale internal aliases/helpers around token-source reparsing,
+  snippet parsing, COBOL dispatch, and perf counter structs.
 
 ## [0.18.0] - 2026-05-19
 

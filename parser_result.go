@@ -176,15 +176,12 @@ func (p *Parser) buildNoTreeBenchmarkResult(source []byte, arena *nodeArena, roo
 	}
 	named := true
 	if p != nil && p.language != nil {
-		if idx := int(sym); idx >= 0 && idx < len(p.language.SymbolMetadata) {
-			named = p.language.SymbolMetadata[sym].Named
-		}
+		named = p.isNamedSymbol(sym)
 	}
 	root := arena.allocNodeFast()
 	root.ownerArena = arena
 	arena.noTreePlaceholderNodesConstructed++
-	root.symbol = sym
-	root.setNamed(named)
+	retagResultRoot(root, sym, named)
 	root.startByte = 0
 	root.endByte = rootEndByte
 	root.childIndex = -1
@@ -632,10 +629,7 @@ func (p *Parser) isAliasTargetSymbol(sym Symbol) bool {
 
 // isNamedSymbol checks whether a symbol is a named symbol.
 func (p *Parser) isNamedSymbol(sym Symbol) bool {
-	if int(sym) < len(p.language.SymbolMetadata) {
-		return p.language.SymbolMetadata[sym].Named
-	}
-	return false
+	return p != nil && symbolIsNamed(p.language, sym)
 }
 
 func nodesFromGSS(stack gssStack) []*Node {
@@ -739,271 +733,18 @@ func (p *Parser) buildResultFromNodes(nodes []*Node, source []byte, arena *nodeA
 		arena = nil
 	}
 
-	expectedRootSymbol := Symbol(0)
-	hasExpectedRoot := false
-	shouldWireParentLinks := oldTree == nil
-	if p != nil && p.hasRootSymbol {
-		expectedRootSymbol = p.rootSymbol
-		hasExpectedRoot = true
-	}
-	if oldTree != nil && oldTree.RootNode() != nil {
-		expectedRootSymbol = oldTree.RootNode().symbol
-		hasExpectedRoot = true
-	}
-	if p != nil && p.language != nil && p.language.Name == "python" {
-		timing := p.currentMaterializationTiming()
-		repairStart := materializationTimingStart(timing)
-		nodes, _ = repairPythonKeywordErrorNodes(nodes, source, arena, p.language)
-		timing.addPythonKeywordRepair(repairStart)
-		nodes = collapsePythonRootFragments(nodes, arena, p.language)
-	}
-	if hasExpectedRoot && len(nodes) > 1 {
-		nodes = flattenRootSelfFragments(nodes, arena, expectedRootSymbol)
-	}
-	borrowedResolved := false
-	var borrowed []*nodeArena
-	getBorrowed := func() []*nodeArena {
-		if borrowedResolved {
-			return borrowed
-		}
-		borrowed = reuseState.retainBorrowed(arena)
-		borrowedResolved = true
-		return borrowed
-	}
+	builder := newResultRootBuild(p, source, arena, oldTree, reuseState, linkScratch)
+	nodes = builder.prepareRootNodes(nodes)
 
 	if len(nodes) == 1 {
-		candidate := nodes[0]
-		candidate = flattenInvisibleRootChildren(candidate, arena, p.language)
-		timing := p.currentMaterializationTiming()
-		keywordRepairStart := materializationTimingStart(timing)
-		candidate = repairPythonKeywordErrorNode(candidate, source, arena, p.language)
-		timing.addPythonKeywordRepair(keywordRepairStart)
-		rootRepairStart := materializationTimingStart(timing)
-		candidate = repairPythonRootNode(candidate, arena, p.language)
-		timing.addPythonRootRepair(rootRepairStart)
-		if !hasExpectedRoot || candidate.symbol == expectedRootSymbol {
-			p.finalizeResultRoot(candidate, source, linkScratch, shouldWireParentLinks, true)
-			return newTreeWithArenas(candidate, source, p.language, arena, getBorrowed())
-		}
-
-		// Incremental reuse guard: if the only stacked node doesn't match the
-		// previous root symbol, synthesize an expected root wrapper instead of
-		// returning a reused child as the new tree root.
-		rootChildren := make([]*Node, 1)
-		rootChildren[0] = candidate
-		if arena != nil {
-			rootChildren = arena.allocNodeSlice(1)
-			rootChildren[0] = candidate
-		}
-		root := newParentNodeInArena(arena, expectedRootSymbol, true, rootChildren, nil, 0)
-		p.finalizeResultRoot(root, source, linkScratch, shouldWireParentLinks, true)
-		return newTreeWithArenas(root, source, p.language, arena, getBorrowed())
+		return builder.buildSingleRootTree(nodes[0])
 	}
 
-	// When multiple nodes remain on the stack, check whether all but one
-	// are extras (e.g. leading whitespace/comments). If so, fold the extras
-	// into the real root rather than wrapping everything in an error node.
-	var realRoot *Node
-	var allExtras []*Node
-	var extras []*Node
-	for _, n := range nodes {
-		if n.isExtra() {
-			allExtras = append(allExtras, n)
-			// Ignore invisible extras and zero-width extras in final-root
-			// recovery; they should not force an error wrapper or inflate root
-			// child counts.
-			if p != nil && p.language != nil &&
-				int(n.symbol) < len(p.language.SymbolMetadata) &&
-				p.language.SymbolMetadata[n.symbol].Visible &&
-				n.endByte > n.startByte {
-				extras = append(extras, n)
-			}
-		} else {
-			if realRoot != nil {
-				realRoot = nil // more than one non-extra -> genuine error
-				break
-			}
-			realRoot = n
-		}
-	}
-	if realRoot != nil {
-		returnRealRoot := !hasExpectedRoot || realRoot.symbol == expectedRootSymbol
-		if reuseState != nil && reuseState.reusedAny {
-			realRoot = cloneNodeInArena(arena, realRoot)
-			realRoot.parent = nil
-			realRoot.childIndex = -1
-		}
-		foldExtras := returnRealRoot && len(extras) > 0
-		if foldExtras {
-			for _, e := range allExtras {
-				if e != nil && (e.IsError() || e.HasError()) {
-					foldExtras = false
-					break
-				}
-			}
-		}
-		if foldExtras {
-			// Fold visible extras into the real root as leading/trailing children.
-			var leadingExtras []*Node
-			var trailingExtras []*Node
-			for _, e := range extras {
-				if e.startByte <= realRoot.startByte {
-					leadingExtras = append(leadingExtras, e)
-				} else {
-					trailingExtras = append(trailingExtras, e)
-				}
-			}
-			if !resultMutableChildrenForMutation(realRoot).SurroundFinalRefs(leadingExtras, trailingExtras) {
-				realRootChildren := resultChildSliceForMutation(realRoot)
-				merged := make([]*Node, 0, len(extras)+len(realRootChildren))
-				leadingCount := 0
-				for _, e := range leadingExtras {
-					merged = append(merged, e)
-					leadingCount++
-				}
-				merged = append(merged, realRootChildren...)
-				for _, e := range trailingExtras {
-					merged = append(merged, e)
-				}
-				if arena != nil {
-					out := arena.allocNodeSlice(len(merged))
-					copy(out, merged)
-					merged = out
-				}
-				realRoot.children = merged
-				// Keep fieldIDs aligned with children: extras have no field (0).
-				if len(realRoot.fieldIDs) > 0 {
-					trailingCount := len(extras) - leadingCount
-					padded := make([]FieldID, leadingCount+len(realRoot.fieldIDs)+trailingCount)
-					copy(padded[leadingCount:], realRoot.fieldIDs)
-					realRoot.fieldIDs = padded
-					if len(realRoot.fieldSources) > 0 {
-						paddedSources := make([]uint8, len(padded))
-						copy(paddedSources[leadingCount:], realRoot.fieldSources)
-						realRoot.fieldSources = paddedSources
-					}
-				}
-				populateParentNode(realRoot, realRoot.children)
-			}
-			// Extend root range to cover the extras.
-			for _, e := range extras {
-				if e.startByte < realRoot.startByte {
-					realRoot.startByte = e.startByte
-					realRoot.startPoint = e.startPoint
-				}
-				if e.endByte > realRoot.endByte {
-					realRoot.endByte = e.endByte
-					realRoot.endPoint = e.endPoint
-				}
-			}
-		}
-		// Invisible extras should still contribute to the final root byte/point range.
-		if returnRealRoot {
-			for _, e := range allExtras {
-				if e.startByte < realRoot.startByte {
-					realRoot.startByte = e.startByte
-					realRoot.startPoint = e.startPoint
-				}
-				if e.endByte > realRoot.endByte {
-					realRoot.endByte = e.endByte
-					realRoot.endPoint = e.endPoint
-				}
-			}
-		}
-		timing := p.currentMaterializationTiming()
-		rootRepairStart := materializationTimingStart(timing)
-		realRoot = repairPythonRootNode(realRoot, arena, p.language)
-		timing.addPythonRootRepair(rootRepairStart)
-		extendTrailing := returnRealRoot || !realRoot.hasError()
-		p.finalizeResultRoot(realRoot, source, linkScratch, shouldWireParentLinks && returnRealRoot, extendTrailing)
-		if returnRealRoot {
-			return newTreeWithArenas(realRoot, source, p.language, arena, getBorrowed())
-		}
+	if tree := builder.tryBuildRealRootTree(nodes); tree != nil {
+		return tree
 	}
 
-	rootChildren := filterZeroWidthExtras(nodes, arena)
-	timing := p.currentMaterializationTiming()
-	keywordRepairStart := materializationTimingStart(timing)
-	rootChildren, _ = repairPythonKeywordErrorNodes(rootChildren, source, arena, p.language)
-	timing.addPythonKeywordRepair(keywordRepairStart)
-	rootSymbol := rootChildren[len(rootChildren)-1].symbol
-	rootHasError := false
-	for _, n := range rootChildren {
-		if n != nil && (n.IsError() || n.HasError()) {
-			rootHasError = true
-			break
-		}
-	}
-	if hasExpectedRoot {
-		if rootHasError {
-			if p != nil && p.language != nil && p.language.Name == "dart" && dartProgramChildrenLookComplete(nodes, p.language) {
-				rootSymbol = expectedRootSymbol
-			} else {
-				rootSymbol = errorSymbol
-			}
-		} else {
-			rootSymbol = expectedRootSymbol
-		}
-	}
-	root := newParentNodeInArena(arena, rootSymbol, true, rootChildren, nil, 0)
-	if rootHasError && !(p != nil && p.language != nil && p.language.Name == "python" && hasExpectedRoot && pythonModuleChildrenLookComplete(rootChildren, p.language)) {
-		root.setHasError(true)
-	}
-	rootRepairStart := materializationTimingStart(timing)
-	root = repairPythonRootNode(root, arena, p.language)
-	timing.addPythonRootRepair(rootRepairStart)
-	p.finalizeResultRoot(root, source, linkScratch, shouldWireParentLinks, true)
-	return newTreeWithArenas(root, source, p.language, arena, getBorrowed())
-}
-
-func (p *Parser) finalizeResultRoot(root *Node, source []byte, linkScratch *[]*Node, wireParentLinks, extendTrailing bool) {
-	if root == nil {
-		return
-	}
-	timing := p.currentMaterializationTiming()
-	finalizeStart := materializationTimingStart(timing)
-	defer timing.addResultFinalizeRoot(finalizeStart)
-	if extendTrailing {
-		start := materializationTimingStart(timing)
-		extendNodeToTrailingWhitespace(root, source)
-		timing.addResultExtendTrailing(start)
-	}
-	start := materializationTimingStart(timing)
-	p.normalizeRootSourceStart(root, source)
-	timing.addResultNormalizeRootStart(start)
-	if p == nil || !p.noResultCompatibilityBenchmarkOnly {
-		start = materializationTimingStart(timing)
-		normalizeResultCompatibility(root, source, p)
-		timing.addResultCompatibility(start)
-	}
-	if wireParentLinks {
-		start = materializationTimingStart(timing)
-		if p != nil && p.shouldDeferResultParentLinks(root) {
-			root.ownerArena.deferParentLinks(root)
-		} else {
-			wireParentLinksWithScratch(root, linkScratch)
-		}
-		timing.addResultParentLink(start)
-	}
-}
-
-func (p *Parser) shouldDeferResultParentLinks(root *Node) bool {
-	if p == nil || p.language == nil || root == nil || root.ownerArena == nil {
-		return false
-	}
-	return (p.language.Name == "java" || p.language.Name == "python") && !p.noTreeBenchmarkOnly
-}
-
-func (p *Parser) normalizeRootSourceStart(root *Node, source []byte) {
-	if root == nil || root.startByte == 0 || len(source) == 0 {
-		return
-	}
-	// Included-range parses intentionally preserve range-local root spans.
-	if p != nil && len(p.included) > 0 {
-		return
-	}
-	root.startByte = 0
-	root.startPoint = Point{}
+	return builder.buildSyntheticRootTree(nodes)
 }
 
 // maxTreeWalkDepth prevents stack overflow in recursive tree walkers when

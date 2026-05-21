@@ -19,10 +19,13 @@ type pendingChildEntrySlab struct {
 	used int
 }
 
-// pendingChildEntry stores arena-owned payload pointers with the stack-entry
-// kind in the low bits. The payload parseState is the source of truth when the
-// stack entry is reconstructed.
-type pendingChildEntry uintptr
+// pendingChildEntry stores arena-owned payload pointers separately from small
+// stack-entry or field metadata. The payload parseState is the source of truth
+// when the stack entry is reconstructed.
+type pendingChildEntry struct {
+	node unsafe.Pointer
+	meta uintptr
+}
 
 type pendingChildRange uint64
 
@@ -62,7 +65,7 @@ func pendingChildEntryBytesForCap(n int) int64 {
 	if n <= 0 {
 		return 0
 	}
-	return int64(n) * int64(unsafe.Sizeof(pendingChildEntry(0)))
+	return int64(n) * int64(unsafe.Sizeof(pendingChildEntry{}))
 }
 
 func defaultPendingParentSlabCap(class arenaClass) int {
@@ -86,7 +89,7 @@ func defaultPendingChildEntrySlabCap(class arenaClass) int {
 	if class == arenaClassFull {
 		slabBytes = fullParseArenaSlab / 2
 	}
-	size := int(unsafe.Sizeof(pendingChildEntry(0)))
+	size := int(unsafe.Sizeof(pendingChildEntry{}))
 	if size <= 0 {
 		return minArenaNodeCap
 	}
@@ -278,42 +281,36 @@ func (r pendingChildRange) refsN(arena *nodeArena, count int) []pendingChildEntr
 
 func newPendingChildEntry(entry stackEntry) pendingChildEntry {
 	if entry.node == nil {
-		return 0
+		return pendingChildEntry{}
 	}
 	kind := uintptr(entry.kind)
 	if kind&^pendingChildEntryKindMask != 0 {
 		panic("pending child entry kind exceeds tag mask")
 	}
-	ptr := uintptr(unsafe.Pointer(entry.node))
-	if ptr&pendingChildEntryKindMask != 0 {
-		panic("pending child entry payload is under-aligned")
-	}
-	return pendingChildEntry(ptr | kind)
+	return pendingChildEntry{node: entry.node, meta: kind}
 }
 
 func newPendingChildFieldEntry(fid FieldID, source uint8) pendingChildEntry {
-	return pendingChildEntry(uintptr(fid) | uintptr(source)<<16)
+	return pendingChildEntry{meta: uintptr(fid) | uintptr(source)<<16}
 }
 
 func (e pendingChildEntry) fieldID() FieldID {
-	return FieldID(uintptr(e) & 0xffff)
+	return FieldID(e.meta & 0xffff)
 }
 
 func (e pendingChildEntry) fieldSource() uint8 {
-	return uint8((uintptr(e) >> 16) & 0xff)
+	return uint8((e.meta >> 16) & 0xff)
 }
 
 const pendingChildEntryKindMask = uintptr(3)
 
 func (entry pendingChildEntry) stackEntry() stackEntry {
-	if entry == 0 {
+	if entry.node == nil {
 		return stackEntry{}
 	}
-	kind := uint32(uintptr(entry) & pendingChildEntryKindMask)
-	node := (*Node)(unsafe.Pointer(uintptr(entry) &^ pendingChildEntryKindMask))
 	stack := stackEntry{
-		node: node,
-		kind: kind,
+		node: entry.node,
+		kind: uint32(entry.meta & pendingChildEntryKindMask),
 	}
 	stack.state = stackEntryNodeParseState(stack)
 	return stack
@@ -352,9 +349,7 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 		node.endPoint = parent.endPoint
 		node.parseState = parent.parseState
 		node.preGotoState = parent.preGotoState
-		entry.node = node
-		entry.kind = stackEntryKindNode
-		entry.state = node.parseState
+		setStackEntryNode(&entry, node)
 		arena.recordPendingParentMaterialized(reason)
 		return node, entry
 	}
@@ -394,9 +389,7 @@ func materializeStackEntryPendingParentEntryWithParser(p *Parser, arena *nodeAre
 	node.parseState = parent.parseState
 	node.preGotoState = parent.preGotoState
 	rebuildExternalScannerCheckpointForMaterializedParent(node, reason)
-	entry.node = node
-	entry.kind = stackEntryKindNode
-	entry.state = node.parseState
+	setStackEntryNode(&entry, node)
 	arena.recordPendingParentMaterialized(reason)
 	return node, entry
 }

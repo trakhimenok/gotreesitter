@@ -12,293 +12,59 @@ func (q *Query) matchesPredicates(predicates []QueryPredicate, captures []QueryC
 	}
 
 	for _, pred := range predicates {
-		switch pred.kind {
-		case predicateEq:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				return false
-			}
-			right := pred.literal
-			if pred.rightCapture != "" {
-				var okRight bool
-				right, okRight = captureText(pred.rightCapture, captures, source)
-				if !okRight {
-					return false
-				}
-			}
-			if left != right {
-				return false
-			}
-
-		case predicateNotEq:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				return false
-			}
-			right := pred.literal
-			if pred.rightCapture != "" {
-				var okRight bool
-				right, okRight = captureText(pred.rightCapture, captures, source)
-				if !okRight {
-					return false
-				}
-			}
-			if left == right {
-				return false
-			}
-
-		case predicateMatch:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				return false
-			}
-			if pred.regex == nil || !pred.regex.MatchString(left) {
-				return false
-			}
-
-		case predicateNotMatch:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				return false
-			}
-			if pred.regex != nil && pred.regex.MatchString(left) {
-				return false
-			}
-
-		case predicateAnyEq:
-			nodes := captureNodes(pred.leftCapture, captures)
-			if len(nodes) == 0 {
-				return false
-			}
-			right := pred.literal
-			if pred.rightCapture != "" {
-				var ok bool
-				right, ok = captureText(pred.rightCapture, captures, source)
-				if !ok {
-					return false
-				}
-			}
-			found := false
-			for _, n := range nodes {
-				if n.Text(source) == right {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
-
-		case predicateAnyNotEq:
-			nodes := captureNodes(pred.leftCapture, captures)
-			if len(nodes) == 0 {
-				return false
-			}
-			right := pred.literal
-			if pred.rightCapture != "" {
-				var ok bool
-				right, ok = captureText(pred.rightCapture, captures, source)
-				if !ok {
-					return false
-				}
-			}
-			found := false
-			for _, n := range nodes {
-				if n.Text(source) != right {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
-
-		case predicateAnyMatch:
-			nodes := captureNodes(pred.leftCapture, captures)
-			if len(nodes) == 0 {
-				return false
-			}
-			if pred.regex == nil {
-				return false
-			}
-			found := false
-			for _, n := range nodes {
-				if pred.regex.MatchString(n.Text(source)) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
-
-		case predicateAnyNotMatch:
-			nodes := captureNodes(pred.leftCapture, captures)
-			if len(nodes) == 0 {
-				return false
-			}
-			if pred.regex == nil {
-				return false
-			}
-			found := false
-			for _, n := range nodes {
-				if !pred.regex.MatchString(n.Text(source)) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
-
-		case predicateLuaMatch:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				return false
-			}
-			if pred.regex == nil || !pred.regex.MatchString(left) {
-				return false
-			}
-
-		case predicateAnyOf:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				return false
-			}
-			matched := false
-			for _, v := range pred.values {
-				if left == v {
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				return false
-			}
-
-		case predicateNotAnyOf:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				return false
-			}
-			for _, v := range pred.values {
-				if left == v {
-					return false
-				}
-			}
-
-		case predicateHasAncestor:
-			nodes := captureNodes(pred.leftCapture, captures)
-			if len(nodes) == 0 {
-				return false
-			}
-			hasAny := false
-			for _, n := range nodes {
-				if nodeHasAncestorType(n, pred.values, lang) {
-					hasAny = true
-					break
-				}
-			}
-			if !hasAny {
-				return false
-			}
-
-		case predicateNotHasAncestor:
-			nodes := captureNodes(pred.leftCapture, captures)
-			if len(nodes) == 0 {
-				return false
-			}
-			for _, n := range nodes {
-				if nodeHasAncestorType(n, pred.values, lang) {
-					return false
-				}
-			}
-
-		case predicateHasParent:
-			nodes := captureNodes(pred.leftCapture, captures)
-			if len(nodes) == 0 {
-				return false
-			}
-			hasAny := false
-			for _, n := range nodes {
-				parent := n.Parent()
-				if parent != nil && nodeTypeMatchesAny(parent, pred.values, lang) {
-					hasAny = true
-					break
-				}
-			}
-			if !hasAny {
-				return false
-			}
-
-		case predicateNotHasParent:
-			nodes := captureNodes(pred.leftCapture, captures)
-			if len(nodes) == 0 {
-				return false
-			}
-			for _, n := range nodes {
-				parent := n.Parent()
-				if parent != nil && nodeTypeMatchesAny(parent, pred.values, lang) {
-					return false
-				}
-			}
-
-		case predicateIs:
-			if !predicateIsSatisfied(pred, captures) {
-				return false
-			}
-
-		case predicateIsNot:
-			if predicateIsSatisfied(pred, captures) {
-				return false
-			}
-
-		case predicateCount:
-			count := 0
-			for _, c := range captures {
-				if c.Name == pred.leftCapture && c.Node != nil {
-					count++
-				}
-			}
-			var ok bool
-			switch pred.countOp {
-			case ">":
-				ok = count > pred.countValue
-			case "<":
-				ok = count < pred.countValue
-			case ">=":
-				ok = count >= pred.countValue
-			case "<=":
-				ok = count <= pred.countValue
-			case "==":
-				ok = count == pred.countValue
-			case "!=":
-				ok = count != pred.countValue
-			}
-			if !ok {
-				return false
-			}
-
-		case predicateIsExported:
-			text, ok := captureText(pred.leftCapture, captures, source)
-			if !ok || text == "" {
-				return false
-			}
-			r, _ := utf8.DecodeRuneInString(text)
-			if r == utf8.RuneError || !unicode.IsUpper(r) {
-				return false
-			}
-
-		case predicateSet, predicateOffset, predicateSelectAdjacent, predicateStrip:
-			// Directives do not affect whether a match exists.
-			continue
-
-		default:
+		if !q.matchesPredicate(pred, captures, lang, source) {
 			return false
 		}
 	}
 
 	return true
+}
+
+func (q *Query) matchesPredicate(pred QueryPredicate, captures []QueryCapture, lang *Language, source []byte) bool {
+	switch pred.kind {
+	case predicateEq:
+		return textEqualityPredicateMatches(pred, captures, source, true)
+	case predicateNotEq:
+		return textEqualityPredicateMatches(pred, captures, source, false)
+	case predicateMatch, predicateLuaMatch:
+		return regexPredicateMatches(pred, captures, source, false)
+	case predicateNotMatch:
+		return regexPredicateMatches(pred, captures, source, true)
+	case predicateAnyEq:
+		return anyCaptureTextEquals(pred, captures, source, true)
+	case predicateAnyNotEq:
+		return anyCaptureTextEquals(pred, captures, source, false)
+	case predicateAnyMatch:
+		return anyCaptureRegexMatches(pred, captures, source, false)
+	case predicateAnyNotMatch:
+		return anyCaptureRegexMatches(pred, captures, source, true)
+	case predicateAnyOf:
+		left, ok := captureText(pred.leftCapture, captures, source)
+		return ok && stringInList(left, pred.values)
+	case predicateNotAnyOf:
+		left, ok := captureText(pred.leftCapture, captures, source)
+		return ok && !stringInList(left, pred.values)
+	case predicateHasAncestor:
+		return ancestorPredicateMatches(pred, captures, lang, false)
+	case predicateNotHasAncestor:
+		return ancestorPredicateMatches(pred, captures, lang, true)
+	case predicateHasParent:
+		return parentPredicateMatches(pred, captures, lang, false)
+	case predicateNotHasParent:
+		return parentPredicateMatches(pred, captures, lang, true)
+	case predicateIs:
+		return predicateIsSatisfied(pred, captures)
+	case predicateIsNot:
+		return !predicateIsSatisfied(pred, captures)
+	case predicateCount:
+		return countPredicateMatches(pred, captures)
+	case predicateIsExported:
+		return captureTextIsExported(pred.leftCapture, captures, source)
+	case predicateSet, predicateOffset, predicateSelectAdjacent, predicateStrip:
+		return true
+	default:
+		return false
+	}
 }
 
 func (q *Query) predicatesStillViable(predicates []QueryPredicate, captures []QueryCapture, source []byte) bool {
@@ -307,88 +73,73 @@ func (q *Query) predicatesStillViable(predicates []QueryPredicate, captures []Qu
 	}
 
 	for _, pred := range predicates {
-		switch pred.kind {
-		case predicateEq, predicateNotEq:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				continue
-			}
-			right := pred.literal
-			if pred.rightCapture != "" {
-				var okRight bool
-				right, okRight = captureText(pred.rightCapture, captures, source)
-				if !okRight {
-					continue
-				}
-			}
-			if pred.kind == predicateEq && left != right {
-				return false
-			}
-			if pred.kind == predicateNotEq && left == right {
-				return false
-			}
-
-		case predicateMatch, predicateLuaMatch:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				continue
-			}
-			if pred.regex == nil || !pred.regex.MatchString(left) {
-				return false
-			}
-
-		case predicateNotMatch:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				continue
-			}
-			if pred.regex != nil && pred.regex.MatchString(left) {
-				return false
-			}
-
-		case predicateAnyOf:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				continue
-			}
-			matched := false
-			for _, v := range pred.values {
-				if left == v {
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				return false
-			}
-
-		case predicateNotAnyOf:
-			left, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				continue
-			}
-			for _, v := range pred.values {
-				if left == v {
-					return false
-				}
-			}
-
-		case predicateIsExported:
-			text, ok := captureText(pred.leftCapture, captures, source)
-			if !ok {
-				continue
-			}
-			if text == "" {
-				return false
-			}
-			r, _ := utf8.DecodeRuneInString(text)
-			if r == utf8.RuneError || !unicode.IsUpper(r) {
-				return false
-			}
+		if !predicateStillViable(pred, captures, source) {
+			return false
 		}
 	}
 
 	return true
+}
+
+func predicateStillViable(pred QueryPredicate, captures []QueryCapture, source []byte) bool {
+	switch pred.kind {
+	case predicateEq:
+		return textEqualityPredicateStillViable(pred, captures, source, true)
+	case predicateNotEq:
+		return textEqualityPredicateStillViable(pred, captures, source, false)
+	case predicateMatch, predicateLuaMatch:
+		return regexPredicateStillViable(pred, captures, source, false)
+	case predicateNotMatch:
+		return regexPredicateStillViable(pred, captures, source, true)
+	case predicateAnyOf:
+		return listPredicateStillViable(pred, captures, source, true)
+	case predicateNotAnyOf:
+		return listPredicateStillViable(pred, captures, source, false)
+	case predicateIsExported:
+		return exportedPredicateStillViable(pred, captures, source)
+	default:
+		return true
+	}
+}
+
+func textEqualityPredicateStillViable(pred QueryPredicate, captures []QueryCapture, source []byte, wantEqual bool) bool {
+	left, ok := captureText(pred.leftCapture, captures, source)
+	if !ok {
+		return true
+	}
+	right, ok := predicateRightText(pred, captures, source)
+	if !ok {
+		return true
+	}
+	return (left == right) == wantEqual
+}
+
+func regexPredicateStillViable(pred QueryPredicate, captures []QueryCapture, source []byte, negated bool) bool {
+	left, ok := captureText(pred.leftCapture, captures, source)
+	if !ok {
+		return true
+	}
+	if pred.regex == nil {
+		return negated
+	}
+	matched := pred.regex.MatchString(left)
+	if negated {
+		return !matched
+	}
+	return matched
+}
+
+func listPredicateStillViable(pred QueryPredicate, captures []QueryCapture, source []byte, wantInList bool) bool {
+	left, ok := captureText(pred.leftCapture, captures, source)
+	if !ok {
+		return true
+	}
+	return stringInList(left, pred.values) == wantInList
+}
+
+func exportedPredicateStillViable(pred QueryPredicate, captures []QueryCapture, source []byte) bool {
+	text, ok := captureText(pred.leftCapture, captures, source)
+	return !ok || textIsExported(text)
 }
 
 func predicatesCanRejectMatch(predicates []QueryPredicate) bool {
@@ -422,57 +173,59 @@ func (q *Query) applyDirectives(predicates []QueryPredicate, captures []QueryCap
 // pred.rightCapture. "Adjacent" means one node's end byte equals the other's
 // start byte.
 func applySelectAdjacent(pred QueryPredicate, captures []QueryCapture) []QueryCapture {
-	itemsName := pred.leftCapture
-	anchorName := pred.rightCapture
-
-	// Collect anchor byte boundaries.
-	type boundary struct {
-		start, end uint32
-	}
-	var anchors []boundary
-	for _, c := range captures {
-		if c.Name == anchorName && c.Node != nil {
-			anchors = append(anchors, boundary{c.Node.StartByte(), c.Node.EndByte()})
-		}
-	}
+	anchors := captureBoundaries(pred.rightCapture, captures)
 	if len(anchors) == 0 {
-		// No anchors — remove all items captures.
-		// Reuse the input backing array because captures is an ephemeral
-		// per-match slice owned by directive application.
-		out := captures[:0]
-		for _, c := range captures {
-			if c.Name != itemsName {
-				out = append(out, c)
-			}
-		}
-		return out
+		return removeCapturesByName(captures, pred.leftCapture)
 	}
+	return keepAdjacentCaptures(captures, pred.leftCapture, anchors)
+}
 
-	isAdjacent := func(n *Node) bool {
-		if n == nil {
-			return false
+type captureBoundary struct {
+	start, end uint32
+}
+
+func captureBoundaries(name string, captures []QueryCapture) []captureBoundary {
+	var boundaries []captureBoundary
+	for _, c := range captures {
+		if c.Name == name && c.Node != nil {
+			boundaries = append(boundaries, captureBoundary{c.Node.StartByte(), c.Node.EndByte()})
 		}
-		nStart := n.StartByte()
-		nEnd := n.EndByte()
-		for _, a := range anchors {
-			if nEnd == a.start || nStart == a.end {
-				return true
-			}
-		}
-		return false
 	}
+	return boundaries
+}
 
+func removeCapturesByName(captures []QueryCapture, name string) []QueryCapture {
 	out := captures[:0]
 	for _, c := range captures {
-		if c.Name == itemsName {
-			if isAdjacent(c.Node) {
-				out = append(out, c)
-			}
-			continue
+		if c.Name != name {
+			out = append(out, c)
 		}
-		out = append(out, c)
 	}
 	return out
+}
+
+func keepAdjacentCaptures(captures []QueryCapture, name string, anchors []captureBoundary) []QueryCapture {
+	out := captures[:0]
+	for _, c := range captures {
+		if c.Name != name || nodeAdjacentToBoundaries(c.Node, anchors) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func nodeAdjacentToBoundaries(n *Node, boundaries []captureBoundary) bool {
+	if n == nil {
+		return false
+	}
+	nStart := n.StartByte()
+	nEnd := n.EndByte()
+	for _, boundary := range boundaries {
+		if nEnd == boundary.start || nStart == boundary.end {
+			return true
+		}
+	}
+	return false
 }
 
 // applyStrip applies the #strip! directive: for each capture named by
@@ -506,6 +259,155 @@ func captureNodes(name string, captures []QueryCapture) []*Node {
 	return nodes
 }
 
+func predicateRightText(pred QueryPredicate, captures []QueryCapture, source []byte) (string, bool) {
+	if pred.rightCapture == "" {
+		return pred.literal, true
+	}
+	return captureText(pred.rightCapture, captures, source)
+}
+
+func textEqualityPredicateMatches(pred QueryPredicate, captures []QueryCapture, source []byte, wantEqual bool) bool {
+	left, ok := captureText(pred.leftCapture, captures, source)
+	if !ok {
+		return false
+	}
+	right, ok := predicateRightText(pred, captures, source)
+	if !ok {
+		return false
+	}
+	return (left == right) == wantEqual
+}
+
+func regexPredicateMatches(pred QueryPredicate, captures []QueryCapture, source []byte, negated bool) bool {
+	left, ok := captureText(pred.leftCapture, captures, source)
+	if !ok {
+		return false
+	}
+	if pred.regex == nil {
+		return negated
+	}
+	matched := pred.regex.MatchString(left)
+	if negated {
+		return !matched
+	}
+	return matched
+}
+
+func anyCaptureTextEquals(pred QueryPredicate, captures []QueryCapture, source []byte, wantEqual bool) bool {
+	nodes := captureNodes(pred.leftCapture, captures)
+	if len(nodes) == 0 {
+		return false
+	}
+	right, ok := predicateRightText(pred, captures, source)
+	if !ok {
+		return false
+	}
+	for _, n := range nodes {
+		if (n.Text(source) == right) == wantEqual {
+			return true
+		}
+	}
+	return false
+}
+
+func anyCaptureRegexMatches(pred QueryPredicate, captures []QueryCapture, source []byte, negated bool) bool {
+	nodes := captureNodes(pred.leftCapture, captures)
+	if len(nodes) == 0 || pred.regex == nil {
+		return false
+	}
+	for _, n := range nodes {
+		matched := pred.regex.MatchString(n.Text(source))
+		if negated {
+			matched = !matched
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func stringInList(value string, values []string) bool {
+	for _, v := range values {
+		if value == v {
+			return true
+		}
+	}
+	return false
+}
+
+func ancestorPredicateMatches(pred QueryPredicate, captures []QueryCapture, lang *Language, negated bool) bool {
+	return captureNodePredicateMatches(pred.leftCapture, captures, negated, func(n *Node) bool {
+		return nodeHasAncestorType(n, pred.values, lang)
+	})
+}
+
+func parentPredicateMatches(pred QueryPredicate, captures []QueryCapture, lang *Language, negated bool) bool {
+	return captureNodePredicateMatches(pred.leftCapture, captures, negated, func(n *Node) bool {
+		parent := n.Parent()
+		return parent != nil && nodeTypeMatchesAny(parent, pred.values, lang)
+	})
+}
+
+func captureNodePredicateMatches(name string, captures []QueryCapture, negated bool, matches func(*Node) bool) bool {
+	nodes := captureNodes(name, captures)
+	if len(nodes) == 0 {
+		return false
+	}
+	matched := anyCaptureNodeMatches(nodes, matches)
+	if negated {
+		return !matched
+	}
+	return matched
+}
+
+func anyCaptureNodeMatches(nodes []*Node, matches func(*Node) bool) bool {
+	for _, n := range nodes {
+		if matches(n) {
+			return true
+		}
+	}
+	return false
+}
+
+func countPredicateMatches(pred QueryPredicate, captures []QueryCapture) bool {
+	count := 0
+	for _, c := range captures {
+		if c.Name == pred.leftCapture && c.Node != nil {
+			count++
+		}
+	}
+	switch pred.countOp {
+	case ">":
+		return count > pred.countValue
+	case "<":
+		return count < pred.countValue
+	case ">=":
+		return count >= pred.countValue
+	case "<=":
+		return count <= pred.countValue
+	case "==":
+		return count == pred.countValue
+	case "!=":
+		return count != pred.countValue
+	default:
+		return false
+	}
+}
+
+func captureTextIsExported(name string, captures []QueryCapture, source []byte) bool {
+	text, ok := captureText(name, captures, source)
+	return ok && textIsExported(text)
+}
+
+func textIsExported(text string) bool {
+	if text == "" {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(text)
+	return r != utf8.RuneError && unicode.IsUpper(r)
+}
+
 func typeNameMatchesAny(typeName string, names []string) bool {
 	for _, n := range names {
 		if n == typeName {
@@ -519,25 +421,38 @@ func nodeTypeMatchesAny(node *Node, typeNames []string, lang *Language) bool {
 	if node == nil || lang == nil {
 		return false
 	}
-	nodeType := node.Type(lang)
-	if typeNameMatchesAny(nodeType, typeNames) {
+	if typeNameMatchesAny(node.Type(lang), typeNames) {
 		return true
 	}
 	nodeInternal := node.Symbol()
 	nodePublic := lang.PublicSymbol(nodeInternal)
 	for _, typeName := range typeNames {
-		supertype, ok := lang.SymbolByName(typeName)
-		if ok {
-			if nodeInternal == supertype || nodePublic == supertype {
-				return true
-			}
-			if lang.IsSupertype(supertype) {
-				for _, child := range lang.SupertypeChildren(supertype) {
-					if child == nodeInternal || lang.PublicSymbol(child) == nodePublic {
-						return true
-					}
-				}
-			}
+		if nodeSymbolMatchesTypeName(nodeInternal, nodePublic, typeName, lang) {
+			return true
+		}
+	}
+	return false
+}
+
+func nodeSymbolMatchesTypeName(nodeInternal Symbol, nodePublic Symbol, typeName string, lang *Language) bool {
+	symbol, ok := lang.SymbolByName(typeName)
+	if !ok {
+		return false
+	}
+	if nodeSymbolMatches(nodeInternal, nodePublic, symbol) {
+		return true
+	}
+	return lang.IsSupertype(symbol) && supertypeContainsNodeSymbol(symbol, nodeInternal, nodePublic, lang)
+}
+
+func nodeSymbolMatches(nodeInternal Symbol, nodePublic Symbol, candidate Symbol) bool {
+	return nodeInternal == candidate || nodePublic == candidate
+}
+
+func supertypeContainsNodeSymbol(supertype Symbol, nodeInternal Symbol, nodePublic Symbol, lang *Language) bool {
+	for _, child := range lang.SupertypeChildren(supertype) {
+		if child == nodeInternal || lang.PublicSymbol(child) == nodePublic {
+			return true
 		}
 	}
 	return false

@@ -384,3 +384,39 @@ func TestNormalizeErlangSourceFileFormsSkipsExprsMode(t *testing.T) {
 		t.Fatalf("root.FieldNameForChild(1) = %q, want empty", got)
 	}
 }
+
+func TestNormalizeElixirNestedCallTargetFields(t *testing.T) {
+	lang := &Language{
+		Name:        "elixir",
+		FieldNames:  []string{"", "target", "existing"},
+		SymbolNames: []string{"EOF", "source", "call", "arguments", "identifier"},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF", Visible: false, Named: false},
+			{Name: "source", Visible: true, Named: true},
+			{Name: "call", Visible: true, Named: true},
+			{Name: "arguments", Visible: true, Named: true},
+			{Name: "identifier", Visible: true, Named: true},
+		},
+	}
+
+	arena := newNodeArena(arenaClassFull)
+	inner := newLeafNodeInArena(arena, 2, true, 0, 3, Point{}, Point{Column: 3})
+	args := newLeafNodeInArena(arena, 3, true, 3, 5, Point{Column: 3}, Point{Column: 5})
+	outer := newParentNodeInArena(arena, 2, true, []*Node{inner, args}, nil, 0)
+	alreadySetInner := newLeafNodeInArena(arena, 2, true, 6, 9, Point{Column: 6}, Point{Column: 9})
+	alreadySetArgs := newLeafNodeInArena(arena, 3, true, 9, 11, Point{Column: 9}, Point{Column: 11})
+	alreadySet := newParentNodeInArena(arena, 2, true, []*Node{alreadySetInner, alreadySetArgs}, []FieldID{2, 0}, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{outer, alreadySet}, nil, 0)
+
+	normalizeElixirNestedCallTargetFields(root, lang)
+
+	if got, want := outer.FieldNameForChild(0, lang), "target"; got != want {
+		t.Fatalf("outer.FieldNameForChild(0) = %q, want %q", got, want)
+	}
+	if got := outer.FieldNameForChild(1, lang); got != "" {
+		t.Fatalf("outer.FieldNameForChild(1) = %q, want empty", got)
+	}
+	if got, want := alreadySet.FieldNameForChild(0, lang), "existing"; got != want {
+		t.Fatalf("alreadySet.FieldNameForChild(0) = %q, want %q", got, want)
+	}
+}

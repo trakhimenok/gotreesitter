@@ -14,15 +14,8 @@ func normalizePerlJoinAssignmentLists(root *Node, source []byte, lang *Language)
 	if !ok {
 		return
 	}
-	listNamed := false
-	if idx := int(listSym); idx < len(lang.SymbolMetadata) {
-		listNamed = lang.SymbolMetadata[listSym].Named
-	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	listNamed := symbolIsNamed(lang, listSym)
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "expression_statement" && len(n.children) == 1 {
 			assign := n.children[0]
 			if rewritten := rewritePerlJoinAssignmentList(n.ownerArena, assign, source, lang, listSym, listNamed); rewritten != nil {
@@ -31,11 +24,7 @@ func normalizePerlJoinAssignmentLists(root *Node, source []byte, lang *Language)
 				rewritten.childIndex = 0
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func rewritePerlJoinAssignmentList(arena *nodeArena, assign *Node, source []byte, lang *Language, listSym Symbol, listNamed bool) *Node {
@@ -88,15 +77,8 @@ func normalizePerlPushExpressionLists(root *Node, source []byte, lang *Language)
 	if !ok {
 		return
 	}
-	listNamed := false
-	if idx := int(listSym); idx < len(lang.SymbolMetadata) {
-		listNamed = lang.SymbolMetadata[listSym].Named
-	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	listNamed := symbolIsNamed(lang, listSym)
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "expression_statement" && len(n.children) == 1 {
 			list := n.children[0]
 			if rewritten := rewritePerlPushExpressionList(n.ownerArena, list, source, lang, listSym, listNamed); rewritten != nil {
@@ -105,11 +87,7 @@ func normalizePerlPushExpressionLists(root *Node, source []byte, lang *Language)
 				rewritten.childIndex = 0
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func rewritePerlPushExpressionList(arena *nodeArena, list *Node, source []byte, lang *Language, listSym Symbol, listNamed bool) *Node {
@@ -152,15 +130,8 @@ func normalizePerlReturnExpressionLists(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	listNamed := false
-	if idx := int(listSym); idx < len(lang.SymbolMetadata) {
-		listNamed = lang.SymbolMetadata[listSym].Named
-	}
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
-		}
+	listNamed := symbolIsNamed(lang, listSym)
+	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "expression_statement" && len(n.children) == 1 {
 			ret := n.children[0]
 			if rewritten := rewritePerlReturnExpressionList(n.ownerArena, ret, lang, listSym, listNamed); rewritten != nil {
@@ -169,11 +140,7 @@ func normalizePerlReturnExpressionLists(root *Node, lang *Language) {
 				rewritten.childIndex = 0
 			}
 		}
-		for _, child := range n.children {
-			walk(child)
-		}
-	}
-	walk(root)
+	})
 }
 
 func rewritePerlReturnExpressionList(arena *nodeArena, ret *Node, lang *Language, listSym Symbol, listNamed bool) *Node {

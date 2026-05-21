@@ -5,10 +5,6 @@ import (
 	"time"
 )
 
-func normalizePythonCompatibility(root *Node, source []byte, lang *Language) {
-	normalizePythonCompatibilityWithParser(root, source, nil, lang)
-}
-
 func normalizePythonCompatibilityWithParser(root *Node, source []byte, parser *Parser, lang *Language) {
 	if len(source) == 0 {
 		return
@@ -487,14 +483,8 @@ func normalizePythonInterpolationPatterns(root *Node, lang *Language) normalizat
 	expressionListSym, hasExpressionList := symbolByName(lang, "expression_list")
 	listSplatSym, hasListSplat := symbolByName(lang, "list_splat")
 
-	patternListNamed := false
-	if int(patternListSym) < len(lang.SymbolMetadata) {
-		patternListNamed = lang.SymbolMetadata[patternListSym].Named
-	}
-	listSplatPatternNamed := false
-	if hasListSplatPattern && int(listSplatPatternSym) < len(lang.SymbolMetadata) {
-		listSplatPatternNamed = lang.SymbolMetadata[listSplatPatternSym].Named
-	}
+	patternListNamed := symbolIsNamed(lang, patternListSym)
+	listSplatPatternNamed := hasListSplatPattern && symbolIsNamed(lang, listSplatPatternSym)
 
 	var rewrite func(*Node, bool)
 	rewrite = func(n *Node, inInterpolation bool) {
@@ -530,17 +520,8 @@ func normalizePythonPrintStatements(root *Node, source []byte, lang *Language) n
 	if root == nil || lang == nil || lang.Name != "python" || len(source) == 0 {
 		return counters
 	}
-	var walk func(*Node)
-	walk = func(node *Node) {
-		if node == nil {
-			return
-		}
+	walkResultTreePostorder(root, func(node *Node) {
 		counters.nodesVisited++
-		childCount := resultChildCount(node)
-		for i := 0; i < childCount; i++ {
-			child := resultChildAt(node, i)
-			walk(child)
-		}
 		switch node.Type(lang) {
 		case "module", "block":
 			children := resultChildSliceForMutation(node)
@@ -548,14 +529,10 @@ func normalizePythonPrintStatements(root *Node, source []byte, lang *Language) n
 			if !changed {
 				return
 			}
-			node.children = cloneNodeSliceInArena(node.ownerArena, rewritten)
-			node.fieldIDs = nil
-			node.fieldSources = nil
-			populateParentNode(node, node.children)
+			replaceNodeChildrenUnfielded(node, cloneNodeSliceInArena(node.ownerArena, rewritten))
 			counters.nodesRewritten++
 		}
-	}
-	walk(root)
+	})
 	return counters
 }
 
@@ -564,17 +541,8 @@ func normalizePythonTrailingSelfCalls(root *Node, source []byte, lang *Language)
 	if root == nil || lang == nil || lang.Name != "python" || len(source) == 0 {
 		return counters
 	}
-	var walk func(*Node)
-	walk = func(node *Node) {
-		if node == nil {
-			return
-		}
+	walkResultTreePostorder(root, func(node *Node) {
 		counters.nodesVisited++
-		childCount := resultChildCount(node)
-		for i := 0; i < childCount; i++ {
-			child := resultChildAt(node, i)
-			walk(child)
-		}
 		if node.Type(lang) != "block" {
 			return
 		}
@@ -583,13 +551,9 @@ func normalizePythonTrailingSelfCalls(root *Node, source []byte, lang *Language)
 		if !changed {
 			return
 		}
-		node.children = cloneNodeSliceInArena(node.ownerArena, rewritten)
-		node.fieldIDs = nil
-		node.fieldSources = nil
-		populateParentNode(node, node.children)
+		replaceNodeChildrenUnfielded(node, cloneNodeSliceInArena(node.ownerArena, rewritten))
 		counters.nodesRewritten++
-	}
-	walk(root)
+	})
 	return counters
 }
 
@@ -713,18 +677,9 @@ func rewriteMalformedPythonPrintStatement(node *Node, source []byte, lang *Langu
 		return nil, false
 	}
 
-	printNamed := false
-	if int(printSym) < len(lang.SymbolMetadata) {
-		printNamed = lang.SymbolMetadata[printSym].Named
-	}
-	printStmtNamed := true
-	if int(printStmtSym) < len(lang.SymbolMetadata) {
-		printStmtNamed = lang.SymbolMetadata[printStmtSym].Named
-	}
-	chevronNamed := true
-	if int(chevronSym) < len(lang.SymbolMetadata) {
-		chevronNamed = lang.SymbolMetadata[chevronSym].Named
-	}
+	printNamed := symbolIsNamed(lang, printSym)
+	printStmtNamed := symbolIsNamed(lang, printStmtSym)
+	chevronNamed := symbolIsNamed(lang, chevronSym)
 
 	left := resultChildAt(bin, 0)
 	op := resultChildAt(bin, 1)
@@ -981,15 +936,14 @@ func pythonRootRepairNeedsMaterializedChildren(root *Node, lang *Language) bool 
 	}
 	syms := pythonRepairSymbolSet(lang)
 	childCount := resultChildCount(root)
-	for i := childCount - 1; i >= 0; i-- {
-		entry, ok := nodeChildEntryAtNoMaterialize(root, i)
+	if childCount > 0 {
+		entry, ok := nodeChildEntryAtNoMaterialize(root, childCount-1)
 		if !ok || !stackEntryHasNode(entry) {
 			return true
 		}
-		if stackEntryNodeIsNamed(entry) || stackEntryNodeStartByte(entry) != stackEntryNodeEndByte(entry) {
-			break
+		if !stackEntryNodeIsNamed(entry) && stackEntryNodeStartByte(entry) == stackEntryNodeEndByte(entry) {
+			return true
 		}
-		return true
 	}
 	for i := 0; i < childCount; i++ {
 		entry, ok := nodeChildEntryAtNoMaterialize(root, i)
@@ -1208,10 +1162,7 @@ func repairPythonKeywordErrorNode(node *Node, source []byte, arena *nodeArena, l
 	childCount := resultChildCount(node)
 	if node.Type(lang) == "ERROR" && childCount == 0 {
 		if keyword, ok := pythonKeywordLeafSymbol(node, source, lang); ok {
-			named := false
-			if int(keyword) < len(lang.SymbolMetadata) {
-				named = lang.SymbolMetadata[keyword].Named
-			}
+			named := symbolIsNamed(lang, keyword)
 			repl := newLeafNodeInArena(arena, keyword, named, node.startByte, node.endByte, node.startPoint, node.endPoint)
 			repl.setExtra(node.isExtra())
 			return repl
@@ -1282,11 +1233,7 @@ func pythonKeywordLeafSymbol(node *Node, source []byte, lang *Language) (Symbol,
 	if !ok {
 		return 0, false
 	}
-	if int(sym) >= len(lang.SymbolMetadata) {
-		return 0, false
-	}
-	meta := lang.SymbolMetadata[sym]
-	if meta.Named {
+	if !symbolHasMetadata(lang, sym) || symbolIsNamed(lang, sym) {
 		return 0, false
 	}
 	return sym, true
@@ -1570,16 +1517,6 @@ func repairPythonBlockPending(pending []*Node, out []*Node, arena *nodeArena, la
 		}
 
 		out = append(out, repairPythonNode(cur, arena, lang))
-	}
-	return out
-}
-
-func pythonBlockOutputPrefix(children []*Node, end int) []*Node {
-	out := make([]*Node, 0, len(children))
-	for _, child := range children[:end] {
-		if child != nil {
-			out = append(out, child)
-		}
 	}
 	return out
 }
@@ -1887,10 +1824,8 @@ func normalizePythonStringContinuationEscapes(root *Node, source []byte, lang *L
 			}
 			return
 		}
-		childCount := resultChildCount(n)
-		for i := 0; i < childCount; i++ {
-			child := resultChildAt(n, i)
-			walk(child)
+		for i := 0; i < resultChildCount(n); i++ {
+			walk(resultChildAt(n, i))
 		}
 	}
 	walk(root)

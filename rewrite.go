@@ -151,7 +151,6 @@ func (r *Rewriter) Apply() (newSource []byte, edits []InputEdit, err error) {
 	if pos < uint32(len(r.source)) {
 		remaining := r.source[pos:]
 		buf = append(buf, remaining...)
-		currentPoint = computeNewEndPoint(currentPoint, remaining)
 	}
 
 	return buf, edits, nil
