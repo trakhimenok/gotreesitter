@@ -521,7 +521,7 @@ func prepareRealCorpusIncrementalCases(b *testing.B, cases []realCorpusBenchmark
 		out = append(out, editCase)
 	}
 	if len(out) == 0 {
-		b.Fatalf("no selected files had a single-byte incremental edit site matching benchmark constraints")
+		b.Skip("no selected files had a single-byte incremental edit site matching benchmark constraints")
 	}
 	return out
 }

@@ -36,6 +36,7 @@ var resultCompatibilityStrutLanguageNames = []string{
 	"hcl",
 	"html",
 	"ini",
+	"java",
 	"javascript",
 	"lua",
 	"make",
@@ -95,6 +96,8 @@ func resultCompatibilityStrutForLanguage(name string) resultCompatibilityStrut {
 		return normalizeHTMLResultStrut
 	case "ini":
 		return normalizeIniResultStrut
+	case "java":
+		return normalizeJavaResultStrut
 	case "javascript":
 		return normalizeJavaScriptResultStrut
 	case "lua":
@@ -230,6 +233,10 @@ func normalizeHTMLResultStrut(ctx resultCompatibilityContext) {
 
 func normalizeIniResultStrut(ctx resultCompatibilityContext) {
 	normalizeIniSectionStarts(ctx.root, ctx.lang)
+}
+
+func normalizeJavaResultStrut(ctx resultCompatibilityContext) {
+	normalizeJavaCompatibility(ctx.root, ctx.source, ctx.lang)
 }
 
 func normalizeJavaScriptResultStrut(ctx resultCompatibilityContext) {

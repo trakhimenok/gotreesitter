@@ -131,6 +131,56 @@ func TestParseMesonCommandArgumentPrefersVariableunit(t *testing.T) {
 	}
 }
 
+func TestParseJavaCollapsedModifierAndWildcardChildren(t *testing.T) {
+	src := "package p;\n\nimport com.example.*;\n\nclass X { private X() {} }\n"
+	tree, lang := parseLanguageSample(t, "java", src)
+	t.Cleanup(tree.Release)
+
+	root := tree.RootNode()
+	modifiers := firstNodeByTypeAndText(root, lang, []byte(src), "modifiers", "private")
+	if modifiers == nil {
+		t.Fatalf("missing Java private modifiers node: %s", root.SExpr(lang))
+	}
+	if got, want := modifiers.ChildCount(), 1; got != want {
+		t.Fatalf("modifiers.ChildCount() = %d, want %d; root=%s", got, want, root.SExpr(lang))
+	}
+	if child := modifiers.Child(0); child == nil || child.Type(lang) != "private" {
+		if child == nil {
+			t.Fatalf("modifiers child = nil; root=%s", root.SExpr(lang))
+		}
+		t.Fatalf("modifiers child type = %q, want private; root=%s", child.Type(lang), root.SExpr(lang))
+	}
+
+	asterisk := firstNodeByTypeAndText(root, lang, []byte(src), "asterisk", "*")
+	if asterisk == nil {
+		t.Fatalf("missing Java asterisk node: %s", root.SExpr(lang))
+	}
+	if got, want := asterisk.ChildCount(), 1; got != want {
+		t.Fatalf("asterisk.ChildCount() = %d, want %d; root=%s", got, want, root.SExpr(lang))
+	}
+	if child := asterisk.Child(0); child == nil || child.Type(lang) != "*" {
+		if child == nil {
+			t.Fatalf("asterisk child = nil; root=%s", root.SExpr(lang))
+		}
+		t.Fatalf("asterisk child type = %q, want *; root=%s", child.Type(lang), root.SExpr(lang))
+	}
+}
+
+func firstNodeByTypeAndText(root *gotreesitter.Node, lang *gotreesitter.Language, source []byte, typ, text string) *gotreesitter.Node {
+	if root == nil {
+		return nil
+	}
+	if root.Type(lang) == typ && root.Text(source) == text {
+		return root
+	}
+	for _, child := range root.Children() {
+		if got := firstNodeByTypeAndText(child, lang, source, typ, text); got != nil {
+			return got
+		}
+	}
+	return nil
+}
+
 func TestParseJavaScriptJSXSelfClosingAttributeExpression(t *testing.T) {
 	src := "const el = <Avatar userId={foo.creatorId} />\n"
 	tree, lang := parseLanguageSample(t, "javascript", src)

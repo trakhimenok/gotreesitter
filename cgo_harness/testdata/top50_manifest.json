@@ -85,6 +85,12 @@
       "commit": "a176dec25429b497e304120acaff491639edab1b"
     },
     {
+      "language": "java",
+      "repo_url": "https://github.com/javaparser/javaparser",
+      "commit": "5a43c63f9b3344c0bfe67ecaeca039dbcad04966",
+      "subdir": "javaparser-core/src/main/java"
+    },
+    {
       "language": "objc",
       "repo_url": "https://github.com/AFNetworking/AFNetworking",
       "commit": "d9f589cc2c1fe9d55eb5eea00558010afea7a41e"
