@@ -253,6 +253,24 @@ func noteRepeatedReduceChainSignature(prev reduceChainSignature, prevCount int, 
 	return prev, prevCount, prevCount > maxRepeatedReduceChainSignature
 }
 
+func noteRepeatedReduceChainAction(prev *reduceChainSignature, prevCount int, state StateID, depth int, act ParseAction) (int, bool) {
+	if prev.state == state &&
+		prev.depth == depth &&
+		prev.symbol == act.Symbol &&
+		prev.childCount == act.ChildCount &&
+		prev.productionID == act.ProductionID {
+		prevCount++
+	} else {
+		prev.state = state
+		prev.depth = depth
+		prev.symbol = act.Symbol
+		prev.childCount = act.ChildCount
+		prev.productionID = act.ProductionID
+		prevCount = 1
+	}
+	return prevCount, prevCount > maxRepeatedReduceChainSignature
+}
+
 func (p *Parser) useCompactNoTreeShiftLeaf() bool {
 	return p != nil && p.noTreeBenchmarkOnly && p.compactNoTreeShiftLeaves
 }
@@ -310,7 +328,7 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 		switch next.Type {
 		case ParseActionReduce:
 			var repeated bool
-			lastSig, repeatedSigCount, repeated = noteRepeatedReduceChainSignature(lastSig, repeatedSigCount, reduceChainSignatureFor(currentState, currentDepth, next))
+			repeatedSigCount, repeated = noteRepeatedReduceChainAction(&lastSig, repeatedSigCount, currentState, currentDepth, next)
 			if repeated {
 				if p != nil && p.glrTrace {
 					fmt.Printf("      -> REDUCE-CHAIN CYCLE state=%d depth=%d sym=%d prod=%d count=%d\n",
