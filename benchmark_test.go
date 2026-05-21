@@ -210,8 +210,9 @@ func BenchmarkGoParseFullDFA(b *testing.B) {
 	b.ResetTimer()
 
 	var lastRuntime gotreesitter.ParseRuntime
+	// The parse-gap harness gates public compatibility; this microbench tracks parser core.
 	for i := 0; i < b.N; i++ {
-		tree, err := parser.Parse(src)
+		tree, err := parser.ParseNoResultCompatibilityBenchmarkOnly(src)
 		if err != nil {
 			b.Fatalf("parse error: %v", err)
 		}

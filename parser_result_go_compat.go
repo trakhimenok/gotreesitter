@@ -16,6 +16,12 @@ type goCompatibilitySymbols struct {
 	semiContainerLen  int
 }
 
+type goCompatibilitySourceFlags struct {
+	dot              bool
+	siblingBoundary  bool
+	trailingBoundary bool
+}
+
 func normalizeGoCompatibility(root *Node, source []byte, lang *Language) {
 	normalizeGoCompatibilityInRanges(root, source, lang, nil)
 }
@@ -24,12 +30,37 @@ func normalizeGoCompatibilityInRanges(root *Node, source []byte, lang *Language,
 	if root == nil || lang == nil || lang.Name != "go" || len(source) == 0 {
 		return
 	}
-	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "dot", ".")
+	flags := goCompatibilitySourceFlagsFor(source)
+	if flags.dot {
+		normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "dot", ".")
+	}
 	syms, ok := goCompatibilitySymbolsForLanguage(lang)
 	if !ok {
 		return
 	}
-	normalizeGoCompatibilitySubtree(root, source, syms, incrementalRanges)
+	normalizeGoCompatibilitySubtree(root, source, syms, flags, incrementalRanges)
+}
+
+func goCompatibilitySourceFlagsFor(source []byte) goCompatibilitySourceFlags {
+	return goCompatibilitySourceFlags{
+		dot:              bytes.IndexByte(source, '.') >= 0,
+		siblingBoundary:  goSourceMayNeedSiblingBoundaryCompatibility(source),
+		trailingBoundary: goSourceMayNeedTrailingBoundaryCompatibility(source),
+	}
+}
+
+func goSourceMayNeedSiblingBoundaryCompatibility(source []byte) bool {
+	return bytes.Contains(source, []byte("//")) ||
+		bytes.Contains(source, []byte("/*")) ||
+		bytes.Contains(source, []byte("case")) ||
+		bytes.Contains(source, []byte("default")) ||
+		bytes.Contains(source, []byte("switch")) ||
+		bytes.Contains(source, []byte("select"))
+}
+
+func goSourceMayNeedTrailingBoundaryCompatibility(source []byte) bool {
+	return bytes.Contains(source, []byte("//")) ||
+		bytes.Contains(source, []byte("/*"))
 }
 
 func goCompatibilitySymbolsForLanguage(lang *Language) (goCompatibilitySymbols, bool) {
@@ -89,18 +120,23 @@ func (s goCompatibilitySymbols) isStatementList(sym Symbol) bool {
 	return (s.statementList != 0 && sym == s.statementList) || (s.statementListTail != 0 && sym == s.statementListTail)
 }
 
-func normalizeGoCompatibilitySubtree(n *Node, source []byte, syms goCompatibilitySymbols, incrementalRanges []Range) {
+func normalizeGoCompatibilitySubtree(n *Node, source []byte, syms goCompatibilitySymbols, flags goCompatibilitySourceFlags, incrementalRanges []Range) {
 	if n == nil || !goNodeOverlapsAnyRange(n, incrementalRanges) {
 		return
 	}
-	if resultChildCount(n) > 0 {
+	childCount := resultChildCount(n)
+	if childCount > 0 {
 		normalizeGoSemicolonContainer(n, source, syms)
-		normalizeGoAdjacentSiblingBoundaries(n, source, syms)
+		if flags.siblingBoundary {
+			normalizeGoAdjacentSiblingBoundaries(n, source, syms)
+		}
 	}
-	for i := 0; i < resultChildCount(n); i++ {
-		normalizeGoCompatibilitySubtree(resultChildAt(n, i), source, syms, incrementalRanges)
+	for i := 0; i < childCount; i++ {
+		normalizeGoCompatibilitySubtree(resultChildAt(n, i), source, syms, flags, incrementalRanges)
 	}
-	normalizeGoStatementListTrailingExtras(n, source, syms)
+	if flags.trailingBoundary {
+		normalizeGoStatementListTrailingExtras(n, source, syms)
+	}
 }
 
 func goNodeOverlapsAnyRange(n *Node, ranges []Range) bool {

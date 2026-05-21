@@ -1992,13 +1992,21 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		if len(stacks) > maxStacksSeen {
 			maxStacksSeen = len(stacks)
 		}
-		prep := p.prepareParseStacksForIteration(stacks, scratch, arena, arenaClass, maxStacks, maxStackCullTrigger, phaseTiming, &glrMergeNanos, &glrCullNanos)
-		stacks = prep.stacks
-		if prep.stopped {
-			if prep.errorTree {
-				return finalizeErrorTree(prep.stopReason)
+		if len(stacks) == 1 {
+			if stacks[0].dead {
+				return finalize(stacks, ParseStopNoStacksAlive)
 			}
-			return finalize(stacks, prep.stopReason)
+			scratch.gss.singleStackMode = true
+			clearParseStackEntryCaches(stacks)
+		} else {
+			prep := p.prepareParseStacksForIteration(stacks, scratch, arena, arenaClass, maxStacks, maxStackCullTrigger, phaseTiming, &glrMergeNanos, &glrCullNanos)
+			stacks = prep.stacks
+			if prep.stopped {
+				if prep.errorTree {
+					return finalizeErrorTree(prep.stopReason)
+				}
+				return finalize(stacks, prep.stopReason)
+			}
 		}
 		if scratch.gss.singleStackMode {
 			singleStackIterations++
@@ -2029,18 +2037,34 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 
 		// --- Token acquisition and incremental reuse ---
 		if needToken {
-			tok = p.readNextParseToken(ts, stacks, scratch, expectedEOFByte, parseTokenState{
-				perfTokensConsumed:  &perfTokensConsumed,
-				lastTokenEndByte:    &lastTokenEndByte,
-				lastTokenSymbol:     &lastTokenSymbol,
-				lastTokenWasEOF:     &lastTokenWasEOF,
-				tokenSourceEOFEarly: &tokenSourceEOFEarly,
-				singleStackTokens:   &singleStackTokens,
-				multiStackTokens:    &multiStackTokens,
-				missingShift:        &missingShift,
-				phaseTiming:         phaseTiming,
-				tokenNextNanos:      &tokenNextNanos,
-			})
+			scratch.audit.startToken(stacks)
+			if len(stacks) == 1 {
+				singleStackTokens++
+			} else {
+				multiStackTokens++
+			}
+			if phaseTiming {
+				tokenStart := time.Now()
+				tok = ts.Next()
+				tokenNextNanos += time.Since(tokenStart).Nanoseconds()
+			} else {
+				tok = ts.Next()
+			}
+			p.updateCurrentExternalTokenCheckpoint(ts, tok)
+			if p.logger != nil {
+				p.logf(ParserLogLex, "token sym=%d start=%d end=%d", tok.Symbol, tok.StartByte, tok.EndByte)
+			}
+			perfTokensConsumed++
+			lastTokenEndByte = tok.EndByte
+			lastTokenSymbol = tok.Symbol
+			lastTokenWasEOF = tok.Symbol == 0 && tok.StartByte == tok.EndByte && !tok.NoLookahead
+			if lastTokenWasEOF && tok.EndByte < expectedEOFByte {
+				tokenSourceEOFEarly = true
+			}
+			for si := range stacks {
+				stacks[si].shifted = false
+			}
+			missingShift.resetForToken()
 		}
 
 		if reuse != nil && len(stacks) == 1 && !stacks[0].dead && tok.Symbol != 0 {
@@ -2636,52 +2660,6 @@ func clearParseStackEntryCaches(stacks []glrStack) {
 			stacks[i].entries = nil
 		}
 	}
-}
-
-type parseTokenState struct {
-	perfTokensConsumed  *uint64
-	lastTokenEndByte    *uint32
-	lastTokenSymbol     *Symbol
-	lastTokenWasEOF     *bool
-	tokenSourceEOFEarly *bool
-	singleStackTokens   *uint64
-	multiStackTokens    *uint64
-	missingShift        *parseMissingShiftTracker
-	phaseTiming         bool
-	tokenNextNanos      *int64
-}
-
-func (p *Parser) readNextParseToken(ts TokenSource, stacks []glrStack, scratch *parserScratch, expectedEOFByte uint32, state parseTokenState) Token {
-	scratch.audit.startToken(stacks)
-	if len(stacks) == 1 {
-		(*state.singleStackTokens)++
-	} else {
-		(*state.multiStackTokens)++
-	}
-	var tok Token
-	if state.phaseTiming && state.tokenNextNanos != nil {
-		tokenStart := time.Now()
-		tok = ts.Next()
-		*state.tokenNextNanos += time.Since(tokenStart).Nanoseconds()
-	} else {
-		tok = ts.Next()
-	}
-	p.updateCurrentExternalTokenCheckpoint(ts, tok)
-	if p.logger != nil {
-		p.logf(ParserLogLex, "token sym=%d start=%d end=%d", tok.Symbol, tok.StartByte, tok.EndByte)
-	}
-	(*state.perfTokensConsumed)++
-	*state.lastTokenEndByte = tok.EndByte
-	*state.lastTokenSymbol = tok.Symbol
-	*state.lastTokenWasEOF = tok.Symbol == 0 && tok.StartByte == tok.EndByte && !tok.NoLookahead
-	if *state.lastTokenWasEOF && tok.EndByte < expectedEOFByte {
-		*state.tokenSourceEOFEarly = true
-	}
-	for si := range stacks {
-		stacks[si].shifted = false
-	}
-	state.missingShift.resetForToken()
-	return tok
 }
 
 type parseMissingShiftTracker struct {
