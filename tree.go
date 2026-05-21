@@ -362,8 +362,16 @@ func nodeChildCountNoMaterialize(n *Node) int {
 	if n == nil {
 		return 0
 	}
-	if childRange, ok := n.ownerArena.finalChildRange(n); ok {
-		return childRange.count()
+	if n.childIndex > finalChildSidecarIndexBase || n.ownerArena == nil {
+		return len(n.children)
+	}
+	id := int(-n.childIndex - 2)
+	if id < 0 || id >= len(n.ownerArena.finalChildSidecars) {
+		return len(n.children)
+	}
+	count := n.ownerArena.finalChildSidecars[id].childRange.count()
+	if count > 0 {
+		return count
 	}
 	return len(n.children)
 }
