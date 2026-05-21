@@ -2277,7 +2277,16 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 					forceAdvanceAfterReduce = true
 				}
 			} else {
-				p.applyAction(s, act, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
+				switch act.Type {
+				case ParseActionShift:
+					p.applyShiftAction(s, act, tok, &nodeCount, arena, &scratch.entries, &scratch.gss, &trackChildErrors)
+				case ParseActionAccept:
+					p.applyAcceptAction(s)
+				case ParseActionRecover:
+					p.applyRecoverAction(s, act, tok, &nodeCount, arena, &scratch.entries, &scratch.gss, &trackChildErrors)
+				default:
+					p.applyAction(s, act, tok, &anyReduced, &nodeCount, arena, &scratch.entries, &scratch.gss, &scratch.tmpEntries, deferParentLinks, &trackChildErrors)
+				}
 			}
 		}
 		if phaseTiming {

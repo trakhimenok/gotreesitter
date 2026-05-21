@@ -407,7 +407,10 @@ func BenchmarkGoParseIncrementalSingleByteEditDFA(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		next := prepareEditedBenchmarkSource(src, scratch, editAt)
-		editStart := time.Now()
+		editStart := time.Time{}
+		if statsEnabled {
+			editStart = time.Now()
+		}
 		tree.Edit(edit)
 		if statsEnabled {
 			editTotalNS += uint64(time.Since(editStart).Nanoseconds())
