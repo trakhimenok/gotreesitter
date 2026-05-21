@@ -51,7 +51,7 @@ func normalizeJavaScriptTypeScriptStatementKeywordLeaves(root *Node, source []by
 		return
 	}
 
-	walkResultTree(root, func(n *Node) {
+	walkResultTreeDenseFirst(root, func(n *Node) {
 		if hasIfStmt && hasIf && n.symbol == ifStmtSym {
 			normalizeJavaScriptTypeScriptStatementKeywordLeafWithSymbol(n, source, "if", ifSym, ifNamed, closeBraceSym, hasCloseBrace)
 			return
@@ -373,7 +373,7 @@ func normalizeJavaScriptTrailingContinueComments(root *Node, source []byte, lang
 	if root == nil || lang == nil || lang.Name != "javascript" || len(source) == 0 {
 		return
 	}
-	walkResultTree(root, func(n *Node) {
+	walkResultTreeDenseFirst(root, func(n *Node) {
 		normalizeJavaScriptTrailingContinueCommentSiblings(n, source, lang)
 	})
 }
@@ -464,7 +464,7 @@ func normalizeJavaScriptTypeScriptOptionalChainLeaves(root *Node, lang *Language
 		return
 	}
 
-	walkResultTree(root, func(n *Node) {
+	walkResultTreeDenseFirst(root, func(n *Node) {
 		if n.Type(lang) == "optional_chain" && len(n.children) == 1 {
 			child := n.children[0]
 			if child != nil && !child.IsNamed() && !child.IsExtra() &&
@@ -491,7 +491,7 @@ func normalizeJavaScriptTypeScriptCallPrecedence(root *Node, lang *Language) {
 		return
 	}
 
-	walkResultTree(root, func(n *Node) {
+	walkResultTreeDenseFirst(root, func(n *Node) {
 		for i, child := range n.children {
 			if rewritten := rewriteJavaScriptTypeScriptCallPrecedence(child, lang); rewritten != nil {
 				n.children[i] = rewritten

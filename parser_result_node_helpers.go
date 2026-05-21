@@ -90,6 +90,29 @@ func walkResultTree(root *Node, visit func(*Node)) {
 	walk(root)
 }
 
+func walkResultTreeDenseFirst(root *Node, visit func(*Node)) {
+	if visit == nil {
+		return
+	}
+	var walk func(*Node)
+	walk = func(n *Node) {
+		if n == nil {
+			return
+		}
+		visit(n)
+		if n.ownerArena == nil || n.childIndex > finalChildSidecarIndexBase {
+			for _, child := range n.children {
+				walk(child)
+			}
+			return
+		}
+		for i := 0; i < resultChildCount(n); i++ {
+			walk(resultChildAt(n, i))
+		}
+	}
+	walk(root)
+}
+
 func walkResultTreePostorder(root *Node, visit func(*Node)) {
 	if visit == nil {
 		return

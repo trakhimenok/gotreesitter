@@ -76,7 +76,7 @@ func normalizeTypeScriptCompatibility(root *Node, source []byte, lang *Language)
 		return
 	}
 
-	walkResultTree(root, func(n *Node) {
+	walkResultTreeDenseFirst(root, func(n *Node) {
 		normalizeTypeScriptIdentifierKeywordAliases(n, &ctx)
 		normalizeTypeScriptImportKeywordNamedness(n, &ctx)
 		if ctx.canClearEnumBodyFields && n.symbol == ctx.enumBodySym && len(n.fieldIDs) > 0 {
