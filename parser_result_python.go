@@ -35,12 +35,47 @@ func normalizePythonCompatibilityWithParser(root *Node, source []byte, parser *P
 	parser.runNormalizationPass(func() bool {
 		return sourceFlags.passWord
 	}, func() normalizationPassCounters {
-		return normalizeCollapsedNamedLeafChildrenWithStats(root, lang, "pass_statement", "pass")
+		return normalizePythonCollapsedKeywordStatementWithStats(root, source, lang, "pass_statement", "pass")
+	})
+	parser.runNormalizationPass(func() bool {
+		return sourceFlags.continueWord
+	}, func() normalizationPassCounters {
+		return normalizePythonCollapsedKeywordStatementWithStats(root, source, lang, "continue_statement", "continue")
+	})
+	parser.runNormalizationPass(func() bool {
+		return sourceFlags.breakWord
+	}, func() normalizationPassCounters {
+		return normalizePythonCollapsedKeywordStatementWithStats(root, source, lang, "break_statement", "break")
+	})
+	parser.runNormalizationPass(func() bool {
+		return sourceFlags.returnWord
+	}, func() normalizationPassCounters {
+		return normalizePythonInlineReturnBlocksWithStats(root, source, lang)
+	})
+	parser.runNormalizationPass(func() bool {
+		return sourceFlags.raiseWord
+	}, func() normalizationPassCounters {
+		return normalizePythonInlineRaiseBlocksWithStats(root, lang)
+	})
+	parser.runNormalizationPass(func() bool {
+		return sourceFlags.assignmentList
+	}, func() normalizationPassCounters {
+		return normalizePythonAssignmentRightExpressionListsWithStats(root, lang)
+	})
+	parser.runNormalizationPass(func() bool {
+		return sourceFlags.yieldWord
+	}, func() normalizationPassCounters {
+		return normalizePythonInlineYieldBlocksWithStats(root, lang)
+	})
+	parser.runNormalizationPass(func() bool {
+		return sourceFlags.comma
+	}, func() normalizationPassCounters {
+		return normalizePythonInlineTupleExpressionBlocksWithStats(root, lang)
 	})
 	parser.runNormalizationPass(func() bool {
 		return sourceFlags.wildcardImport
 	}, func() normalizationPassCounters {
-		return normalizeCollapsedNamedLeafChildrenBySourceWithStats(root, source, lang, "wildcard_import", "*")
+		return normalizePythonStarCollapsedChildrenWithStats(root, source, lang)
 	})
 	parser.runNormalizationPass(func() bool {
 		return sourceFlags.asPattern
@@ -59,6 +94,13 @@ type pythonCompatibilitySourceFlags struct {
 	printChevron       bool
 	fStringPattern     bool
 	passWord           bool
+	continueWord       bool
+	breakWord          bool
+	returnWord         bool
+	raiseWord          bool
+	assignmentList     bool
+	yieldWord          bool
+	comma              bool
 	wildcardImport     bool
 	asPattern          bool
 	continuationEscape bool
@@ -118,6 +160,12 @@ func pythonCompatibilitySourceFlagsFor(source []byte) pythonCompatibilitySourceF
 		if source[i] == ';' {
 			flags.trailingSelfCalls = true
 		}
+		if source[i] == '=' && bytes.IndexByte(source[i+1:], ',') >= 0 {
+			flags.assignmentList = true
+		}
+		if source[i] == ',' {
+			flags.comma = true
+		}
 		if !flags.printChevron && pythonSourceWordAt(source, i, "print") {
 			j := i + len("print")
 			for j < len(source) && (source[j] == ' ' || source[j] == '\t' || source[j] == '\f') {
@@ -130,12 +178,272 @@ func pythonCompatibilitySourceFlagsFor(source []byte) pythonCompatibilitySourceF
 		if !flags.passWord && pythonSourceWordAt(source, i, "pass") {
 			flags.passWord = true
 		}
+		if !flags.continueWord && pythonSourceWordAt(source, i, "continue") {
+			flags.continueWord = true
+		}
+		if !flags.breakWord && pythonSourceWordAt(source, i, "break") {
+			flags.breakWord = true
+		}
+		if !flags.returnWord && pythonSourceWordAt(source, i, "return") {
+			flags.returnWord = true
+		}
+		if !flags.raiseWord && pythonSourceWordAt(source, i, "raise") {
+			flags.raiseWord = true
+		}
+		if !flags.yieldWord && pythonSourceWordAt(source, i, "yield") {
+			flags.yieldWord = true
+		}
 		if !flags.asPattern && pythonSourceWordAt(source, i, "as") {
 			flags.asPattern = true
 		}
 		i++
 	}
 	return flags
+}
+
+func normalizePythonStarCollapsedChildrenWithStats(root *Node, source []byte, lang *Language) normalizationPassCounters {
+	wildcard := normalizeCollapsedNamedLeafChildrenBySourceWithStats(root, source, lang, "wildcard_import", "*")
+	keywordSeparator := normalizeCollapsedNamedLeafChildrenBySourceWithStats(root, source, lang, "keyword_separator", "*")
+	return normalizationPassCounters{
+		nodesVisited:   wildcard.nodesVisited + keywordSeparator.nodesVisited,
+		nodesRewritten: wildcard.nodesRewritten + keywordSeparator.nodesRewritten,
+	}
+}
+
+func normalizePythonInlineRaiseBlocksWithStats(root *Node, lang *Language) normalizationPassCounters {
+	var counters normalizationPassCounters
+	if root == nil || lang == nil {
+		return counters
+	}
+	raiseStmtSym, ok := lang.symbolByNameAndNamed("raise_statement", true)
+	if !ok {
+		raiseStmtSym, ok = symbolByName(lang, "raise_statement")
+	}
+	if !ok {
+		return counters
+	}
+	walkResultTree(root, func(n *Node) {
+		counters.nodesVisited++
+		childCount := resultChildCount(n)
+		if childCount < 1 || n.Type(lang) != "block" || n.startPoint.Row != n.endPoint.Row {
+			return
+		}
+		first := resultChildAt(n, 0)
+		last := resultChildAt(n, childCount-1)
+		if first == nil || last == nil || first.Type(lang) != "raise" {
+			return
+		}
+		children := resultChildSliceForMutation(n)
+		stmtChildren := cloneNodeSliceInArena(n.ownerArena, children)
+		stmt := newParentNodeInArena(n.ownerArena, raiseStmtSym, true, stmtChildren, nil, 0)
+		stmt.startByte = first.startByte
+		stmt.endByte = last.endByte
+		stmt.startPoint = first.startPoint
+		stmt.endPoint = last.endPoint
+		stmt.parent = n
+		stmt.childIndex = 0
+		n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{stmt})
+		counters.nodesRewritten++
+	})
+	return counters
+}
+
+func normalizePythonAssignmentRightExpressionListsWithStats(root *Node, lang *Language) normalizationPassCounters {
+	var counters normalizationPassCounters
+	if root == nil || lang == nil {
+		return counters
+	}
+	patternListSym, patternOK := symbolByName(lang, "pattern_list")
+	expressionListSym, expressionOK := symbolByName(lang, "expression_list")
+	if !patternOK || !expressionOK {
+		return counters
+	}
+	expressionListNamed := symbolIsNamed(lang, expressionListSym)
+	walkResultTree(root, func(n *Node) {
+		counters.nodesVisited++
+		if n.Type(lang) != "assignment" {
+			return
+		}
+		sawEquals := false
+		childCount := resultChildCount(n)
+		for i := 0; i < childCount; i++ {
+			child := resultChildAt(n, i)
+			if child == nil {
+				continue
+			}
+			if child.Type(lang) == "=" {
+				sawEquals = true
+				continue
+			}
+			if sawEquals && child.symbol == patternListSym {
+				child.symbol = expressionListSym
+				child.setNamed(expressionListNamed)
+				counters.nodesRewritten++
+				return
+			}
+		}
+	})
+	return counters
+}
+
+func normalizePythonInlineTupleExpressionBlocksWithStats(root *Node, lang *Language) normalizationPassCounters {
+	var counters normalizationPassCounters
+	if root == nil || lang == nil {
+		return counters
+	}
+	tupleSym, ok := symbolByName(lang, "tuple_expression")
+	if !ok {
+		return counters
+	}
+	tupleNamed := symbolIsNamed(lang, tupleSym)
+	walkResultTree(root, func(n *Node) {
+		counters.nodesVisited++
+		childCount := resultChildCount(n)
+		if childCount < 3 || n.Type(lang) != "block" || n.startPoint.Row != n.endPoint.Row {
+			return
+		}
+		hasComma := false
+		for i := 0; i < childCount; i++ {
+			child := resultChildAt(n, i)
+			if child != nil && child.Type(lang) == "," {
+				hasComma = true
+				break
+			}
+		}
+		if !hasComma {
+			return
+		}
+		children := resultChildSliceForMutation(n)
+		stmtChildren := cloneNodeSliceInArena(n.ownerArena, children)
+		stmt := newParentNodeInArena(n.ownerArena, tupleSym, tupleNamed, stmtChildren, nil, 0)
+		stmt.startByte = children[0].startByte
+		stmt.endByte = children[len(children)-1].endByte
+		stmt.startPoint = children[0].startPoint
+		stmt.endPoint = children[len(children)-1].endPoint
+		stmt.parent = n
+		stmt.childIndex = 0
+		n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{stmt})
+		counters.nodesRewritten++
+	})
+	return counters
+}
+
+func normalizePythonInlineYieldBlocksWithStats(root *Node, lang *Language) normalizationPassCounters {
+	var counters normalizationPassCounters
+	if root == nil || lang == nil {
+		return counters
+	}
+	yieldSym, ok := lang.symbolByNameAndNamed("yield", true)
+	if !ok {
+		return counters
+	}
+	walkResultTree(root, func(n *Node) {
+		counters.nodesVisited++
+		childCount := resultChildCount(n)
+		if childCount < 1 || n.Type(lang) != "block" || n.startPoint.Row != n.endPoint.Row {
+			return
+		}
+		first := resultChildAt(n, 0)
+		last := resultChildAt(n, childCount-1)
+		if first == nil || last == nil || first.Type(lang) != "yield" || first.IsNamed() {
+			return
+		}
+		children := resultChildSliceForMutation(n)
+		stmtChildren := cloneNodeSliceInArena(n.ownerArena, children)
+		stmt := newParentNodeInArena(n.ownerArena, yieldSym, true, stmtChildren, nil, 0)
+		stmt.startByte = first.startByte
+		stmt.endByte = last.endByte
+		stmt.startPoint = first.startPoint
+		stmt.endPoint = last.endPoint
+		stmt.parent = n
+		stmt.childIndex = 0
+		n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{stmt})
+		counters.nodesRewritten++
+	})
+	return counters
+}
+
+func normalizePythonInlineReturnBlocksWithStats(root *Node, source []byte, lang *Language) normalizationPassCounters {
+	var counters normalizationPassCounters
+	if root == nil || lang == nil || len(source) == 0 {
+		return counters
+	}
+	returnStmtSym, ok := lang.symbolByNameAndNamed("return_statement", true)
+	if !ok {
+		returnStmtSym, ok = symbolByName(lang, "return_statement")
+	}
+	if !ok {
+		return counters
+	}
+	walkResultTree(root, func(n *Node) {
+		counters.nodesVisited++
+		childCount := resultChildCount(n)
+		if childCount < 1 || n.Type(lang) != "block" || n.startPoint.Row != n.endPoint.Row {
+			return
+		}
+		first := resultChildAt(n, 0)
+		last := resultChildAt(n, childCount-1)
+		if first == nil || last == nil || first.Type(lang) != "return" {
+			return
+		}
+		children := resultChildSliceForMutation(n)
+		stmtChildren := cloneNodeSliceInArena(n.ownerArena, children)
+		stmt := newParentNodeInArena(n.ownerArena, returnStmtSym, true, stmtChildren, nil, 0)
+		stmt.startByte = first.startByte
+		stmt.endByte = last.endByte
+		stmt.startPoint = first.startPoint
+		stmt.endPoint = last.endPoint
+		stmt.parent = n
+		stmt.childIndex = 0
+		n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{stmt})
+		counters.nodesRewritten++
+	})
+	return counters
+}
+
+func normalizePythonCollapsedKeywordStatementWithStats(root *Node, source []byte, lang *Language, statementName, keywordName string) normalizationPassCounters {
+	var counters normalizationPassCounters
+	if root == nil || lang == nil || len(source) == 0 {
+		return counters
+	}
+	statementSym, statementOK := lang.symbolByNameAndNamed(statementName, true)
+	if !statementOK {
+		statementSym, statementOK = symbolByName(lang, statementName)
+	}
+	keywordSym, keywordOK := lang.symbolByNameAndNamed(keywordName, false)
+	if !keywordOK {
+		keywordSym, keywordOK = symbolByName(lang, keywordName)
+	}
+	if !statementOK || !keywordOK {
+		return counters
+	}
+	keywordNamed := symbolIsNamed(lang, keywordSym)
+	walkResultTree(root, func(n *Node) {
+		counters.nodesVisited++
+		if resultChildCount(n) != 0 || int(n.endByte) > len(source) || n.startByte >= n.endByte || string(source[n.startByte:n.endByte]) != keywordName {
+			return
+		}
+		switch {
+		case n.symbol == statementSym:
+			child := newLeafNodeInArena(n.ownerArena, keywordSym, keywordNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
+			child.parent = n
+			child.childIndex = 0
+			n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
+			counters.nodesRewritten++
+		case n.Type(lang) == "block":
+			child := newLeafNodeInArena(n.ownerArena, keywordSym, keywordNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
+			stmt := newParentNodeInArena(n.ownerArena, statementSym, true, []*Node{child}, nil, 0)
+			stmt.startByte = n.startByte
+			stmt.endByte = n.endByte
+			stmt.startPoint = n.startPoint
+			stmt.endPoint = n.endPoint
+			stmt.parent = n
+			stmt.childIndex = 0
+			n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{stmt})
+			counters.nodesRewritten++
+		}
+	})
+	return counters
 }
 
 func normalizePythonAsPatternTargetIdentifiers(root *Node, source []byte, lang *Language) normalizationPassCounters {
@@ -151,6 +459,8 @@ func normalizePythonAsPatternTargetIdentifiers(root *Node, source []byte, lang *
 	if !ok {
 		return counters
 	}
+	tupleSym, hasTuple := symbolByName(lang, "tuple")
+	tupleNamed := hasTuple && symbolIsNamed(lang, tupleSym)
 	identifierNamed := false
 	if int(identifierSym) < len(lang.SymbolMetadata) {
 		identifierNamed = lang.SymbolMetadata[identifierSym].Named
@@ -162,11 +472,27 @@ func normalizePythonAsPatternTargetIdentifiers(root *Node, source []byte, lang *
 		}
 		counters.nodesVisited++
 		childCount := resultChildCount(n)
-		if n.symbol == parentSym && childCount == 0 && pythonSourceRangeIsIdentifier(source, n.startByte, n.endByte) {
-			child := newLeafNodeInArena(n.ownerArena, identifierSym, identifierNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
-			n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
-			counters.nodesRewritten++
-			childCount = 1
+		if n.symbol == parentSym {
+			switch {
+			case childCount == 0 && pythonSourceRangeIsIdentifier(source, n.startByte, n.endByte):
+				child := newLeafNodeInArena(n.ownerArena, identifierSym, identifierNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
+				n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
+				counters.nodesRewritten++
+				childCount = 1
+			case hasTuple && pythonAsPatternTargetLooksLikeTuple(n, lang, childCount):
+				children := resultChildSliceForMutation(n)
+				tupleChildren := cloneNodeSliceInArena(n.ownerArena, children)
+				tuple := newParentNodeInArena(n.ownerArena, tupleSym, tupleNamed, tupleChildren, nil, 0)
+				tuple.startByte = children[0].startByte
+				tuple.endByte = children[len(children)-1].endByte
+				tuple.startPoint = children[0].startPoint
+				tuple.endPoint = children[len(children)-1].endPoint
+				tuple.parent = n
+				tuple.childIndex = 0
+				n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{tuple})
+				counters.nodesRewritten++
+				childCount = 1
+			}
 		}
 		for i := 0; i < childCount; i++ {
 			walk(resultChildAt(n, i))
@@ -174,6 +500,24 @@ func normalizePythonAsPatternTargetIdentifiers(root *Node, source []byte, lang *
 	}
 	walk(root)
 	return counters
+}
+
+func pythonAsPatternTargetLooksLikeTuple(n *Node, lang *Language, childCount int) bool {
+	if n == nil || childCount < 3 {
+		return false
+	}
+	first := resultChildAt(n, 0)
+	last := resultChildAt(n, childCount-1)
+	if first == nil || last == nil || first.Type(lang) != "(" || last.Type(lang) != ")" {
+		return false
+	}
+	for i := 1; i+1 < childCount; i++ {
+		child := resultChildAt(n, i)
+		if child != nil && child.Type(lang) == "," {
+			return true
+		}
+	}
+	return false
 }
 
 func pythonSourceRangeIsIdentifier(source []byte, start, end uint32) bool {

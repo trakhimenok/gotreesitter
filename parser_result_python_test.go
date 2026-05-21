@@ -517,7 +517,7 @@ func TestNormalizePythonCompatibilityRecordsRuntimeStats(t *testing.T) {
 	normalizePythonCompatibilityWithParser(root, []byte(";"), parser, lang)
 
 	stats := parser.normalizationStats
-	if got, want := stats.passesChecked, uint64(5); got != want {
+	if got, want := stats.passesChecked, uint64(14); got != want {
 		t.Fatalf("passesChecked = %d, want %d", got, want)
 	}
 	if got, want := stats.passesRun, uint64(1); got != want {
@@ -528,6 +528,456 @@ func TestNormalizePythonCompatibilityRecordsRuntimeStats(t *testing.T) {
 	}
 	if stats.nodesRewritten != 0 {
 		t.Fatalf("nodesRewritten = %d, want 0", stats.nodesRewritten)
+	}
+}
+
+func TestNormalizePythonCompatibilityRestoresCollapsedLoopControlKeywords(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"continue_statement",
+			"continue",
+			"break_statement",
+			"break",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "continue_statement", Visible: true, Named: true},
+			{Name: "continue", Visible: true, Named: false},
+			{Name: "break_statement", Visible: true, Named: true},
+			{Name: "break", Visible: true, Named: false},
+		},
+	}
+	source := []byte("continue\nbreak\n")
+	arena := newNodeArena(arenaClassFull)
+	continueStmt := newLeafNodeInArena(arena, 2, true, 0, 8, Point{}, Point{Column: 8})
+	breakStmt := newLeafNodeInArena(arena, 4, true, 9, 14, Point{Row: 1}, Point{Row: 1, Column: 5})
+	root := newParentNodeInArena(arena, 1, true, []*Node{continueStmt, breakStmt}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := continueStmt.ChildCount(), 1; got != want {
+		t.Fatalf("continue_statement.ChildCount = %d, want %d", got, want)
+	}
+	if child := continueStmt.Child(0); child == nil || child.Type(lang) != "continue" || child.IsNamed() {
+		t.Fatalf("continue child = %#v, want anonymous continue", child)
+	}
+	if got, want := breakStmt.ChildCount(), 1; got != want {
+		t.Fatalf("break_statement.ChildCount = %d, want %d", got, want)
+	}
+	if child := breakStmt.Child(0); child == nil || child.Type(lang) != "break" || child.IsNamed() {
+		t.Fatalf("break child = %#v, want anonymous break", child)
+	}
+}
+
+func TestNormalizePythonCompatibilityRestoresCollapsedInlinePassBlock(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"block",
+			"pass_statement",
+			"pass",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "block", Visible: true, Named: true},
+			{Name: "pass_statement", Visible: true, Named: true},
+			{Name: "pass", Visible: true, Named: false},
+		},
+	}
+	source := []byte("pass")
+	arena := newNodeArena(arenaClassFull)
+	block := newLeafNodeInArena(arena, 2, true, 0, 4, Point{}, Point{Column: 4})
+	root := newParentNodeInArena(arena, 1, true, []*Node{block}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := block.ChildCount(), 1; got != want {
+		t.Fatalf("block.ChildCount = %d, want %d", got, want)
+	}
+	stmt := block.Child(0)
+	if stmt == nil || stmt.Type(lang) != "pass_statement" {
+		t.Fatalf("block child = %#v, want pass_statement", stmt)
+	}
+	if got, want := stmt.ChildCount(), 1; got != want {
+		t.Fatalf("pass_statement.ChildCount = %d, want %d", got, want)
+	}
+	if child := stmt.Child(0); child == nil || child.Type(lang) != "pass" || child.IsNamed() {
+		t.Fatalf("pass child = %#v, want anonymous pass", child)
+	}
+}
+
+func TestNormalizePythonCompatibilityRestoresCollapsedInlineBreakBlock(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"block",
+			"break_statement",
+			"break",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "block", Visible: true, Named: true},
+			{Name: "break_statement", Visible: true, Named: true},
+			{Name: "break", Visible: true, Named: false},
+		},
+	}
+	source := []byte("break")
+	arena := newNodeArena(arenaClassFull)
+	block := newLeafNodeInArena(arena, 2, true, 0, 5, Point{}, Point{Column: 5})
+	root := newParentNodeInArena(arena, 1, true, []*Node{block}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := block.ChildCount(), 1; got != want {
+		t.Fatalf("block.ChildCount = %d, want %d", got, want)
+	}
+	stmt := block.Child(0)
+	if stmt == nil || stmt.Type(lang) != "break_statement" {
+		t.Fatalf("block child = %#v, want break_statement", stmt)
+	}
+	if child := stmt.Child(0); child == nil || child.Type(lang) != "break" || child.IsNamed() {
+		t.Fatalf("break child = %#v, want anonymous break", child)
+	}
+}
+
+func TestNormalizePythonCompatibilityRestoresCollapsedKeywordSeparator(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"keyword_separator",
+			"*",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "keyword_separator", Visible: true, Named: true},
+			{Name: "*", Visible: true, Named: false},
+		},
+	}
+	source := []byte("*")
+	arena := newNodeArena(arenaClassFull)
+	separator := newLeafNodeInArena(arena, 2, true, 0, 1, Point{}, Point{Column: 1})
+	root := newParentNodeInArena(arena, 1, true, []*Node{separator}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := separator.ChildCount(), 1; got != want {
+		t.Fatalf("keyword_separator.ChildCount = %d, want %d", got, want)
+	}
+	if child := separator.Child(0); child == nil || child.Type(lang) != "*" || child.IsNamed() {
+		t.Fatalf("keyword_separator child = %#v, want anonymous *", child)
+	}
+}
+
+func TestNormalizePythonCompatibilityWrapsInlineReturnBlock(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"block",
+			"return",
+			"identifier",
+			"return_statement",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "block", Visible: true, Named: true},
+			{Name: "return", Visible: true, Named: false},
+			{Name: "identifier", Visible: true, Named: true},
+			{Name: "return_statement", Visible: true, Named: true},
+		},
+	}
+	source := []byte("return key")
+	arena := newNodeArena(arenaClassFull)
+	returnTok := newLeafNodeInArena(arena, 3, false, 0, 6, Point{}, Point{Column: 6})
+	ident := newLeafNodeInArena(arena, 4, true, 7, 10, Point{Column: 7}, Point{Column: 10})
+	block := newParentNodeInArena(arena, 2, true, []*Node{returnTok, ident}, nil, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{block}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := block.ChildCount(), 1; got != want {
+		t.Fatalf("block.ChildCount = %d, want %d", got, want)
+	}
+	stmt := block.Child(0)
+	if stmt == nil || stmt.Type(lang) != "return_statement" {
+		t.Fatalf("block child = %#v, want return_statement", stmt)
+	}
+	if got, want := stmt.ChildCount(), 2; got != want {
+		t.Fatalf("return_statement.ChildCount = %d, want %d", got, want)
+	}
+	if first := stmt.Child(0); first == nil || first.Type(lang) != "return" {
+		t.Fatalf("return_statement first child = %#v, want return", first)
+	}
+	if second := stmt.Child(1); second == nil || second.Type(lang) != "identifier" {
+		t.Fatalf("return_statement second child = %#v, want identifier", second)
+	}
+}
+
+func TestNormalizePythonCompatibilityWrapsInlineBareReturnBlock(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"block",
+			"return",
+			"return_statement",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "block", Visible: true, Named: true},
+			{Name: "return", Visible: true, Named: false},
+			{Name: "return_statement", Visible: true, Named: true},
+		},
+	}
+	source := []byte("return")
+	arena := newNodeArena(arenaClassFull)
+	returnTok := newLeafNodeInArena(arena, 3, false, 0, 6, Point{}, Point{Column: 6})
+	block := newParentNodeInArena(arena, 2, true, []*Node{returnTok}, nil, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{block}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := block.ChildCount(), 1; got != want {
+		t.Fatalf("block.ChildCount = %d, want %d", got, want)
+	}
+	stmt := block.Child(0)
+	if stmt == nil || stmt.Type(lang) != "return_statement" {
+		t.Fatalf("block child = %#v, want return_statement", stmt)
+	}
+	if got, want := stmt.ChildCount(), 1; got != want {
+		t.Fatalf("return_statement.ChildCount = %d, want %d", got, want)
+	}
+	if child := stmt.Child(0); child == nil || child.Type(lang) != "return" {
+		t.Fatalf("return_statement child = %#v, want return", child)
+	}
+}
+
+func TestNormalizePythonCompatibilityWrapsInlineRaiseBlock(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"block",
+			"raise",
+			"identifier",
+			"raise_statement",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "block", Visible: true, Named: true},
+			{Name: "raise", Visible: true, Named: false},
+			{Name: "identifier", Visible: true, Named: true},
+			{Name: "raise_statement", Visible: true, Named: true},
+		},
+	}
+	source := []byte("raise Error")
+	arena := newNodeArena(arenaClassFull)
+	raiseTok := newLeafNodeInArena(arena, 3, false, 0, 5, Point{}, Point{Column: 5})
+	ident := newLeafNodeInArena(arena, 4, true, 6, 11, Point{Column: 6}, Point{Column: 11})
+	block := newParentNodeInArena(arena, 2, true, []*Node{raiseTok, ident}, nil, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{block}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := block.ChildCount(), 1; got != want {
+		t.Fatalf("block.ChildCount = %d, want %d", got, want)
+	}
+	stmt := block.Child(0)
+	if stmt == nil || stmt.Type(lang) != "raise_statement" {
+		t.Fatalf("block child = %#v, want raise_statement", stmt)
+	}
+	if got, want := stmt.ChildCount(), 2; got != want {
+		t.Fatalf("raise_statement.ChildCount = %d, want %d", got, want)
+	}
+}
+
+func TestNormalizePythonAssignmentRightExpressionLists(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"assignment",
+			"identifier",
+			"=",
+			"pattern_list",
+			"expression_list",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "assignment", Visible: true, Named: true},
+			{Name: "identifier", Visible: true, Named: true},
+			{Name: "=", Visible: true, Named: false},
+			{Name: "pattern_list", Visible: true, Named: true},
+			{Name: "expression_list", Visible: true, Named: true},
+		},
+	}
+	arena := newNodeArena(arenaClassFull)
+	left := newLeafNodeInArena(arena, 3, true, 0, 3, Point{}, Point{Column: 3})
+	eq := newLeafNodeInArena(arena, 4, false, 4, 5, Point{Column: 4}, Point{Column: 5})
+	right := newParentNodeInArena(arena, 5, true, []*Node{
+		newLeafNodeInArena(arena, 3, true, 6, 7, Point{Column: 6}, Point{Column: 7}),
+	}, nil, 0)
+	assign := newParentNodeInArena(arena, 2, true, []*Node{left, eq, right}, nil, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{assign}, nil, 0)
+
+	normalizePythonAssignmentRightExpressionListsWithStats(root, lang)
+
+	if got, want := right.Type(lang), "expression_list"; got != want {
+		t.Fatalf("assignment RHS type = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePythonCompatibilityWrapsInlineYieldBlock(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"block",
+			"yield",
+			"integer",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "block", Visible: true, Named: true},
+			{Name: "yield", Visible: true, Named: true},
+			{Name: "integer", Visible: true, Named: true},
+		},
+	}
+	source := []byte("yield 1")
+	arena := newNodeArena(arenaClassFull)
+	yieldTok := newLeafNodeInArena(arena, 3, false, 0, 5, Point{}, Point{Column: 5})
+	value := newLeafNodeInArena(arena, 4, true, 6, 7, Point{Column: 6}, Point{Column: 7})
+	block := newParentNodeInArena(arena, 2, true, []*Node{yieldTok, value}, nil, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{block}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := block.ChildCount(), 1; got != want {
+		t.Fatalf("block.ChildCount = %d, want %d", got, want)
+	}
+	stmt := block.Child(0)
+	if stmt == nil || stmt.Type(lang) != "yield" || !stmt.IsNamed() {
+		t.Fatalf("block child = %#v, want named yield", stmt)
+	}
+	if got, want := stmt.ChildCount(), 2; got != want {
+		t.Fatalf("yield.ChildCount = %d, want %d", got, want)
+	}
+	if first := stmt.Child(0); first == nil || first.Type(lang) != "yield" || first.IsNamed() {
+		t.Fatalf("yield first child = %#v, want anonymous yield", first)
+	}
+}
+
+func TestNormalizePythonCompatibilityWrapsInlineTupleExpressionBlock(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"block",
+			"integer",
+			",",
+			"tuple_expression",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "block", Visible: true, Named: true},
+			{Name: "integer", Visible: true, Named: true},
+			{Name: ",", Visible: true, Named: false},
+			{Name: "tuple_expression", Visible: true, Named: true},
+		},
+	}
+	source := []byte("1, 2")
+	arena := newNodeArena(arenaClassFull)
+	one := newLeafNodeInArena(arena, 3, true, 0, 1, Point{}, Point{Column: 1})
+	comma := newLeafNodeInArena(arena, 4, false, 1, 2, Point{Column: 1}, Point{Column: 2})
+	two := newLeafNodeInArena(arena, 3, true, 3, 4, Point{Column: 3}, Point{Column: 4})
+	block := newParentNodeInArena(arena, 2, true, []*Node{one, comma, two}, nil, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{block}, nil, 0)
+
+	normalizePythonCompatibilityWithParser(root, source, &Parser{}, lang)
+
+	if got, want := block.ChildCount(), 1; got != want {
+		t.Fatalf("block.ChildCount = %d, want %d", got, want)
+	}
+	expr := block.Child(0)
+	if expr == nil || expr.Type(lang) != "tuple_expression" {
+		t.Fatalf("block child = %#v, want tuple_expression", expr)
+	}
+	if got, want := expr.ChildCount(), 3; got != want {
+		t.Fatalf("tuple_expression.ChildCount = %d, want %d", got, want)
+	}
+}
+
+func TestNormalizePythonAsPatternTargetWrapsTupleTarget(t *testing.T) {
+	lang := &Language{
+		Name: "python",
+		SymbolNames: []string{
+			"",
+			"module",
+			"as_pattern_target",
+			"(",
+			"identifier",
+			",",
+			")",
+			"tuple",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Name: "module", Visible: true, Named: true},
+			{Name: "as_pattern_target", Visible: true, Named: true},
+			{Name: "(", Visible: true, Named: false},
+			{Name: "identifier", Visible: true, Named: true},
+			{Name: ",", Visible: true, Named: false},
+			{Name: ")", Visible: true, Named: false},
+			{Name: "tuple", Visible: true, Named: true},
+		},
+	}
+	source := []byte("(x, y)")
+	arena := newNodeArena(arenaClassFull)
+	target := newParentNodeInArena(arena, 2, true, []*Node{
+		newLeafNodeInArena(arena, 3, false, 0, 1, Point{}, Point{Column: 1}),
+		newLeafNodeInArena(arena, 4, true, 1, 2, Point{Column: 1}, Point{Column: 2}),
+		newLeafNodeInArena(arena, 5, false, 2, 3, Point{Column: 2}, Point{Column: 3}),
+		newLeafNodeInArena(arena, 4, true, 4, 5, Point{Column: 4}, Point{Column: 5}),
+		newLeafNodeInArena(arena, 6, false, 5, 6, Point{Column: 5}, Point{Column: 6}),
+	}, nil, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{target}, nil, 0)
+
+	normalizePythonAsPatternTargetIdentifiers(root, source, lang)
+
+	if got, want := target.ChildCount(), 1; got != want {
+		t.Fatalf("as_pattern_target.ChildCount = %d, want %d", got, want)
+	}
+	tuple := target.Child(0)
+	if tuple == nil || tuple.Type(lang) != "tuple" {
+		t.Fatalf("as_pattern_target child = %#v, want tuple", tuple)
+	}
+	if got, want := tuple.ChildCount(), 5; got != want {
+		t.Fatalf("tuple.ChildCount = %d, want %d", got, want)
 	}
 }
 
@@ -567,6 +1017,30 @@ func TestPythonCompatibilitySourceGatesPreferCodeTokens(t *testing.T) {
 	}
 	if flags := pythonCompatibilitySourceFlagsFor([]byte("\"may pass NULL\"\npassword = 1\n# pass\n")); flags.passWord {
 		t.Fatal("did not expect combined flags to detect pass inside string/comment or identifier")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("for x in xs:\n    continue\n    break\n")); !flags.continueWord || !flags.breakWord {
+		t.Fatal("expected combined flags to detect continue and break statements")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("\"continue\"\nbreakfast = 1\n# break\n")); flags.continueWord || flags.breakWord {
+		t.Fatal("did not expect continue/break inside string/comment or identifier")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("def f(): return value\n")); !flags.returnWord {
+		t.Fatal("expected combined flags to detect return statement")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("\"return\"\nreturning = 1\n# return\n")); flags.returnWord {
+		t.Fatal("did not expect return inside string/comment or identifier")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("try: raise Error\n")); !flags.raiseWord {
+		t.Fatal("expected combined flags to detect raise")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("xyz = x, y, z\n")); !flags.assignmentList {
+		t.Fatal("expected combined flags to detect assignment list")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("def g(): yield 1\n")); !flags.yieldWord {
+		t.Fatal("expected combined flags to detect yield")
+	}
+	if flags := pythonCompatibilitySourceFlagsFor([]byte("1, 2\n")); !flags.comma {
+		t.Fatal("expected combined flags to detect comma")
 	}
 	if flags := pythonCompatibilitySourceFlagsFor([]byte(`f"{a, b}"`)); !flags.fStringPattern {
 		t.Fatal("expected combined flags to detect f-string pattern normalization")
