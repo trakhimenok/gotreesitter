@@ -1,0 +1,68 @@
+{
+  "schema": "corpus-manifest-v1",
+  "sets": [
+    {
+      "name": "go_real",
+      "language": "go",
+      "root": "cgo_harness/corpus_real/go",
+      "include": ["*.go"],
+      "order": "largest",
+      "max_files": 50,
+      "max_file_bytes": 500000
+    },
+    {
+      "name": "python_real",
+      "language": "python",
+      "root": "cgo_harness/corpus_real/python",
+      "include": ["*.py"],
+      "order": "largest",
+      "max_files": 50,
+      "max_file_bytes": 500000
+    },
+    {
+      "name": "rust_real",
+      "language": "rust",
+      "root": "cgo_harness/corpus_real/rust",
+      "include": ["*.rs"],
+      "order": "largest",
+      "max_files": 50,
+      "max_file_bytes": 500000
+    },
+    {
+      "name": "java_real",
+      "language": "java",
+      "root": "cgo_harness/corpus_real/java",
+      "include": ["*.java"],
+      "order": "largest",
+      "max_files": 50,
+      "max_file_bytes": 300000
+    },
+    {
+      "name": "c_real",
+      "language": "c",
+      "root": "cgo_harness/corpus_real/c",
+      "include": ["*.c", "*.h"],
+      "order": "largest",
+      "max_files": 50,
+      "max_file_bytes": 500000
+    },
+    {
+      "name": "javascript_real",
+      "language": "javascript",
+      "root": "cgo_harness/corpus_real/javascript",
+      "include": ["*.js"],
+      "order": "largest",
+      "max_files": 50,
+      "max_file_bytes": 500000
+    },
+    {
+      "name": "typescript_real",
+      "language": "typescript",
+      "root": "cgo_harness/corpus_real/typescript",
+      "include": ["*.ts"],
+      "order": "largest",
+      "max_files": 50,
+      "max_file_bytes": 500000
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "schema": "edit-fixtures-v1",
+  "fixtures": [
+    {
+      "language": "go",
+      "name": "function_body_single_byte",
+      "selector": "first_function_body",
+      "edit": {
+        "kind": "replace_middle_byte",
+        "text": "x"
+      }
+    },
+    {
+      "language": "python",
+      "name": "function_body_single_byte",
+      "selector": "first_function_body",
+      "edit": {
+        "kind": "replace_middle_byte",
+        "text": "x"
+      }
+    },
+    {
+      "language": "rust",
+      "name": "function_body_single_byte",
+      "selector": "first_function_body",
+      "edit": {
+        "kind": "replace_middle_byte",
+        "text": "x"
+      }
+    },
+    {
+      "language": "java",
+      "name": "method_body_single_byte",
+      "selector": "first_method_body",
+      "edit": {
+        "kind": "replace_middle_byte",
+        "text": "x"
+      }
+    },
+    {
+      "language": "c",
+      "name": "function_body_single_byte",
+      "selector": "first_function_body",
+      "edit": {
+        "kind": "replace_middle_byte",
+        "text": "x"
+      }
+    },
+    {
+      "language": "javascript",
+      "name": "function_body_single_byte",
+      "selector": "first_function_body",
+      "edit": {
+        "kind": "replace_middle_byte",
+        "text": "x"
+      }
+    },
+    {
+      "language": "typescript",
+      "name": "function_body_single_byte",
+      "selector": "first_function_body",
+      "edit": {
+        "kind": "replace_middle_byte",
+        "text": "x"
+      }
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "corpus-manifest-v1",
+  "sets": [
+    {
+      "name": "go_stress_large",
+      "language": "go",
+      "files": ["cgo_harness/corpus_real/go/large__proc.go"]
+    },
+    {
+      "name": "python_stress_large",
+      "language": "python",
+      "files": ["cgo_harness/corpus_real/python/large__python3.8_grammar.py"]
+    },
+    {
+      "name": "rust_stress_large",
+      "language": "rust",
+      "files": ["cgo_harness/corpus_real/rust/large__ast.rs"]
+    },
+    {
+      "name": "java_stress_large",
+      "language": "java",
+      "files": ["cgo_harness/corpus_real/java/large__JavaParserMetaModel.java"]
+    },
+    {
+      "name": "c_stress_large",
+      "language": "c",
+      "files": ["cgo_harness/corpus_real/c/large__cluster.c"]
+    },
+    {
+      "name": "javascript_stress_large",
+      "language": "javascript",
+      "files": ["cgo_harness/corpus_real/javascript/large__jquery.js"]
+    },
+    {
+      "name": "typescript_stress_large",
+      "language": "typescript",
+      "files": ["cgo_harness/corpus_real/typescript/large__parser.ts"]
+    }
+  ]
+}
