@@ -17,60 +17,64 @@ type AmbiguityProfile struct {
 
 // AmbiguityKey identifies one parse-table ambiguity bucket.
 type AmbiguityKey struct {
-	State        StateID
-	Lookahead    Symbol
-	ActionCount  uint8
-	ShiftCount   uint8
-	ReduceCount  uint8
-	ReduceSymbol Symbol
-	ChildCount   uint8
-	ProductionID uint16
+	State                          StateID
+	Lookahead                      Symbol
+	ActionCount                    uint8
+	ShiftCount                     uint8
+	ReduceCount                    uint8
+	ReduceSymbol                   Symbol
+	ChildCount                     uint8
+	ProductionID                   uint16
+	ReduceChainTerminalState       StateID
+	ReduceChainTerminalActionClass uint8
 }
 
 // AmbiguityStat is a snapshot row from AmbiguityProfile.
 type AmbiguityStat struct {
-	State                   StateID
-	Lookahead               Symbol
-	ActionCount             uint8
-	ShiftCount              uint8
-	ReduceCount             uint8
-	ReduceSymbol            Symbol
-	ChildCount              uint8
-	ProductionID            uint16
-	Actions                 []ParseAction
-	Hits                    uint64
-	Forks                   uint64
-	MultiStackHits          uint64
-	StackInTotal            uint64
-	StackInMax              int
-	ReduceChainHits         uint64
-	ReduceChainSteps        uint64
-	ReduceChainMaxLen       int
-	ReduceChainNanos        int64
-	ReduceChainRuns         uint64
-	ReduceChainClassHits    uint64
-	ReduceChainStopNoAction uint64
-	ReduceChainStopMulti    uint64
-	ReduceChainStopShift    uint64
-	ReduceChainStopAccept   uint64
-	ReduceChainStopDead     uint64
-	ReduceChainStopCycle    uint64
-	ReduceChainStopLimit    uint64
-	ActionNanos             int64
-	ExtraShiftNanos         int64
-	NoActionNanos           int64
-	ConflictChoiceNanos     int64
-	ConflictForkNanos       int64
-	SingleShiftNanos        int64
-	SingleReduceNanos       int64
-	SingleAcceptNanos       int64
-	SingleRecoverNanos      int64
-	SingleOtherNanos        int64
-	MergeCalls              uint64
-	MergeStacksIn           uint64
-	MergeStacksOut          uint64
-	MergeStacksInMax        int
-	MergeStacksOutMax       int
+	State                          StateID
+	Lookahead                      Symbol
+	ActionCount                    uint8
+	ShiftCount                     uint8
+	ReduceCount                    uint8
+	ReduceSymbol                   Symbol
+	ChildCount                     uint8
+	ProductionID                   uint16
+	Actions                        []ParseAction
+	Hits                           uint64
+	Forks                          uint64
+	MultiStackHits                 uint64
+	StackInTotal                   uint64
+	StackInMax                     int
+	ReduceChainHits                uint64
+	ReduceChainSteps               uint64
+	ReduceChainMaxLen              int
+	ReduceChainNanos               int64
+	ReduceChainRuns                uint64
+	ReduceChainClassHits           uint64
+	ReduceChainStopNoAction        uint64
+	ReduceChainStopMulti           uint64
+	ReduceChainStopShift           uint64
+	ReduceChainStopAccept          uint64
+	ReduceChainStopDead            uint64
+	ReduceChainStopCycle           uint64
+	ReduceChainStopLimit           uint64
+	ReduceChainTerminalState       StateID
+	ReduceChainTerminalActionClass uint8
+	ActionNanos                    int64
+	ExtraShiftNanos                int64
+	NoActionNanos                  int64
+	ConflictChoiceNanos            int64
+	ConflictForkNanos              int64
+	SingleShiftNanos               int64
+	SingleReduceNanos              int64
+	SingleAcceptNanos              int64
+	SingleRecoverNanos             int64
+	SingleOtherNanos               int64
+	MergeCalls                     uint64
+	MergeStacksIn                  uint64
+	MergeStacksOut                 uint64
+	MergeStacksInMax               int
+	MergeStacksOutMax              int
 }
 
 type ambiguityActionTimingKind uint8
@@ -459,15 +463,17 @@ func (p *AmbiguityProfile) recordReduceChainStep(state StateID, lookahead Symbol
 	}
 }
 
-func (p *AmbiguityProfile) recordReduceChainRun(state StateID, lookahead Symbol, steps, maxLen, classHits int, nanos int64, stop reduceChainStopReason) {
+func (p *AmbiguityProfile) recordReduceChainRun(state StateID, lookahead Symbol, terminalState StateID, terminalClass classifiedParseActionClass, steps, maxLen, classHits int, nanos int64, stop reduceChainStopReason) {
 	if p == nil {
 		return
 	}
 	key := AmbiguityKey{
-		State:       state,
-		Lookahead:   lookahead,
-		ActionCount: 1,
-		ReduceCount: 1,
+		State:                          state,
+		Lookahead:                      lookahead,
+		ActionCount:                    1,
+		ReduceCount:                    1,
+		ReduceChainTerminalState:       terminalState,
+		ReduceChainTerminalActionClass: uint8(terminalClass),
 	}
 
 	p.mu.Lock()
@@ -478,10 +484,12 @@ func (p *AmbiguityProfile) recordReduceChainRun(state StateID, lookahead Symbol,
 	stat := p.chainEntries[key]
 	if stat == nil {
 		stat = &AmbiguityStat{
-			State:       state,
-			Lookahead:   lookahead,
-			ActionCount: key.ActionCount,
-			ReduceCount: key.ReduceCount,
+			State:                          state,
+			Lookahead:                      lookahead,
+			ActionCount:                    key.ActionCount,
+			ReduceCount:                    key.ReduceCount,
+			ReduceChainTerminalState:       terminalState,
+			ReduceChainTerminalActionClass: uint8(terminalClass),
 		}
 		p.chainEntries[key] = stat
 	}

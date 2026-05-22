@@ -276,6 +276,9 @@ type hotGLRState struct {
 	ReduceChainStopDead            uint64         `json:"reduce_chain_stop_dead,omitempty"`
 	ReduceChainStopCycle           uint64         `json:"reduce_chain_stop_cycle,omitempty"`
 	ReduceChainStopLimit           uint64         `json:"reduce_chain_stop_limit,omitempty"`
+	ReduceChainTerminalState       uint32         `json:"reduce_chain_terminal_state,omitempty"`
+	ReduceChainTerminalActionClass uint8          `json:"reduce_chain_terminal_action_class,omitempty"`
+	ReduceChainTerminalActionName  string         `json:"reduce_chain_terminal_action_name,omitempty"`
 	ActionNS                       int64          `json:"action_ns,omitempty"`
 	ExtraShiftNS                   int64          `json:"extra_shift_ns,omitempty"`
 	NoActionNS                     int64          `json:"no_action_ns,omitempty"`
@@ -981,48 +984,51 @@ func hotGLRStatesFromProfile(lang *gotreesitter.Language, stats []gotreesitter.A
 	out := make([]hotGLRState, 0, len(stats))
 	for _, stat := range stats {
 		row := hotGLRState{
-			State:                   uint32(stat.State),
-			Lookahead:               uint16(stat.Lookahead),
-			LookaheadName:           symbolName(lang, stat.Lookahead),
-			ActionCount:             stat.ActionCount,
-			ShiftCount:              stat.ShiftCount,
-			ReduceCount:             stat.ReduceCount,
-			ReduceSymbol:            uint16(stat.ReduceSymbol),
-			ChildCount:              stat.ChildCount,
-			ProductionID:            stat.ProductionID,
-			Hits:                    stat.Hits,
-			Forks:                   stat.Forks,
-			MultiStackHits:          stat.MultiStackHits,
-			StackInTotal:            stat.StackInTotal,
-			StackInMax:              stat.StackInMax,
-			ReduceChainHits:         stat.ReduceChainHits,
-			ReduceChainSteps:        stat.ReduceChainSteps,
-			ReduceChainMaxLen:       stat.ReduceChainMaxLen,
-			ReduceChainNS:           stat.ReduceChainNanos,
-			ReduceChainRuns:         stat.ReduceChainRuns,
-			ReduceChainClassHits:    stat.ReduceChainClassHits,
-			ReduceChainStopNoAction: stat.ReduceChainStopNoAction,
-			ReduceChainStopMulti:    stat.ReduceChainStopMulti,
-			ReduceChainStopShift:    stat.ReduceChainStopShift,
-			ReduceChainStopAccept:   stat.ReduceChainStopAccept,
-			ReduceChainStopDead:     stat.ReduceChainStopDead,
-			ReduceChainStopCycle:    stat.ReduceChainStopCycle,
-			ReduceChainStopLimit:    stat.ReduceChainStopLimit,
-			ActionNS:                stat.ActionNanos,
-			ExtraShiftNS:            stat.ExtraShiftNanos,
-			NoActionNS:              stat.NoActionNanos,
-			ConflictChoiceNS:        stat.ConflictChoiceNanos,
-			ConflictForkNS:          stat.ConflictForkNanos,
-			SingleShiftNS:           stat.SingleShiftNanos,
-			SingleReduceNS:          stat.SingleReduceNanos,
-			SingleAcceptNS:          stat.SingleAcceptNanos,
-			SingleRecoverNS:         stat.SingleRecoverNanos,
-			SingleOtherNS:           stat.SingleOtherNanos,
-			MergeCalls:              stat.MergeCalls,
-			MergeStacksIn:           stat.MergeStacksIn,
-			MergeStacksOut:          stat.MergeStacksOut,
-			MergeStacksInMax:        stat.MergeStacksInMax,
-			MergeStacksOutMax:       stat.MergeStacksOutMax,
+			State:                          uint32(stat.State),
+			Lookahead:                      uint16(stat.Lookahead),
+			LookaheadName:                  symbolName(lang, stat.Lookahead),
+			ActionCount:                    stat.ActionCount,
+			ShiftCount:                     stat.ShiftCount,
+			ReduceCount:                    stat.ReduceCount,
+			ReduceSymbol:                   uint16(stat.ReduceSymbol),
+			ChildCount:                     stat.ChildCount,
+			ProductionID:                   stat.ProductionID,
+			Hits:                           stat.Hits,
+			Forks:                          stat.Forks,
+			MultiStackHits:                 stat.MultiStackHits,
+			StackInTotal:                   stat.StackInTotal,
+			StackInMax:                     stat.StackInMax,
+			ReduceChainHits:                stat.ReduceChainHits,
+			ReduceChainSteps:               stat.ReduceChainSteps,
+			ReduceChainMaxLen:              stat.ReduceChainMaxLen,
+			ReduceChainNS:                  stat.ReduceChainNanos,
+			ReduceChainRuns:                stat.ReduceChainRuns,
+			ReduceChainClassHits:           stat.ReduceChainClassHits,
+			ReduceChainStopNoAction:        stat.ReduceChainStopNoAction,
+			ReduceChainStopMulti:           stat.ReduceChainStopMulti,
+			ReduceChainStopShift:           stat.ReduceChainStopShift,
+			ReduceChainStopAccept:          stat.ReduceChainStopAccept,
+			ReduceChainStopDead:            stat.ReduceChainStopDead,
+			ReduceChainStopCycle:           stat.ReduceChainStopCycle,
+			ReduceChainStopLimit:           stat.ReduceChainStopLimit,
+			ReduceChainTerminalState:       uint32(stat.ReduceChainTerminalState),
+			ReduceChainTerminalActionClass: stat.ReduceChainTerminalActionClass,
+			ReduceChainTerminalActionName:  classifiedActionClassName(stat.ReduceChainTerminalActionClass),
+			ActionNS:                       stat.ActionNanos,
+			ExtraShiftNS:                   stat.ExtraShiftNanos,
+			NoActionNS:                     stat.NoActionNanos,
+			ConflictChoiceNS:               stat.ConflictChoiceNanos,
+			ConflictForkNS:                 stat.ConflictForkNanos,
+			SingleShiftNS:                  stat.SingleShiftNanos,
+			SingleReduceNS:                 stat.SingleReduceNanos,
+			SingleAcceptNS:                 stat.SingleAcceptNanos,
+			SingleRecoverNS:                stat.SingleRecoverNanos,
+			SingleOtherNS:                  stat.SingleOtherNanos,
+			MergeCalls:                     stat.MergeCalls,
+			MergeStacksIn:                  stat.MergeStacksIn,
+			MergeStacksOut:                 stat.MergeStacksOut,
+			MergeStacksInMax:               stat.MergeStacksInMax,
+			MergeStacksOutMax:              stat.MergeStacksOutMax,
 		}
 		if stat.ReduceSymbol != 0 || stat.ChildCount != 0 || stat.ProductionID != 0 {
 			row.ReduceSymbolName = symbolName(lang, stat.ReduceSymbol)
@@ -1072,6 +1078,25 @@ func parseActionTypeName(t gotreesitter.ParseActionType) string {
 		return "recover"
 	default:
 		return fmt.Sprintf("action_%d", t)
+	}
+}
+
+func classifiedActionClassName(class uint8) string {
+	switch class {
+	case 0:
+		return "no_action"
+	case 1:
+		return "single_reduce"
+	case 2:
+		return "single_shift"
+	case 3:
+		return "single_accept"
+	case 4:
+		return "single_other"
+	case 5:
+		return "multi"
+	default:
+		return fmt.Sprintf("class_%d", class)
 	}
 }
 

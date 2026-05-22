@@ -156,6 +156,9 @@ type hotGLRState struct {
 	ReduceChainStopDead            uint64 `json:"reduce_chain_stop_dead,omitempty"`
 	ReduceChainStopCycle           uint64 `json:"reduce_chain_stop_cycle,omitempty"`
 	ReduceChainStopLimit           uint64 `json:"reduce_chain_stop_limit,omitempty"`
+	ReduceChainTerminalState       uint32 `json:"reduce_chain_terminal_state,omitempty"`
+	ReduceChainTerminalActionClass uint8  `json:"reduce_chain_terminal_action_class,omitempty"`
+	ReduceChainTerminalActionName  string `json:"reduce_chain_terminal_action_name,omitempty"`
 	ActionNS                       int64  `json:"action_ns,omitempty"`
 	ExtraShiftNS                   int64  `json:"extra_shift_ns,omitempty"`
 	NoActionNS                     int64  `json:"no_action_ns,omitempty"`
@@ -815,18 +818,20 @@ func topHotStates(in []hotGLRState, score func(h hotGLRState) uint64, limit int)
 
 func aggregateHotStates(in []hotGLRState) []hotGLRState {
 	type key struct {
-		state        uint32
-		lookahead    uint16
-		actionCount  uint8
-		shiftCount   uint8
-		reduceCount  uint8
-		reduceSymbol uint16
-		childCount   uint8
-		productionID uint16
+		state                    uint32
+		lookahead                uint16
+		actionCount              uint8
+		shiftCount               uint8
+		reduceCount              uint8
+		reduceSymbol             uint16
+		childCount               uint8
+		productionID             uint16
+		reduceChainTerminalState uint32
+		reduceChainTerminalClass uint8
 	}
 	byKey := map[key]*hotGLRState{}
 	for _, h := range in {
-		k := key{h.State, h.Lookahead, h.ActionCount, h.ShiftCount, h.ReduceCount, h.ReduceSymbol, h.ChildCount, h.ProductionID}
+		k := key{h.State, h.Lookahead, h.ActionCount, h.ShiftCount, h.ReduceCount, h.ReduceSymbol, h.ChildCount, h.ProductionID, h.ReduceChainTerminalState, h.ReduceChainTerminalActionClass}
 		dst := byKey[k]
 		if dst == nil {
 			copied := h
@@ -971,13 +976,19 @@ func printHotReduceChainRunTable(label string, rows []hotGLRState) {
 		return
 	}
 	fmt.Printf("`%s`\n\n", label)
-	fmt.Println("| state | lookahead | lookahead_name | runs | steps | class_hits | avg_len | max_len | ns | stop_shift | stop_multi | stop_no_action | stop_accept | stop_dead | stop_cycle | stop_limit |")
-	fmt.Println("| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	fmt.Println("| state | lookahead | lookahead_name | terminal_state | terminal_action | runs | steps | class_hits | avg_len | max_len | ns | stop_shift | stop_multi | stop_no_action | stop_accept | stop_dead | stop_cycle | stop_limit |")
+	fmt.Println("| ---: | ---: | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
 	for _, h := range rows {
-		fmt.Printf("| %d | %d | `%s` | %d | %d | %d | %.2f | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
+		terminalAction := h.ReduceChainTerminalActionName
+		if terminalAction == "" && h.ReduceChainTerminalActionClass != 0 {
+			terminalAction = classifiedActionClassName(h.ReduceChainTerminalActionClass)
+		}
+		fmt.Printf("| %d | %d | `%s` | %d | `%s` | %d | %d | %d | %.2f | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
 			h.State,
 			h.Lookahead,
 			escapePipes(h.LookaheadName),
+			h.ReduceChainTerminalState,
+			escapePipes(terminalAction),
 			h.ReduceChainRuns,
 			h.ReduceChainSteps,
 			h.ReduceChainClassHits,
@@ -1028,6 +1039,25 @@ func printHotEquivTable(label string, rows []hotGLRState) {
 
 func escapePipes(s string) string {
 	return strings.ReplaceAll(s, "|", "\\|")
+}
+
+func classifiedActionClassName(class uint8) string {
+	switch class {
+	case 0:
+		return "no_action"
+	case 1:
+		return "single_reduce"
+	case 2:
+		return "single_shift"
+	case 3:
+		return "single_accept"
+	case 4:
+		return "single_other"
+	case 5:
+		return "multi"
+	default:
+		return fmt.Sprintf("class_%d", class)
+	}
 }
 
 func attrNames(scores []langScore) []string {
