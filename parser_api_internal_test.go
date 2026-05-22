@@ -1108,6 +1108,14 @@ func TestParserShouldDeferResultParentLinksForNoCompatBenchmark(t *testing.T) {
 	}
 }
 
+func TestParseFullEntryScratchCapacityCapsLargePrealloc(t *testing.T) {
+	got := parseFullEntryScratchCapacity(2 * 1024 * 1024)
+	want := 256 * 1024
+	if got != want {
+		t.Fatalf("parseFullEntryScratchCapacity large source = %d, want %d", got, want)
+	}
+}
+
 func TestParseFullArenaHintHeadroomIsBoundedForLargeSources(t *testing.T) {
 	used := 1_500_000
 	got := parseFullArenaHintHeadroom(used)

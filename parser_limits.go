@@ -705,7 +705,7 @@ func parseFullEntryScratchCapacity(sourceLen int) int {
 	}
 	// Keep initial scratch growth bounded; larger capacities are still
 	// reached on demand and retained up to maxRetainedStackEntryCap.
-	const maxPreallocEntries = 768 * 1024
+	const maxPreallocEntries = 256 * 1024
 	if estimate > maxPreallocEntries {
 		estimate = maxPreallocEntries
 	}
