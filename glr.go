@@ -415,6 +415,11 @@ func lookupNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int) (bool
 	}
 	idx := nodeEquivCacheIndex(a, b, depth)
 	entry := &scratch.equivCache[idx]
+	if runtimeEquivAuditEnabled {
+		if audit := scratch.audit; audit != nil {
+			audit.recordEquivCacheLookup()
+		}
+	}
 	// Epoch is the most selective — check it first and bail without touching the rest
 	// of the 32-byte slot.
 	if entry.epoch != scratch.equivEpoch {
@@ -426,6 +431,11 @@ func lookupNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int) (bool
 	if entry.aVersion != a.equivVersion || entry.bVersion != b.equivVersion {
 		return false, false
 	}
+	if runtimeEquivAuditEnabled {
+		if audit := scratch.audit; audit != nil {
+			audit.recordEquivCacheHit()
+		}
+	}
 	return entry.result, true
 }
 
@@ -435,6 +445,11 @@ func storeNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int, result
 	}
 	if depth < 0 || depth > glrNodeEquivCacheMaxDepth {
 		return
+	}
+	if runtimeEquivAuditEnabled {
+		if audit := scratch.audit; audit != nil {
+			audit.recordEquivCacheStore()
+		}
 	}
 	depthKey := uint16(depth)
 	ap := uintptr(unsafe.Pointer(a))
@@ -808,19 +823,41 @@ func stackEntryNodesExactlyEquivalentWithScratch(scratch *glrMergeScratch, a, b 
 		((a.flags^b.flags)&nodeStackEquivFlagMask) != 0 ||
 		a.parseState != b.parseState ||
 		a.preGotoState != b.preGotoState ||
-		a.productionID != b.productionID ||
-		len(a.fieldIDs) != len(b.fieldIDs) {
+		a.productionID != b.productionID {
+		return false
+	}
+	if len(a.fieldIDs) != len(b.fieldIDs) {
+		if runtimeEquivAuditEnabled && scratch != nil {
+			if audit := scratch.audit; audit != nil {
+				audit.recordEquivSkipFieldMismatch()
+			}
+		}
 		return false
 	}
 	if a.flags&nodeFlagHasError != 0 {
+		if runtimeEquivAuditEnabled && scratch != nil {
+			if audit := scratch.audit; audit != nil {
+				audit.recordEquivSkipError()
+			}
+		}
 		return true
 	}
 	for i := range a.fieldIDs {
 		if a.fieldIDs[i] != b.fieldIDs[i] {
+			if runtimeEquivAuditEnabled && scratch != nil {
+				if audit := scratch.audit; audit != nil {
+					audit.recordEquivSkipFieldMismatch()
+				}
+			}
 			return false
 		}
 	}
 	if len(a.children) == 0 {
+		if runtimeEquivAuditEnabled && scratch != nil {
+			if audit := scratch.audit; audit != nil {
+				audit.recordEquivSkipLeaf()
+			}
+		}
 		return true
 	}
 	if hit, ok := lookupNodeEquivCache(scratch, a, b, depth); ok {

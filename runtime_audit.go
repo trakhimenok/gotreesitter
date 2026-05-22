@@ -16,6 +16,7 @@ type runtimeAuditNodeInfo struct {
 
 type runtimeAudit struct {
 	enabled         bool
+	equivEnabled    bool
 	currentTokenGen uint32
 	tokenActive     bool
 
@@ -66,9 +67,17 @@ type runtimeAudit struct {
 	mergeSlotsUsed      uint64
 	globalCullStacksIn  uint64
 	globalCullStacksOut uint64
+
+	equivCacheLookups      uint64
+	equivCacheHits         uint64
+	equivCacheStores       uint64
+	equivSkipError         uint64
+	equivSkipLeaf          uint64
+	equivSkipFieldMismatch uint64
 }
 
 var runtimeAuditEnabled bool
+var runtimeEquivAuditEnabled bool
 
 // EnableRuntimeAudit toggles per-parse survivor instrumentation.
 // This debug hook is intended for single-threaded benchmark/profiling runs.
@@ -76,12 +85,21 @@ func EnableRuntimeAudit(enabled bool) {
 	runtimeAuditEnabled = enabled
 }
 
+// EnableGLREquivAudit toggles lightweight GLR equivalence attribution.
+// This is intended for parser gap diagnostics and avoids the heavier survivor
+// maps used by EnableRuntimeAudit.
+func EnableGLREquivAudit(enabled bool) {
+	runtimeEquivAuditEnabled = enabled
+}
+
 func (a *runtimeAudit) beginParse() {
-	if !runtimeAuditEnabled {
+	equivEnabled := runtimeEquivAuditEnabled
+	if !runtimeAuditEnabled && !equivEnabled {
 		a.reset()
 		return
 	}
-	a.enabled = true
+	a.enabled = runtimeAuditEnabled
+	a.equivEnabled = equivEnabled
 	a.currentTokenGen = 0
 	a.tokenActive = false
 	a.currentGSSAllocated = 0
@@ -124,6 +142,15 @@ func (a *runtimeAudit) beginParse() {
 	a.mergeSlotsUsed = 0
 	a.globalCullStacksIn = 0
 	a.globalCullStacksOut = 0
+	a.equivCacheLookups = 0
+	a.equivCacheHits = 0
+	a.equivCacheStores = 0
+	a.equivSkipError = 0
+	a.equivSkipLeaf = 0
+	a.equivSkipFieldMismatch = 0
+	if !a.enabled {
+		return
+	}
 	if a.gssGen == nil {
 		a.gssGen = make(map[*gssNode]uint32)
 	} else {
@@ -148,6 +175,7 @@ func (a *runtimeAudit) beginParse() {
 
 func (a *runtimeAudit) reset() {
 	a.enabled = false
+	a.equivEnabled = false
 	a.currentTokenGen = 0
 	a.tokenActive = false
 	a.currentGSSAllocated = 0
@@ -190,6 +218,12 @@ func (a *runtimeAudit) reset() {
 	a.mergeSlotsUsed = 0
 	a.globalCullStacksIn = 0
 	a.globalCullStacksOut = 0
+	a.equivCacheLookups = 0
+	a.equivCacheHits = 0
+	a.equivCacheStores = 0
+	a.equivSkipError = 0
+	a.equivSkipLeaf = 0
+	a.equivSkipFieldMismatch = 0
 	if a.gssGen != nil {
 		clearRuntimeAuditGSSMap(a.gssGen)
 	}
@@ -339,6 +373,48 @@ func (a *runtimeAudit) recordGlobalCull(in, out int) {
 	}
 	a.globalCullStacksIn += uint64(in)
 	a.globalCullStacksOut += uint64(out)
+}
+
+func (a *runtimeAudit) recordEquivCacheLookup() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivCacheLookups++
+}
+
+func (a *runtimeAudit) recordEquivCacheHit() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivCacheHits++
+}
+
+func (a *runtimeAudit) recordEquivCacheStore() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivCacheStores++
+}
+
+func (a *runtimeAudit) recordEquivSkipError() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivSkipError++
+}
+
+func (a *runtimeAudit) recordEquivSkipLeaf() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivSkipLeaf++
+}
+
+func (a *runtimeAudit) recordEquivSkipFieldMismatch() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivSkipFieldMismatch++
 }
 
 func (a *runtimeAudit) observeFrontier(stacks []glrStack) {

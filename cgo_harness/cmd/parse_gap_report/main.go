@@ -178,6 +178,12 @@ type runtimeStats struct {
 	MergeReplacements       uint64        `json:"merge_replacements,omitempty"`
 	StackEquivalentCalls    uint64        `json:"stack_equivalent_calls,omitempty"`
 	StackEquivalentTrue     uint64        `json:"stack_equivalent_true,omitempty"`
+	EquivCacheLookups       uint64        `json:"equiv_cache_lookups,omitempty"`
+	EquivCacheHits          uint64        `json:"equiv_cache_hits,omitempty"`
+	EquivCacheStores        uint64        `json:"equiv_cache_stores,omitempty"`
+	EquivSkipError          uint64        `json:"equiv_skip_error,omitempty"`
+	EquivSkipLeaf           uint64        `json:"equiv_skip_leaf,omitempty"`
+	EquivSkipFieldMismatch  uint64        `json:"equiv_skip_field_mismatch,omitempty"`
 	StackCompareCalls       uint64        `json:"stack_compare_calls,omitempty"`
 	ForkCount               uint64        `json:"fork_count,omitempty"`
 	ConflictRR              uint64        `json:"conflict_rr,omitempty"`
@@ -273,6 +279,7 @@ type metadata struct {
 	Count              int               `json:"count"`
 	GateOnly           bool              `json:"gate_only"`
 	HotShapeLimit      int               `json:"hot_shape_limit,omitempty"`
+	EquivCounters      bool              `json:"equiv_counters,omitempty"`
 	CorpusManifest     string            `json:"corpus_manifest,omitempty"`
 	CorpusManifestSHA  string            `json:"corpus_manifest_sha256,omitempty"`
 	QueryManifest      string            `json:"query_manifest,omitempty"`
@@ -304,6 +311,7 @@ func main() {
 		arenaBreakdown  bool
 		phaseTiming     bool
 		hotShapeLimit   int
+		equivCounters   bool
 	)
 	flag.StringVar(&langsFlag, "langs", "go,python,rust,java,c", "comma-separated languages to include")
 	flag.StringVar(&modesFlag, "modes", "cgo_full,go_full,go_no_tree", "comma-separated modes")
@@ -319,6 +327,7 @@ func main() {
 	flag.BoolVar(&arenaBreakdown, "arena-breakdown", true, "enable detailed gotreesitter arena breakdown while measuring")
 	flag.BoolVar(&phaseTiming, "phase-timing", false, "enable gotreesitter parser phase timing while measuring")
 	flag.IntVar(&hotShapeLimit, "hot-shapes", 0, "include top-N GLR fork/reduce/merge hot-shape rows in runtime JSON")
+	flag.BoolVar(&equivCounters, "equiv-counters", false, "enable lightweight GLR equivalence attribution counters")
 	flag.Parse()
 
 	if countFlag <= 0 {
@@ -381,6 +390,8 @@ func main() {
 
 	gotreesitter.EnableArenaBreakdown(arenaBreakdown)
 	defer gotreesitter.EnableArenaBreakdown(false)
+	gotreesitter.EnableGLREquivAudit(equivCounters)
+	defer gotreesitter.EnableGLREquivAudit(false)
 	if phaseTiming {
 		if err := os.Setenv("GOT_PARSE_PHASE_TIMING", "1"); err != nil {
 			fatalf("enable phase timing: %v", err)
@@ -471,6 +482,7 @@ func main() {
 		Count:              countFlag,
 		GateOnly:           gateOnly,
 		HotShapeLimit:      hotShapeLimit,
+		EquivCounters:      equivCounters,
 		CorpusManifest:     relOrAbs(repoRoot, corpusPath),
 		CorpusManifestSHA:  sha256File(corpusPath),
 		QueryManifest:      relOrAbs(repoRoot, queryPath),
@@ -969,6 +981,12 @@ func statsFromRuntime(rt gotreesitter.ParseRuntime) runtimeStats {
 		ActionLookupNS:          rt.ActionLookupNanos,
 		GLRMergeNS:              rt.GLRMergeNanos,
 		GLRCullNS:               rt.GLRCullNanos,
+		EquivCacheLookups:       rt.EquivCacheLookups,
+		EquivCacheHits:          rt.EquivCacheHits,
+		EquivCacheStores:        rt.EquivCacheStores,
+		EquivSkipError:          rt.EquivSkipError,
+		EquivSkipLeaf:           rt.EquivSkipLeaf,
+		EquivSkipFieldMismatch:  rt.EquivSkipFieldMismatch,
 		NoTreeReduceNodes:       rt.NoTreeReduceNodesConstructed,
 		NoTreeLeafNodes:         rt.NoTreeLeafNodesConstructed,
 	}

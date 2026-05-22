@@ -65,6 +65,12 @@ type runtimeStats struct {
 	GLRMergeNS              int64         `json:"glr_merge_ns,omitempty"`
 	GLRCullNS               int64         `json:"glr_cull_ns,omitempty"`
 	MergeCalls              uint64        `json:"merge_calls,omitempty"`
+	EquivCacheLookups       uint64        `json:"equiv_cache_lookups,omitempty"`
+	EquivCacheHits          uint64        `json:"equiv_cache_hits,omitempty"`
+	EquivCacheStores        uint64        `json:"equiv_cache_stores,omitempty"`
+	EquivSkipError          uint64        `json:"equiv_skip_error,omitempty"`
+	EquivSkipLeaf           uint64        `json:"equiv_skip_leaf,omitempty"`
+	EquivSkipFieldMismatch  uint64        `json:"equiv_skip_field_mismatch,omitempty"`
 	ForkCount               uint64        `json:"fork_count,omitempty"`
 	ConflictRR              uint64        `json:"conflict_rr,omitempty"`
 	ConflictRS              uint64        `json:"conflict_rs,omitempty"`
@@ -288,6 +294,12 @@ func scoreRows(rows []reportRow) []langScore {
 			s.attrs["final_child_drains_per_token"] = float64(r.FinalChildRangeDrains) / tokens
 			s.attrs["dense_fallbacks_per_token"] = float64(r.DenseFallbacks) / tokens
 			s.attrs["merge_calls_per_token"] = float64(r.MergeCalls) / tokens
+			s.attrs["equiv_cache_lookups_per_token"] = float64(r.EquivCacheLookups) / tokens
+			s.attrs["equiv_cache_hit_share"] = safeRatioUint(r.EquivCacheHits, r.EquivCacheLookups)
+			s.attrs["equiv_cache_stores_per_token"] = float64(r.EquivCacheStores) / tokens
+			s.attrs["equiv_skip_leaf_per_token"] = float64(r.EquivSkipLeaf) / tokens
+			s.attrs["equiv_skip_error_per_token"] = float64(r.EquivSkipError) / tokens
+			s.attrs["equiv_skip_field_mismatch_per_token"] = float64(r.EquivSkipFieldMismatch) / tokens
 			s.attrs["forks_per_token"] = float64(r.ForkCount) / tokens
 			s.attrs["merge_stack_in_per_token"] = float64(r.MergeStacksIn) / tokens
 			s.attrs["multi_stack_token_share"] = float64(r.MultiStackTokens) / tokens
@@ -668,6 +680,12 @@ func (r *runtimeStats) add(o runtimeStats) {
 	r.GLRMergeNS += o.GLRMergeNS
 	r.GLRCullNS += o.GLRCullNS
 	r.MergeCalls += o.MergeCalls
+	r.EquivCacheLookups += o.EquivCacheLookups
+	r.EquivCacheHits += o.EquivCacheHits
+	r.EquivCacheStores += o.EquivCacheStores
+	r.EquivSkipError += o.EquivSkipError
+	r.EquivSkipLeaf += o.EquivSkipLeaf
+	r.EquivSkipFieldMismatch += o.EquivSkipFieldMismatch
 	r.ForkCount += o.ForkCount
 	r.ConflictRR += o.ConflictRR
 	r.ConflictRS += o.ConflictRS
@@ -687,6 +705,13 @@ func (r *runtimeStats) add(o runtimeStats) {
 
 func ratio(num, den int64) float64 {
 	if num <= 0 || den <= 0 {
+		return 0
+	}
+	return float64(num) / float64(den)
+}
+
+func safeRatioUint(num, den uint64) float64 {
+	if den == 0 {
 		return 0
 	}
 	return float64(num) / float64(den)

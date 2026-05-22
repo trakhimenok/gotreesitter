@@ -1577,6 +1577,12 @@ func recordParseRuntimeLoopStats(parseRuntime *ParseRuntime, scratch *parserScra
 	parseRuntime.MergeSlotsUsed = scratch.audit.mergeSlotsUsed
 	parseRuntime.GlobalCullStacksIn = scratch.audit.globalCullStacksIn
 	parseRuntime.GlobalCullStacksOut = scratch.audit.globalCullStacksOut
+	parseRuntime.EquivCacheLookups = scratch.audit.equivCacheLookups
+	parseRuntime.EquivCacheHits = scratch.audit.equivCacheHits
+	parseRuntime.EquivCacheStores = scratch.audit.equivCacheStores
+	parseRuntime.EquivSkipError = scratch.audit.equivSkipError
+	parseRuntime.EquivSkipLeaf = scratch.audit.equivSkipLeaf
+	parseRuntime.EquivSkipFieldMismatch = scratch.audit.equivSkipFieldMismatch
 }
 
 func recordParseRuntimeMaterializationTiming(parseRuntime *ParseRuntime, timingRef *parseMaterializationTiming, timing parseMaterializationTiming) {
@@ -1741,8 +1747,10 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	arena.skipChildClear = reuse == nil && oldTree == nil
 	arena.finalChildRefs = p.finalChildRefs
 	arena.audit = nil
-	if scratch.audit.enabled {
+	if scratch.audit.enabled || scratch.audit.equivEnabled {
 		scratch.merge.audit = &scratch.audit
+	}
+	if scratch.audit.enabled {
 		scratch.gss.audit = &scratch.audit
 		arena.audit = &scratch.audit
 	}

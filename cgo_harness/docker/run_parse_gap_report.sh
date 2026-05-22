@@ -25,6 +25,7 @@ GATE_ONLY=0
 BUILD_IMAGE=1
 PHASE_TIMING=0
 HOT_SHAPES=0
+EQUIV_COUNTERS=0
 
 usage() {
   cat <<'EOF'
@@ -53,6 +54,7 @@ Options:
   --gate-only               Run parse/highlight/query correctness gates only
   --phase-timing            Enable parser phase/subphase timing in report rows
   --hot-shapes <n>          Include top-N GLR fork/reduce/merge hot-shape rows in runtime JSON
+  --equiv-counters          Enable lightweight GLR equivalence attribution counters
   --no-build                Skip Docker image build in underlying runner
   -h, --help                Show this help
 
@@ -85,6 +87,7 @@ while [[ $# -gt 0 ]]; do
     --gate-only) GATE_ONLY=1; shift ;;
     --phase-timing) PHASE_TIMING=1; shift ;;
     --hot-shapes) HOT_SHAPES="$2"; shift 2 ;;
+    --equiv-counters) EQUIV_COUNTERS=1; shift ;;
     --no-build) BUILD_IMAGE=0; shift ;;
     -h|--help)
       usage
@@ -163,6 +166,7 @@ fi
   echo "gate_only=$GATE_ONLY"
   echo "phase_timing=$PHASE_TIMING"
   echo "hot_shapes=$HOT_SHAPES"
+  echo "equiv_counters=$EQUIV_COUNTERS"
 } >"$OUT_DIR/wrapper-metadata.txt"
 
 allow_arg_text=""
@@ -186,6 +190,10 @@ fi
 hot_shapes_arg_text=""
 if [[ "$HOT_SHAPES" != "0" ]]; then
   hot_shapes_arg_text="--hot-shapes '$HOT_SHAPES'"
+fi
+equiv_counters_arg_text=""
+if [[ "$EQUIV_COUNTERS" == "1" ]]; then
+  equiv_counters_arg_text="--equiv-counters"
 fi
 
 inner_cmd=$(cat <<EOF
@@ -218,7 +226,8 @@ env \
     $time_parity_arg_text \
     $gate_only_arg_text \
     $phase_timing_arg_text \
-    $hot_shapes_arg_text
+    $hot_shapes_arg_text \
+    $equiv_counters_arg_text
 EOF
 )
 

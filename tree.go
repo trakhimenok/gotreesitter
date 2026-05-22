@@ -651,6 +651,12 @@ type ParseRuntime struct {
 	MergeSlotsUsed                               uint64
 	GlobalCullStacksIn                           uint64
 	GlobalCullStacksOut                          uint64
+	EquivCacheLookups                            uint64
+	EquivCacheHits                               uint64
+	EquivCacheStores                             uint64
+	EquivSkipError                               uint64
+	EquivSkipLeaf                                uint64
+	EquivSkipFieldMismatch                       uint64
 	ParseWallNanos                               int64
 	ParserLoopNanos                              int64
 	TokenNextNanos                               int64
