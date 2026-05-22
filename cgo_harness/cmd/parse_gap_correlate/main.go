@@ -187,6 +187,7 @@ type langScore struct {
 	goCursor          int64
 	goEdit            int64
 	goNoop            int64
+	goNoTreeRuntime   runtimeStats
 	fullRatio         float64
 	noTreeRatio       float64
 	queryRatio        float64
@@ -320,6 +321,9 @@ func scoreRows(rows []reportRow) []langScore {
 		s.queryRatio = ratio(s.goQuery, s.cgoFull)
 		s.queryOverFull = ratio(s.goQuery, s.goFull)
 		s.fullOverNoTree = ratio(s.goFull, s.goNoTree)
+		if nt := agg.modes["go_no_tree"]; nt != nil {
+			s.goNoTreeRuntime = nt.runtime
+		}
 		if gf := agg.modes["go_full"]; gf != nil {
 			r := gf.runtime
 			tokens := float64(max64(r.Tokens, 1))
@@ -502,6 +506,7 @@ func render(scores []langScore) {
 	printActionAttribution(scores)
 	printReduceAttribution(scores)
 	printEquivAttribution(scores)
+	printNoTreeAttribution(scores)
 
 	type corr struct {
 		name string
@@ -666,6 +671,45 @@ func printEquivAttribution(scores []langScore) {
 			s.attrs["equiv_frontier_candidate_compares_per_token"],
 		)
 	}
+}
+
+func printNoTreeAttribution(scores []langScore) {
+	if !hasAnyNoTreeRuntime(scores) {
+		return
+	}
+	fmt.Println()
+	fmt.Println("## Go No-Tree Attribution")
+	fmt.Println()
+	fmt.Println("| lang | go_no_tree | parser_loop | token_next | action_lookup | glr_merge | dispatch | single_reduce | conflict_fork | merge/token | reduce_steps/token | equiv_lookup/token |")
+	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	for _, s := range scores {
+		r := s.goNoTreeRuntime
+		wall := float64(maxInt64(r.ParseWallNS, s.goNoTree))
+		tokens := float64(max64(r.Tokens, 1))
+		fmt.Printf("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %.3f | %.3f | %.3f |\n",
+			s.lang,
+			nsText(s.goNoTree),
+			pctText(float64(r.ParserLoopNS)/wall),
+			pctText(float64(r.TokenNextNS)/wall),
+			pctText(float64(r.ActionLookupNS)/wall),
+			pctText(float64(r.GLRMergeNS)/wall),
+			pctText(float64(r.ActionDispatchNS)/wall),
+			pctText(float64(r.ActionSingleReduceNS)/wall),
+			pctText(float64(r.ActionConflictForkNS)/wall),
+			float64(r.MergeCalls)/tokens,
+			float64(r.ReduceChainSteps)/tokens,
+			float64(r.EquivCacheLookups)/tokens,
+		)
+	}
+}
+
+func hasAnyNoTreeRuntime(scores []langScore) bool {
+	for _, s := range scores {
+		if s.goNoTreeRuntime.ParseWallNS != 0 || s.goNoTreeRuntime.Tokens != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func hasAnyAttr(scores []langScore, names ...string) bool {
