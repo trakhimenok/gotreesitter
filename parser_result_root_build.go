@@ -350,6 +350,9 @@ func (p *Parser) shouldDeferResultParentLinks(root *Node) bool {
 	if p == nil || p.language == nil || root == nil || root.ownerArena == nil {
 		return false
 	}
+	if p.noResultCompatibilityBenchmarkOnly && !p.noTreeBenchmarkOnly {
+		return true
+	}
 	return (p.language.Name == "java" || p.language.Name == "python") && !p.noTreeBenchmarkOnly
 }
 

@@ -1078,6 +1078,36 @@ func TestParseShouldUseFinalChildRefsDefaultsForLargePythonNoCompat(t *testing.T
 	}
 }
 
+func TestParserShouldDeferResultParentLinksForNoCompatBenchmark(t *testing.T) {
+	arena := acquireNodeArena(arenaClassFull)
+	defer arena.Release()
+
+	root := newLeafNodeInArena(arena, Symbol(1), true, 0, 1, Point{}, Point{Column: 1})
+	parser := &Parser{
+		language:                           &Language{Name: "go"},
+		noResultCompatibilityBenchmarkOnly: true,
+	}
+	if !parser.shouldDeferResultParentLinks(root) {
+		t.Fatal("shouldDeferResultParentLinks = false, want true for no-compat benchmark parse")
+	}
+
+	parser.noTreeBenchmarkOnly = true
+	if parser.shouldDeferResultParentLinks(root) {
+		t.Fatal("shouldDeferResultParentLinks = true, want false for no-tree benchmark parse")
+	}
+
+	parser.noTreeBenchmarkOnly = false
+	parser.noResultCompatibilityBenchmarkOnly = false
+	if parser.shouldDeferResultParentLinks(root) {
+		t.Fatal("shouldDeferResultParentLinks = true, want false for normal Go parse")
+	}
+
+	parser.language = &Language{Name: "java"}
+	if !parser.shouldDeferResultParentLinks(root) {
+		t.Fatal("shouldDeferResultParentLinks = false, want true for normal Java parse")
+	}
+}
+
 func TestParseFullArenaHintHeadroomIsBoundedForLargeSources(t *testing.T) {
 	used := 1_500_000
 	got := parseFullArenaHintHeadroom(used)

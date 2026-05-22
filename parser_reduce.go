@@ -696,7 +696,7 @@ func (p *Parser) chainSingleReduceActionsClassifiedDefault(s *glrStack, tok Toke
 			return false
 		}
 
-		classified := actions[actionIdx]
+		classified := &actions[actionIdx]
 		switch classified.class {
 		case classifiedParseActionSingleReduce:
 			next := classified.action
@@ -858,7 +858,7 @@ func (p *Parser) chainSingleReduceActionsClassifiedHintedProfiled(s *glrStack, t
 		}
 		classHits++
 
-		classified := actions[actionIdx]
+		classified := &actions[actionIdx]
 		if classified.class != classifiedParseActionSingleReduce {
 			if reduceChainHintTerminalMatches(hint, currentState, classified.class) {
 				if perfCountersEnabled {
@@ -941,7 +941,7 @@ func (p *Parser) chainSingleReduceActionsClassifiedProfiledDefault(s *glrStack, 
 		}
 		classHits++
 
-		classified := actions[actionIdx]
+		classified := &actions[actionIdx]
 		switch classified.class {
 		case classifiedParseActionSingleReduce:
 			next := classified.action
