@@ -306,7 +306,7 @@ func TestNormalizeJavaScriptTypeScriptOptionalChainLeaves(t *testing.T) {
 	stmt := newParentNodeInArena(arena, 2, true, []*Node{call}, nil, 0)
 	root := newParentNodeInArena(arena, 1, true, []*Node{stmt}, nil, 0)
 
-	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, lang)
+	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, []byte("?."), lang)
 
 	if got, want := chain.ChildCount(), 0; got != want {
 		t.Fatalf("optional_chain child count = %d, want %d", got, want)

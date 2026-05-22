@@ -6,7 +6,7 @@ func normalizeJavaScriptCompatibility(root *Node, source []byte, lang *Language)
 	normalizeJavaScriptProgramStart(root, lang)
 	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "empty_statement", ";")
 	normalizeJavaScriptTypeScriptStatementKeywordLeaves(root, source, lang)
-	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, lang)
+	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, source, lang)
 	normalizeJavaScriptTypeScriptCallPrecedence(root, lang)
 	normalizeJavaScriptTypeScriptUnaryPrecedence(root, lang)
 	normalizeJavaScriptTypeScriptBinaryPrecedence(root, lang)
@@ -20,7 +20,7 @@ func normalizeJavaScriptCompatibility(root *Node, source []byte, lang *Language)
 func normalizeTypeScriptTreeCompatibility(root *Node, source []byte, lang *Language) {
 	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "empty_statement", ";")
 	normalizeJavaScriptTypeScriptStatementKeywordLeaves(root, source, lang)
-	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, lang)
+	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, source, lang)
 	normalizeJavaScriptTypeScriptCallPrecedence(root, lang)
 	normalizeJavaScriptTypeScriptUnaryPrecedence(root, lang)
 	normalizeJavaScriptTypeScriptBinaryPrecedence(root, lang)
@@ -28,7 +28,6 @@ func normalizeTypeScriptTreeCompatibility(root *Node, source []byte, lang *Langu
 	normalizeJavaScriptTopLevelDeclarationBounds(root, lang)
 	normalizeTypeScriptCompatibility(root, source, lang)
 	normalizeJavaScriptTopLevelExpressionStatementBounds(root, lang)
-	normalizeCollapsedNamedLeafChildren(root, lang, "existential_type", "*")
 }
 
 func normalizeJavaScriptTypeScriptStatementKeywordLeaves(root *Node, source []byte, lang *Language) {
@@ -449,8 +448,8 @@ func insertJavaScriptStatementBlockComment(parent *Node, childIdx int, comment *
 	populateParentNode(parent, parent.children)
 }
 
-func normalizeJavaScriptTypeScriptOptionalChainLeaves(root *Node, lang *Language) {
-	if root == nil || lang == nil {
+func normalizeJavaScriptTypeScriptOptionalChainLeaves(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || !bytes.Contains(source, []byte("?.")) {
 		return
 	}
 	switch lang.Name {
