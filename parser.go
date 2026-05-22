@@ -3137,7 +3137,14 @@ func typescriptRepetitionShiftConflictChoice(lang *Language, tok Token, state St
 	}
 	switch state {
 	case 9:
-		if !symbolHasName(lang, tok.Symbol, "function") {
+		switch {
+		case symbolHasName(lang, tok.Symbol, "function"):
+		case symbolHasName(lang, tok.Symbol, "identifier"):
+		case symbolHasName(lang, tok.Symbol, "const"):
+		case symbolHasName(lang, tok.Symbol, "return"):
+		case symbolHasName(lang, tok.Symbol, "if"):
+		case symbolHasName(lang, tok.Symbol, "export"):
+		default:
 			return ParseAction{}, false
 		}
 	case 3817:

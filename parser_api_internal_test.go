@@ -101,18 +101,20 @@ func TestCSharpRepetitionShiftConflictChoiceRejectsOtherRepeats(t *testing.T) {
 }
 
 func TestTypeScriptRepetitionShiftConflictChoiceAllowsHotProgramRepeat(t *testing.T) {
-	lang := &Language{SymbolNames: []string{"end", "function", "program_repeat1"}}
+	lang := &Language{SymbolNames: []string{"end", "function", "identifier", "const", "return", "if", "export", "program_repeat1"}}
 	actions := []ParseAction{
-		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionReduce, Symbol: 7, ChildCount: 2},
 		{Type: ParseActionShift, State: 3693, Repetition: true},
 	}
 
-	chosen, ok := typescriptRepetitionShiftConflictChoice(lang, Token{Symbol: 1}, 9, actions)
-	if !ok {
-		t.Fatal("typescriptRepetitionShiftConflictChoice = false, want true")
-	}
-	if chosen.Type != ParseActionShift || chosen.State != 3693 || !chosen.Repetition {
-		t.Fatalf("typescriptRepetitionShiftConflictChoice picked %+v, want repetition shift", chosen)
+	for _, sym := range []Symbol{1, 2, 3, 4, 5, 6} {
+		chosen, ok := typescriptRepetitionShiftConflictChoice(lang, Token{Symbol: sym}, 9, actions)
+		if !ok {
+			t.Fatalf("typescriptRepetitionShiftConflictChoice(%q) = false, want true", lang.SymbolNames[sym])
+		}
+		if chosen.Type != ParseActionShift || chosen.State != 3693 || !chosen.Repetition {
+			t.Fatalf("typescriptRepetitionShiftConflictChoice(%q) picked %+v, want repetition shift", lang.SymbolNames[sym], chosen)
+		}
 	}
 }
 
