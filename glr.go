@@ -415,26 +415,34 @@ func lookupNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int) (bool
 	}
 	idx := nodeEquivCacheIndex(a, b, depth)
 	entry := &scratch.equivCache[idx]
+	var audit *runtimeAudit
 	if runtimeEquivAuditEnabled {
-		if audit := scratch.audit; audit != nil {
+		if audit = scratch.audit; audit != nil {
 			audit.recordEquivCacheLookup()
 		}
 	}
 	// Epoch is the most selective — check it first and bail without touching the rest
 	// of the 32-byte slot.
 	if entry.epoch != scratch.equivEpoch {
+		if audit != nil {
+			audit.recordEquivCacheEpochMiss()
+		}
 		return false, false
 	}
 	if entry.a != ap || entry.b != bp || entry.depth != depthKey {
+		if audit != nil {
+			audit.recordEquivCacheKeyMiss()
+		}
 		return false, false
 	}
 	if entry.aVersion != a.equivVersion || entry.bVersion != b.equivVersion {
+		if audit != nil {
+			audit.recordEquivCacheVersionMiss()
+		}
 		return false, false
 	}
-	if runtimeEquivAuditEnabled {
-		if audit := scratch.audit; audit != nil {
-			audit.recordEquivCacheHit()
-		}
+	if audit != nil {
+		audit.recordEquivCacheHit()
 	}
 	return entry.result, true
 }
@@ -468,6 +476,13 @@ func storeNodeEquivCache(scratch *glrMergeScratch, a, b *Node, depth int, result
 		depth:    depthKey,
 		result:   result,
 	}
+}
+
+func activeEquivAudit(scratch *glrMergeScratch) *runtimeAudit {
+	if !runtimeEquivAuditEnabled || scratch == nil {
+		return nil
+	}
+	return scratch.audit
 }
 
 func nodeEquivCacheIndex(a, b *Node, depth int) int {
@@ -810,6 +825,10 @@ func languageNeedsExactStackNodeEquivalence(lang *Language) bool {
 }
 
 func stackEntryNodesExactlyEquivalentWithScratch(scratch *glrMergeScratch, a, b *Node, depth int) bool {
+	audit := activeEquivAudit(scratch)
+	if audit != nil {
+		audit.recordEquivExactCall()
+	}
 	if a == b {
 		return true
 	}
@@ -827,36 +846,28 @@ func stackEntryNodesExactlyEquivalentWithScratch(scratch *glrMergeScratch, a, b 
 		return false
 	}
 	if len(a.fieldIDs) != len(b.fieldIDs) {
-		if runtimeEquivAuditEnabled && scratch != nil {
-			if audit := scratch.audit; audit != nil {
-				audit.recordEquivSkipFieldMismatch()
-			}
+		if audit != nil {
+			audit.recordEquivSkipFieldMismatch()
 		}
 		return false
 	}
 	if a.flags&nodeFlagHasError != 0 {
-		if runtimeEquivAuditEnabled && scratch != nil {
-			if audit := scratch.audit; audit != nil {
-				audit.recordEquivSkipError()
-			}
+		if audit != nil {
+			audit.recordEquivSkipError()
 		}
 		return true
 	}
 	for i := range a.fieldIDs {
 		if a.fieldIDs[i] != b.fieldIDs[i] {
-			if runtimeEquivAuditEnabled && scratch != nil {
-				if audit := scratch.audit; audit != nil {
-					audit.recordEquivSkipFieldMismatch()
-				}
+			if audit != nil {
+				audit.recordEquivSkipFieldMismatch()
 			}
 			return false
 		}
 	}
 	if len(a.children) == 0 {
-		if runtimeEquivAuditEnabled && scratch != nil {
-			if audit := scratch.audit; audit != nil {
-				audit.recordEquivSkipLeaf()
-			}
+		if audit != nil {
+			audit.recordEquivSkipLeaf()
 		}
 		return true
 	}
@@ -864,6 +875,9 @@ func stackEntryNodesExactlyEquivalentWithScratch(scratch *glrMergeScratch, a, b 
 		return hit
 	}
 	for i := range a.children {
+		if audit != nil {
+			audit.recordEquivExactChildCompare()
+		}
 		if !stackEntryNodesExactlyEquivalentWithScratch(scratch, a.children[i], b.children[i], depth+1) {
 			storeNodeEquivCache(scratch, a, b, depth, false)
 			return false
@@ -874,6 +888,10 @@ func stackEntryNodesExactlyEquivalentWithScratch(scratch *glrMergeScratch, a, b 
 }
 
 func stackEntryNodesEquivalentFrontierWithScratch(scratch *glrMergeScratch, a, b *Node, depth int) bool {
+	audit := activeEquivAudit(scratch)
+	if audit != nil {
+		audit.recordEquivFrontierCall()
+	}
 	// Cheap checks first — skip cache for trivial cases.
 	if a == b {
 		return true
@@ -912,6 +930,9 @@ func stackEntryNodesEquivalentFrontierWithScratch(scratch *glrMergeScratch, a, b
 
 	frontier := -1
 	for i := range a.children {
+		if audit != nil {
+			audit.recordEquivFrontierChildScan()
+		}
 		ca := a.children[i]
 		cb := b.children[i]
 		if ca == cb {
@@ -986,6 +1007,9 @@ func stackEntryNodesEquivalentFrontierWithScratch(scratch *glrMergeScratch, a, b
 	}
 	for i := 0; i < candidateCount; i++ {
 		idx := candidates[i]
+		if audit != nil {
+			audit.recordEquivFrontierCandidateCompare()
+		}
 		if !stackEntryNodesEquivalentFrontierWithScratch(scratch, a.children[idx], b.children[idx], depth-1) {
 			storeNodeEquivCache(scratch, a, b, depth, false)
 			return false

@@ -68,12 +68,21 @@ type runtimeAudit struct {
 	globalCullStacksIn  uint64
 	globalCullStacksOut uint64
 
-	equivCacheLookups      uint64
-	equivCacheHits         uint64
-	equivCacheStores       uint64
-	equivSkipError         uint64
-	equivSkipLeaf          uint64
-	equivSkipFieldMismatch uint64
+	equivCacheLookups              uint64
+	equivCacheHits                 uint64
+	equivCacheStores               uint64
+	equivCacheMisses               uint64
+	equivCacheEpochMisses          uint64
+	equivCacheKeyMisses            uint64
+	equivCacheVersionMisses        uint64
+	equivSkipError                 uint64
+	equivSkipLeaf                  uint64
+	equivSkipFieldMismatch         uint64
+	equivExactCalls                uint64
+	equivFrontierCalls             uint64
+	equivExactChildCompares        uint64
+	equivFrontierChildScans        uint64
+	equivFrontierCandidateCompares uint64
 }
 
 var runtimeAuditEnabled bool
@@ -145,9 +154,18 @@ func (a *runtimeAudit) beginParse() {
 	a.equivCacheLookups = 0
 	a.equivCacheHits = 0
 	a.equivCacheStores = 0
+	a.equivCacheMisses = 0
+	a.equivCacheEpochMisses = 0
+	a.equivCacheKeyMisses = 0
+	a.equivCacheVersionMisses = 0
 	a.equivSkipError = 0
 	a.equivSkipLeaf = 0
 	a.equivSkipFieldMismatch = 0
+	a.equivExactCalls = 0
+	a.equivFrontierCalls = 0
+	a.equivExactChildCompares = 0
+	a.equivFrontierChildScans = 0
+	a.equivFrontierCandidateCompares = 0
 	if !a.enabled {
 		return
 	}
@@ -221,9 +239,18 @@ func (a *runtimeAudit) reset() {
 	a.equivCacheLookups = 0
 	a.equivCacheHits = 0
 	a.equivCacheStores = 0
+	a.equivCacheMisses = 0
+	a.equivCacheEpochMisses = 0
+	a.equivCacheKeyMisses = 0
+	a.equivCacheVersionMisses = 0
 	a.equivSkipError = 0
 	a.equivSkipLeaf = 0
 	a.equivSkipFieldMismatch = 0
+	a.equivExactCalls = 0
+	a.equivFrontierCalls = 0
+	a.equivExactChildCompares = 0
+	a.equivFrontierChildScans = 0
+	a.equivFrontierCandidateCompares = 0
 	if a.gssGen != nil {
 		clearRuntimeAuditGSSMap(a.gssGen)
 	}
@@ -396,6 +423,37 @@ func (a *runtimeAudit) recordEquivCacheStore() {
 	a.equivCacheStores++
 }
 
+func (a *runtimeAudit) recordEquivCacheMiss() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivCacheMisses++
+}
+
+func (a *runtimeAudit) recordEquivCacheEpochMiss() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivCacheMisses++
+	a.equivCacheEpochMisses++
+}
+
+func (a *runtimeAudit) recordEquivCacheKeyMiss() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivCacheMisses++
+	a.equivCacheKeyMisses++
+}
+
+func (a *runtimeAudit) recordEquivCacheVersionMiss() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivCacheMisses++
+	a.equivCacheVersionMisses++
+}
+
 func (a *runtimeAudit) recordEquivSkipError() {
 	if a == nil || !a.equivEnabled {
 		return
@@ -415,6 +473,41 @@ func (a *runtimeAudit) recordEquivSkipFieldMismatch() {
 		return
 	}
 	a.equivSkipFieldMismatch++
+}
+
+func (a *runtimeAudit) recordEquivExactCall() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivExactCalls++
+}
+
+func (a *runtimeAudit) recordEquivFrontierCall() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivFrontierCalls++
+}
+
+func (a *runtimeAudit) recordEquivExactChildCompare() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivExactChildCompares++
+}
+
+func (a *runtimeAudit) recordEquivFrontierChildScan() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivFrontierChildScans++
+}
+
+func (a *runtimeAudit) recordEquivFrontierCandidateCompare() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivFrontierCandidateCompares++
 }
 
 func (a *runtimeAudit) observeFrontier(stacks []glrStack) {

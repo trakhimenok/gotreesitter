@@ -1621,9 +1621,18 @@ func recordParseRuntimeLoopStats(parseRuntime *ParseRuntime, scratch *parserScra
 	parseRuntime.EquivCacheLookups = scratch.audit.equivCacheLookups
 	parseRuntime.EquivCacheHits = scratch.audit.equivCacheHits
 	parseRuntime.EquivCacheStores = scratch.audit.equivCacheStores
+	parseRuntime.EquivCacheMisses = scratch.audit.equivCacheMisses
+	parseRuntime.EquivCacheEpochMisses = scratch.audit.equivCacheEpochMisses
+	parseRuntime.EquivCacheKeyMisses = scratch.audit.equivCacheKeyMisses
+	parseRuntime.EquivCacheVersionMisses = scratch.audit.equivCacheVersionMisses
 	parseRuntime.EquivSkipError = scratch.audit.equivSkipError
 	parseRuntime.EquivSkipLeaf = scratch.audit.equivSkipLeaf
 	parseRuntime.EquivSkipFieldMismatch = scratch.audit.equivSkipFieldMismatch
+	parseRuntime.EquivExactCalls = scratch.audit.equivExactCalls
+	parseRuntime.EquivFrontierCalls = scratch.audit.equivFrontierCalls
+	parseRuntime.EquivExactChildCompares = scratch.audit.equivExactChildCompares
+	parseRuntime.EquivFrontierChildScans = scratch.audit.equivFrontierChildScans
+	parseRuntime.EquivFrontierCandidateCompares = scratch.audit.equivFrontierCandidateCompares
 }
 
 func recordParseRuntimeMaterializationTiming(parseRuntime *ParseRuntime, timingRef *parseMaterializationTiming, timing parseMaterializationTiming) {
