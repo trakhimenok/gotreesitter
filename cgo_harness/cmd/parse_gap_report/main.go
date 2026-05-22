@@ -209,7 +209,9 @@ type runtimeStats struct {
 	EquivSkipLeaf                  uint64        `json:"equiv_skip_leaf,omitempty"`
 	EquivSkipFieldMismatch         uint64        `json:"equiv_skip_field_mismatch,omitempty"`
 	EquivExactCalls                uint64        `json:"equiv_exact_calls,omitempty"`
+	EquivExactTrue                 uint64        `json:"equiv_exact_true,omitempty"`
 	EquivFrontierCalls             uint64        `json:"equiv_frontier_calls,omitempty"`
+	EquivFrontierTrue              uint64        `json:"equiv_frontier_true,omitempty"`
 	EquivExactChildCompares        uint64        `json:"equiv_exact_child_compares,omitempty"`
 	EquivFrontierChildScans        uint64        `json:"equiv_frontier_child_scans,omitempty"`
 	EquivFrontierCandidateCompares uint64        `json:"equiv_frontier_candidate_compares,omitempty"`
@@ -282,7 +284,9 @@ type hotGLRState struct {
 	EquivSkipLeaf                  uint64         `json:"equiv_skip_leaf,omitempty"`
 	EquivSkipFieldMismatch         uint64         `json:"equiv_skip_field_mismatch,omitempty"`
 	EquivExactCalls                uint64         `json:"equiv_exact_calls,omitempty"`
+	EquivExactTrue                 uint64         `json:"equiv_exact_true,omitempty"`
 	EquivFrontierCalls             uint64         `json:"equiv_frontier_calls,omitempty"`
+	EquivFrontierTrue              uint64         `json:"equiv_frontier_true,omitempty"`
 	EquivExactChildCompares        uint64         `json:"equiv_exact_child_compares,omitempty"`
 	EquivFrontierChildScans        uint64         `json:"equiv_frontier_child_scans,omitempty"`
 	EquivFrontierCandidateCompares uint64         `json:"equiv_frontier_candidate_compares,omitempty"`
@@ -1064,7 +1068,9 @@ func hotEquivStatesFromRuntime(stats []gotreesitter.ParseEquivStateRuntime, limi
 			EquivSkipLeaf:                  stat.EquivSkipLeaf,
 			EquivSkipFieldMismatch:         stat.EquivSkipFieldMismatch,
 			EquivExactCalls:                stat.EquivExactCalls,
+			EquivExactTrue:                 stat.EquivExactTrue,
 			EquivFrontierCalls:             stat.EquivFrontierCalls,
+			EquivFrontierTrue:              stat.EquivFrontierTrue,
 			EquivExactChildCompares:        stat.EquivExactChildCompares,
 			EquivFrontierChildScans:        stat.EquivFrontierChildScans,
 			EquivFrontierCandidateCompares: stat.EquivFrontierCandidateCompares,
@@ -1132,7 +1138,9 @@ func statsFromRuntime(rt gotreesitter.ParseRuntime) runtimeStats {
 		EquivSkipLeaf:                  rt.EquivSkipLeaf,
 		EquivSkipFieldMismatch:         rt.EquivSkipFieldMismatch,
 		EquivExactCalls:                rt.EquivExactCalls,
+		EquivExactTrue:                 rt.EquivExactTrue,
 		EquivFrontierCalls:             rt.EquivFrontierCalls,
+		EquivFrontierTrue:              rt.EquivFrontierTrue,
 		EquivExactChildCompares:        rt.EquivExactChildCompares,
 		EquivFrontierChildScans:        rt.EquivFrontierChildScans,
 		EquivFrontierCandidateCompares: rt.EquivFrontierCandidateCompares,

@@ -96,7 +96,9 @@ type runtimeStats struct {
 	EquivSkipLeaf                  uint64        `json:"equiv_skip_leaf,omitempty"`
 	EquivSkipFieldMismatch         uint64        `json:"equiv_skip_field_mismatch,omitempty"`
 	EquivExactCalls                uint64        `json:"equiv_exact_calls,omitempty"`
+	EquivExactTrue                 uint64        `json:"equiv_exact_true,omitempty"`
 	EquivFrontierCalls             uint64        `json:"equiv_frontier_calls,omitempty"`
+	EquivFrontierTrue              uint64        `json:"equiv_frontier_true,omitempty"`
 	EquivExactChildCompares        uint64        `json:"equiv_exact_child_compares,omitempty"`
 	EquivFrontierChildScans        uint64        `json:"equiv_frontier_child_scans,omitempty"`
 	EquivFrontierCandidateCompares uint64        `json:"equiv_frontier_candidate_compares,omitempty"`
@@ -162,7 +164,9 @@ type hotGLRState struct {
 	EquivSkipLeaf                  uint64 `json:"equiv_skip_leaf,omitempty"`
 	EquivSkipFieldMismatch         uint64 `json:"equiv_skip_field_mismatch,omitempty"`
 	EquivExactCalls                uint64 `json:"equiv_exact_calls,omitempty"`
+	EquivExactTrue                 uint64 `json:"equiv_exact_true,omitempty"`
 	EquivFrontierCalls             uint64 `json:"equiv_frontier_calls,omitempty"`
+	EquivFrontierTrue              uint64 `json:"equiv_frontier_true,omitempty"`
 	EquivExactChildCompares        uint64 `json:"equiv_exact_child_compares,omitempty"`
 	EquivFrontierChildScans        uint64 `json:"equiv_frontier_child_scans,omitempty"`
 	EquivFrontierCandidateCompares uint64 `json:"equiv_frontier_candidate_compares,omitempty"`
@@ -371,7 +375,9 @@ func scoreRows(rows []reportRow) []langScore {
 			s.attrs["equiv_skip_error_per_token"] = float64(r.EquivSkipError) / tokens
 			s.attrs["equiv_skip_field_mismatch_per_token"] = float64(r.EquivSkipFieldMismatch) / tokens
 			s.attrs["equiv_exact_calls_per_token"] = float64(r.EquivExactCalls) / tokens
+			s.attrs["equiv_exact_true_share"] = safeRatioUint(r.EquivExactTrue, r.EquivExactCalls)
 			s.attrs["equiv_frontier_calls_per_token"] = float64(r.EquivFrontierCalls) / tokens
+			s.attrs["equiv_frontier_true_share"] = safeRatioUint(r.EquivFrontierTrue, r.EquivFrontierCalls)
 			s.attrs["equiv_exact_child_compares_per_token"] = float64(r.EquivExactChildCompares) / tokens
 			s.attrs["equiv_frontier_child_scans_per_token"] = float64(r.EquivFrontierChildScans) / tokens
 			s.attrs["equiv_frontier_candidate_compares_per_token"] = float64(r.EquivFrontierCandidateCompares) / tokens
@@ -673,10 +679,10 @@ func printEquivAttribution(scores []langScore) {
 	fmt.Println()
 	fmt.Println("## Equivalence Attribution")
 	fmt.Println()
-	fmt.Println("| lang | lookups/token | hit | miss | stores/token | epoch_miss | key_miss | version_miss | exact_calls/token | frontier_calls/token | exact_child/token | frontier_scan/token | frontier_candidate/token |")
-	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	fmt.Println("| lang | lookups/token | hit | miss | stores/token | epoch_miss | key_miss | version_miss | exact_calls/token | exact_true | frontier_calls/token | frontier_true | exact_child/token | frontier_scan/token | frontier_candidate/token |")
+	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
 	for _, s := range scores {
-		fmt.Printf("| %s | %.3f | %s | %s | %.3f | %s | %s | %s | %.3f | %.3f | %.3f | %.3f | %.3f |\n",
+		fmt.Printf("| %s | %.3f | %s | %s | %.3f | %s | %s | %s | %.3f | %s | %.3f | %s | %.3f | %.3f | %.3f |\n",
 			s.lang,
 			s.attrs["equiv_cache_lookups_per_token"],
 			pctText(s.attrs["equiv_cache_hit_share"]),
@@ -686,7 +692,9 @@ func printEquivAttribution(scores []langScore) {
 			pctText(s.attrs["equiv_cache_key_miss_share"]),
 			pctText(s.attrs["equiv_cache_version_miss_share"]),
 			s.attrs["equiv_exact_calls_per_token"],
+			pctText(s.attrs["equiv_exact_true_share"]),
 			s.attrs["equiv_frontier_calls_per_token"],
+			pctText(s.attrs["equiv_frontier_true_share"]),
 			s.attrs["equiv_exact_child_compares_per_token"],
 			s.attrs["equiv_frontier_child_scans_per_token"],
 			s.attrs["equiv_frontier_candidate_compares_per_token"],
@@ -828,7 +836,9 @@ func aggregateHotStates(in []hotGLRState) []hotGLRState {
 		dst.EquivSkipLeaf += h.EquivSkipLeaf
 		dst.EquivSkipFieldMismatch += h.EquivSkipFieldMismatch
 		dst.EquivExactCalls += h.EquivExactCalls
+		dst.EquivExactTrue += h.EquivExactTrue
 		dst.EquivFrontierCalls += h.EquivFrontierCalls
+		dst.EquivFrontierTrue += h.EquivFrontierTrue
 		dst.EquivExactChildCompares += h.EquivExactChildCompares
 		dst.EquivFrontierChildScans += h.EquivFrontierChildScans
 		dst.EquivFrontierCandidateCompares += h.EquivFrontierCandidateCompares
@@ -912,19 +922,21 @@ func printHotEquivTable(label string, rows []hotGLRState) {
 		return
 	}
 	fmt.Printf("`%s`\n\n", label)
-	fmt.Println("| state | lookups | hit% | miss% | key_miss% | exact_calls | frontier_calls | exact_child | frontier_scans | frontier_candidates | skips | score |")
-	fmt.Println("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	fmt.Println("| state | lookups | hit% | miss% | key_miss% | exact_calls | exact_true | frontier_calls | frontier_true | exact_child | frontier_scans | frontier_candidates | skips | score |")
+	fmt.Println("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
 	for _, h := range rows {
 		skips := h.EquivSkipError + h.EquivSkipLeaf + h.EquivSkipFieldMismatch
 		score := h.EquivCacheLookups + h.EquivExactCalls + h.EquivFrontierCalls
-		fmt.Printf("| %d | %d | %.1f%% | %.1f%% | %.1f%% | %d | %d | %d | %d | %d | %d | %d |\n",
+		fmt.Printf("| %d | %d | %.1f%% | %.1f%% | %.1f%% | %d | %.1f%% | %d | %.1f%% | %d | %d | %d | %d | %d |\n",
 			h.State,
 			h.EquivCacheLookups,
 			100*safeRatioUint(h.EquivCacheHits, h.EquivCacheLookups),
 			100*safeRatioUint(h.EquivCacheMisses, h.EquivCacheLookups),
 			100*safeRatioUint(h.EquivCacheKeyMisses, h.EquivCacheMisses),
 			h.EquivExactCalls,
+			100*safeRatioUint(h.EquivExactTrue, h.EquivExactCalls),
 			h.EquivFrontierCalls,
+			100*safeRatioUint(h.EquivFrontierTrue, h.EquivFrontierCalls),
 			h.EquivExactChildCompares,
 			h.EquivFrontierChildScans,
 			h.EquivFrontierCandidateCompares,
@@ -1045,7 +1057,9 @@ func (r *runtimeStats) add(o runtimeStats) {
 	r.EquivSkipLeaf += o.EquivSkipLeaf
 	r.EquivSkipFieldMismatch += o.EquivSkipFieldMismatch
 	r.EquivExactCalls += o.EquivExactCalls
+	r.EquivExactTrue += o.EquivExactTrue
 	r.EquivFrontierCalls += o.EquivFrontierCalls
+	r.EquivFrontierTrue += o.EquivFrontierTrue
 	r.EquivExactChildCompares += o.EquivExactChildCompares
 	r.EquivFrontierChildScans += o.EquivFrontierChildScans
 	r.EquivFrontierCandidateCompares += o.EquivFrontierCandidateCompares

@@ -585,7 +585,9 @@ type ParseEquivStateRuntime struct {
 	EquivSkipLeaf                  uint64
 	EquivSkipFieldMismatch         uint64
 	EquivExactCalls                uint64
+	EquivExactTrue                 uint64
 	EquivFrontierCalls             uint64
+	EquivFrontierTrue              uint64
 	EquivExactChildCompares        uint64
 	EquivFrontierChildScans        uint64
 	EquivFrontierCandidateCompares uint64
@@ -681,7 +683,9 @@ type ParseRuntime struct {
 	EquivSkipLeaf                                uint64
 	EquivSkipFieldMismatch                       uint64
 	EquivExactCalls                              uint64
+	EquivExactTrue                               uint64
 	EquivFrontierCalls                           uint64
+	EquivFrontierTrue                            uint64
 	EquivExactChildCompares                      uint64
 	EquivFrontierChildScans                      uint64
 	EquivFrontierCandidateCompares               uint64

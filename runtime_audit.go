@@ -27,7 +27,9 @@ type runtimeAuditEquivStateInfo struct {
 	equivSkipLeaf                  uint64
 	equivSkipFieldMismatch         uint64
 	equivExactCalls                uint64
+	equivExactTrue                 uint64
 	equivFrontierCalls             uint64
+	equivFrontierTrue              uint64
 	equivExactChildCompares        uint64
 	equivFrontierChildScans        uint64
 	equivFrontierCandidateCompares uint64
@@ -101,7 +103,9 @@ type runtimeAudit struct {
 	equivSkipLeaf                  uint64
 	equivSkipFieldMismatch         uint64
 	equivExactCalls                uint64
+	equivExactTrue                 uint64
 	equivFrontierCalls             uint64
+	equivFrontierTrue              uint64
 	equivExactChildCompares        uint64
 	equivFrontierChildScans        uint64
 	equivFrontierCandidateCompares uint64
@@ -186,7 +190,9 @@ func (a *runtimeAudit) beginParse() {
 	a.equivSkipLeaf = 0
 	a.equivSkipFieldMismatch = 0
 	a.equivExactCalls = 0
+	a.equivExactTrue = 0
 	a.equivFrontierCalls = 0
+	a.equivFrontierTrue = 0
 	a.equivExactChildCompares = 0
 	a.equivFrontierChildScans = 0
 	a.equivFrontierCandidateCompares = 0
@@ -276,7 +282,9 @@ func (a *runtimeAudit) reset() {
 	a.equivSkipLeaf = 0
 	a.equivSkipFieldMismatch = 0
 	a.equivExactCalls = 0
+	a.equivExactTrue = 0
 	a.equivFrontierCalls = 0
+	a.equivFrontierTrue = 0
 	a.equivExactChildCompares = 0
 	a.equivFrontierChildScans = 0
 	a.equivFrontierCandidateCompares = 0
@@ -540,6 +548,16 @@ func (a *runtimeAudit) recordEquivExactCall() {
 	}
 }
 
+func (a *runtimeAudit) recordEquivExactTrue() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivExactTrue++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.equivExactTrue++
+	}
+}
+
 func (a *runtimeAudit) recordEquivFrontierCall() {
 	if a == nil || !a.equivEnabled {
 		return
@@ -547,6 +565,16 @@ func (a *runtimeAudit) recordEquivFrontierCall() {
 	a.equivFrontierCalls++
 	if state := a.currentEquivStateInfo(); state != nil {
 		state.equivFrontierCalls++
+	}
+}
+
+func (a *runtimeAudit) recordEquivFrontierTrue() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.equivFrontierTrue++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.equivFrontierTrue++
 	}
 }
 
@@ -630,7 +658,9 @@ func (a *runtimeAudit) equivStateStats() []ParseEquivStateRuntime {
 			EquivSkipLeaf:                  info.equivSkipLeaf,
 			EquivSkipFieldMismatch:         info.equivSkipFieldMismatch,
 			EquivExactCalls:                info.equivExactCalls,
+			EquivExactTrue:                 info.equivExactTrue,
 			EquivFrontierCalls:             info.equivFrontierCalls,
+			EquivFrontierTrue:              info.equivFrontierTrue,
 			EquivExactChildCompares:        info.equivExactChildCompares,
 			EquivFrontierChildScans:        info.equivFrontierChildScans,
 			EquivFrontierCandidateCompares: info.equivFrontierCandidateCompares,

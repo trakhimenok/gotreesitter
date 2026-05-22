@@ -1629,7 +1629,9 @@ func recordParseRuntimeLoopStats(parseRuntime *ParseRuntime, scratch *parserScra
 	parseRuntime.EquivSkipLeaf = scratch.audit.equivSkipLeaf
 	parseRuntime.EquivSkipFieldMismatch = scratch.audit.equivSkipFieldMismatch
 	parseRuntime.EquivExactCalls = scratch.audit.equivExactCalls
+	parseRuntime.EquivExactTrue = scratch.audit.equivExactTrue
 	parseRuntime.EquivFrontierCalls = scratch.audit.equivFrontierCalls
+	parseRuntime.EquivFrontierTrue = scratch.audit.equivFrontierTrue
 	parseRuntime.EquivExactChildCompares = scratch.audit.equivExactChildCompares
 	parseRuntime.EquivFrontierChildScans = scratch.audit.equivFrontierChildScans
 	parseRuntime.EquivFrontierCandidateCompares = scratch.audit.equivFrontierCandidateCompares
