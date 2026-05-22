@@ -3168,6 +3168,8 @@ func rustRepetitionShiftConflictChoice(lang *Language, tok Token, state StateID,
 		case symbolHasName(lang, tok.Symbol, "#"):
 		case symbolHasName(lang, tok.Symbol, "impl"):
 		case symbolHasName(lang, tok.Symbol, "fn"):
+		case symbolHasName(lang, tok.Symbol, "mod"):
+		case symbolHasName(lang, tok.Symbol, "use"):
 		default:
 			return ParseAction{}, false
 		}
@@ -3175,6 +3177,11 @@ func rustRepetitionShiftConflictChoice(lang *Language, tok Token, state StateID,
 		switch {
 		case symbolHasName(lang, tok.Symbol, "identifier"):
 		case symbolHasName(lang, tok.Symbol, ","):
+		case symbolHasName(lang, tok.Symbol, "("):
+		case symbolHasName(lang, tok.Symbol, "primitive_type"):
+		case symbolHasName(lang, tok.Symbol, "::"):
+		case symbolHasName(lang, tok.Symbol, "."):
+		case symbolHasName(lang, tok.Symbol, ";"):
 		default:
 			return ParseAction{}, false
 		}

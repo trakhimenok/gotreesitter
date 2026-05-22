@@ -131,13 +131,13 @@ func TestTypeScriptRepetitionShiftConflictChoiceRejectsOtherState(t *testing.T) 
 }
 
 func TestRustRepetitionShiftConflictChoiceAllowsTopLevelItemStarts(t *testing.T) {
-	lang := &Language{SymbolNames: []string{"end", "pub", "#", "impl", "fn", "source_file_repeat1"}}
+	lang := &Language{SymbolNames: []string{"end", "pub", "#", "impl", "fn", "mod", "use", "source_file_repeat1"}}
 	actions := []ParseAction{
-		{Type: ParseActionReduce, Symbol: 5, ChildCount: 2},
+		{Type: ParseActionReduce, Symbol: 7, ChildCount: 2},
 		{Type: ParseActionShift, State: 2039, Repetition: true},
 	}
 
-	for _, sym := range []Symbol{1, 2, 3, 4} {
+	for _, sym := range []Symbol{1, 2, 3, 4, 5, 6} {
 		chosen, ok := rustRepetitionShiftConflictChoice(lang, Token{Symbol: sym}, 7, actions)
 		if !ok {
 			t.Fatalf("rustRepetitionShiftConflictChoice(%q) = false, want true", lang.SymbolNames[sym])
@@ -161,13 +161,13 @@ func TestRustRepetitionShiftConflictChoiceRejectsOtherState(t *testing.T) {
 }
 
 func TestRustRepetitionShiftConflictChoiceAllowsTokenTreeRepeat(t *testing.T) {
-	lang := &Language{SymbolNames: []string{"end", "identifier", ",", "delim_token_tree_repeat1"}}
+	lang := &Language{SymbolNames: []string{"end", "identifier", ",", "(", "primitive_type", "::", ".", ";", "delim_token_tree_repeat1"}}
 	actions := []ParseAction{
-		{Type: ParseActionReduce, Symbol: 3, ChildCount: 2},
+		{Type: ParseActionReduce, Symbol: 8, ChildCount: 2},
 		{Type: ParseActionShift, State: 246, Repetition: true},
 	}
 
-	for _, sym := range []Symbol{1, 2} {
+	for _, sym := range []Symbol{1, 2, 3, 4, 5, 6, 7} {
 		chosen, ok := rustRepetitionShiftConflictChoice(lang, Token{Symbol: sym}, 83, actions)
 		if !ok {
 			t.Fatalf("rustRepetitionShiftConflictChoice(%q) = false, want true", lang.SymbolNames[sym])
