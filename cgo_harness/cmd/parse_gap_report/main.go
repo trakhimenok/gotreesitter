@@ -224,6 +224,14 @@ type runtimeStats struct {
 	LexTokens                      uint64        `json:"lex_tokens,omitempty"`
 	ReduceChainSteps               uint64        `json:"reduce_chain_steps,omitempty"`
 	ReduceChainMaxLen              uint64        `json:"reduce_chain_max_len,omitempty"`
+	ReduceChainClassHits           uint64        `json:"reduce_chain_class_hits,omitempty"`
+	ReduceChainStopNoAction        uint64        `json:"reduce_chain_stop_no_action,omitempty"`
+	ReduceChainStopMulti           uint64        `json:"reduce_chain_stop_multi,omitempty"`
+	ReduceChainStopShift           uint64        `json:"reduce_chain_stop_shift,omitempty"`
+	ReduceChainStopAccept          uint64        `json:"reduce_chain_stop_accept,omitempty"`
+	ReduceChainStopDead            uint64        `json:"reduce_chain_stop_dead,omitempty"`
+	ReduceChainStopCycle           uint64        `json:"reduce_chain_stop_cycle,omitempty"`
+	ReduceChainStopLimit           uint64        `json:"reduce_chain_stop_limit,omitempty"`
 	ParentChildPointers            uint64        `json:"parent_child_pointers,omitempty"`
 	NoTreeReduceNodes              uint64        `json:"notree_reduce_nodes,omitempty"`
 	NoTreeLeafNodes                uint64        `json:"notree_leaf_nodes,omitempty"`
@@ -260,6 +268,7 @@ type hotGLRState struct {
 	ReduceChainMaxLen              int            `json:"reduce_chain_max_len,omitempty"`
 	ReduceChainNS                  int64          `json:"reduce_chain_ns,omitempty"`
 	ReduceChainRuns                uint64         `json:"reduce_chain_runs,omitempty"`
+	ReduceChainClassHits           uint64         `json:"reduce_chain_class_hits,omitempty"`
 	ReduceChainStopNoAction        uint64         `json:"reduce_chain_stop_no_action,omitempty"`
 	ReduceChainStopMulti           uint64         `json:"reduce_chain_stop_multi,omitempty"`
 	ReduceChainStopShift           uint64         `json:"reduce_chain_stop_shift,omitempty"`
@@ -945,6 +954,15 @@ func statsFromGoTree(r *runner, tree *gotreesitter.Tree, queryCaptures, cursorNo
 	stats.ReduceChainMaxLen = perf.ReduceChainMaxLen
 	stats.ParentChildPointers = perf.ParentChildPointers
 	if r != nil && r.profile != nil && r.hotShapeLimit > 0 {
+		chainTotals := r.profile.SnapshotReduceChainTotals()
+		stats.ReduceChainClassHits = chainTotals.ReduceChainClassHits
+		stats.ReduceChainStopNoAction = chainTotals.ReduceChainStopNoAction
+		stats.ReduceChainStopMulti = chainTotals.ReduceChainStopMulti
+		stats.ReduceChainStopShift = chainTotals.ReduceChainStopShift
+		stats.ReduceChainStopAccept = chainTotals.ReduceChainStopAccept
+		stats.ReduceChainStopDead = chainTotals.ReduceChainStopDead
+		stats.ReduceChainStopCycle = chainTotals.ReduceChainStopCycle
+		stats.ReduceChainStopLimit = chainTotals.ReduceChainStopLimit
 		stats.HotAmbiguities = hotGLRStatesFromProfile(r.goLang, r.profile.SnapshotTop(r.hotShapeLimit))
 		stats.HotReduceChains = hotGLRStatesFromProfile(r.goLang, r.profile.SnapshotTopReduceChains(r.hotShapeLimit))
 		stats.HotReduceChainRuns = hotGLRStatesFromProfile(r.goLang, r.profile.SnapshotTopReduceChainRuns(r.hotShapeLimit))
@@ -982,6 +1000,7 @@ func hotGLRStatesFromProfile(lang *gotreesitter.Language, stats []gotreesitter.A
 			ReduceChainMaxLen:       stat.ReduceChainMaxLen,
 			ReduceChainNS:           stat.ReduceChainNanos,
 			ReduceChainRuns:         stat.ReduceChainRuns,
+			ReduceChainClassHits:    stat.ReduceChainClassHits,
 			ReduceChainStopNoAction: stat.ReduceChainStopNoAction,
 			ReduceChainStopMulti:    stat.ReduceChainStopMulti,
 			ReduceChainStopShift:    stat.ReduceChainStopShift,

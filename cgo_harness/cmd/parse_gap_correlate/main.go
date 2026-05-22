@@ -110,6 +110,14 @@ type runtimeStats struct {
 	LexTokens                      uint64        `json:"lex_tokens,omitempty"`
 	ReduceChainSteps               uint64        `json:"reduce_chain_steps,omitempty"`
 	ReduceChainMaxLen              uint64        `json:"reduce_chain_max_len,omitempty"`
+	ReduceChainClassHits           uint64        `json:"reduce_chain_class_hits,omitempty"`
+	ReduceChainStopNoAction        uint64        `json:"reduce_chain_stop_no_action,omitempty"`
+	ReduceChainStopMulti           uint64        `json:"reduce_chain_stop_multi,omitempty"`
+	ReduceChainStopShift           uint64        `json:"reduce_chain_stop_shift,omitempty"`
+	ReduceChainStopAccept          uint64        `json:"reduce_chain_stop_accept,omitempty"`
+	ReduceChainStopDead            uint64        `json:"reduce_chain_stop_dead,omitempty"`
+	ReduceChainStopCycle           uint64        `json:"reduce_chain_stop_cycle,omitempty"`
+	ReduceChainStopLimit           uint64        `json:"reduce_chain_stop_limit,omitempty"`
 	NoTreeReduceNodes              uint64        `json:"notree_reduce_nodes,omitempty"`
 	NoTreeLeafNodes                uint64        `json:"notree_leaf_nodes,omitempty"`
 	HotAmbiguities                 []hotGLRState `json:"hot_ambiguities,omitempty"`
@@ -140,6 +148,7 @@ type hotGLRState struct {
 	ReduceChainMaxLen              int    `json:"reduce_chain_max_len,omitempty"`
 	ReduceChainNS                  int64  `json:"reduce_chain_ns,omitempty"`
 	ReduceChainRuns                uint64 `json:"reduce_chain_runs,omitempty"`
+	ReduceChainClassHits           uint64 `json:"reduce_chain_class_hits,omitempty"`
 	ReduceChainStopNoAction        uint64 `json:"reduce_chain_stop_no_action,omitempty"`
 	ReduceChainStopMulti           uint64 `json:"reduce_chain_stop_multi,omitempty"`
 	ReduceChainStopShift           uint64 `json:"reduce_chain_stop_shift,omitempty"`
@@ -398,6 +407,15 @@ func scoreRows(rows []reportRow) []langScore {
 			s.attrs["merge_stack_in_per_token"] = float64(r.MergeStacksIn) / tokens
 			s.attrs["multi_stack_token_share"] = float64(r.MultiStackTokens) / tokens
 			s.attrs["reduce_steps_per_token"] = float64(r.ReduceChainSteps) / tokens
+			s.attrs["reduce_class_hits_per_token"] = float64(r.ReduceChainClassHits) / tokens
+			s.attrs["reduce_class_hits_per_step"] = safeRatioUint(r.ReduceChainClassHits, r.ReduceChainSteps)
+			s.attrs["reduce_stop_shift_per_token"] = float64(r.ReduceChainStopShift) / tokens
+			s.attrs["reduce_stop_multi_per_token"] = float64(r.ReduceChainStopMulti) / tokens
+			s.attrs["reduce_stop_no_action_per_token"] = float64(r.ReduceChainStopNoAction) / tokens
+			s.attrs["reduce_stop_accept_per_token"] = float64(r.ReduceChainStopAccept) / tokens
+			s.attrs["reduce_stop_dead_per_token"] = float64(r.ReduceChainStopDead) / tokens
+			s.attrs["reduce_stop_cycle_per_token"] = float64(r.ReduceChainStopCycle) / tokens
+			s.attrs["reduce_stop_limit_per_token"] = float64(r.ReduceChainStopLimit) / tokens
 			s.attrs["normalization_nodes_per_token"] = float64(r.NormalizationNodes) / tokens
 			s.attrs["normalization_rewrites_per_token"] = float64(r.NormalizationRewrites) / tokens
 			s.attrs["parser_loop_share"] = float64(r.ParserLoopNS) / wall
@@ -729,13 +747,13 @@ func printNoTreeAttribution(scores []langScore) {
 	fmt.Println()
 	fmt.Println("## Go No-Tree Attribution")
 	fmt.Println()
-	fmt.Println("| lang | go_no_tree | parser_loop | token_next | action_lookup | glr_merge | dispatch | single_reduce | conflict_fork | merge/token | reduce_steps/token | equiv_lookup/token |")
-	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	fmt.Println("| lang | go_no_tree | parser_loop | token_next | action_lookup | glr_merge | dispatch | single_reduce | conflict_fork | merge/token | reduce_steps/token | class_hits/token | stop_shift/token | equiv_lookup/token |")
+	fmt.Println("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
 	for _, s := range scores {
 		r := s.goNoTreeRuntime
 		wall := float64(maxInt64(r.ParseWallNS, s.goNoTree))
 		tokens := float64(max64(r.Tokens, 1))
-		fmt.Printf("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %.3f | %.3f | %.3f |\n",
+		fmt.Printf("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %.3f | %.3f | %.3f | %.3f | %.3f |\n",
 			s.lang,
 			nsText(s.goNoTree),
 			pctText(float64(r.ParserLoopNS)/wall),
@@ -747,6 +765,8 @@ func printNoTreeAttribution(scores []langScore) {
 			pctText(float64(r.ActionConflictForkNS)/wall),
 			float64(r.MergeCalls)/tokens,
 			float64(r.ReduceChainSteps)/tokens,
+			float64(r.ReduceChainClassHits)/tokens,
+			float64(r.ReduceChainStopShift)/tokens,
 			float64(r.EquivCacheLookups)/tokens,
 		)
 	}
@@ -824,6 +844,7 @@ func aggregateHotStates(in []hotGLRState) []hotGLRState {
 		dst.ReduceChainSteps += h.ReduceChainSteps
 		dst.ReduceChainNS += h.ReduceChainNS
 		dst.ReduceChainRuns += h.ReduceChainRuns
+		dst.ReduceChainClassHits += h.ReduceChainClassHits
 		dst.ReduceChainStopNoAction += h.ReduceChainStopNoAction
 		dst.ReduceChainStopMulti += h.ReduceChainStopMulti
 		dst.ReduceChainStopShift += h.ReduceChainStopShift
@@ -950,15 +971,16 @@ func printHotReduceChainRunTable(label string, rows []hotGLRState) {
 		return
 	}
 	fmt.Printf("`%s`\n\n", label)
-	fmt.Println("| state | lookahead | lookahead_name | runs | steps | avg_len | max_len | ns | stop_shift | stop_multi | stop_no_action | stop_accept | stop_dead | stop_cycle | stop_limit |")
-	fmt.Println("| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	fmt.Println("| state | lookahead | lookahead_name | runs | steps | class_hits | avg_len | max_len | ns | stop_shift | stop_multi | stop_no_action | stop_accept | stop_dead | stop_cycle | stop_limit |")
+	fmt.Println("| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
 	for _, h := range rows {
-		fmt.Printf("| %d | %d | `%s` | %d | %d | %.2f | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
+		fmt.Printf("| %d | %d | `%s` | %d | %d | %d | %.2f | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
 			h.State,
 			h.Lookahead,
 			escapePipes(h.LookaheadName),
 			h.ReduceChainRuns,
 			h.ReduceChainSteps,
+			h.ReduceChainClassHits,
 			safeRatioUint(h.ReduceChainSteps, h.ReduceChainRuns),
 			h.ReduceChainMaxLen,
 			nsText(h.ReduceChainNS),
@@ -1127,6 +1149,14 @@ func (r *runtimeStats) add(o runtimeStats) {
 	r.LexBytes += o.LexBytes
 	r.LexTokens += o.LexTokens
 	r.ReduceChainSteps += o.ReduceChainSteps
+	r.ReduceChainClassHits += o.ReduceChainClassHits
+	r.ReduceChainStopNoAction += o.ReduceChainStopNoAction
+	r.ReduceChainStopMulti += o.ReduceChainStopMulti
+	r.ReduceChainStopShift += o.ReduceChainStopShift
+	r.ReduceChainStopAccept += o.ReduceChainStopAccept
+	r.ReduceChainStopDead += o.ReduceChainStopDead
+	r.ReduceChainStopCycle += o.ReduceChainStopCycle
+	r.ReduceChainStopLimit += o.ReduceChainStopLimit
 	if o.ReduceChainMaxLen > r.ReduceChainMaxLen {
 		r.ReduceChainMaxLen = o.ReduceChainMaxLen
 	}

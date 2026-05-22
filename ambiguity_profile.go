@@ -48,6 +48,7 @@ type AmbiguityStat struct {
 	ReduceChainMaxLen       int
 	ReduceChainNanos        int64
 	ReduceChainRuns         uint64
+	ReduceChainClassHits    uint64
 	ReduceChainStopNoAction uint64
 	ReduceChainStopMulti    uint64
 	ReduceChainStopShift    uint64
@@ -232,6 +233,34 @@ func (p *AmbiguityProfile) SnapshotTopReduceChainRuns(limit int) []AmbiguityStat
 	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
+	}
+	return out
+}
+
+// SnapshotReduceChainTotals returns aggregate deterministic reduce-chain run
+// counters across all profiled start states/lookaheads.
+func (p *AmbiguityProfile) SnapshotReduceChainTotals() AmbiguityStat {
+	if p == nil {
+		return AmbiguityStat{}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out AmbiguityStat
+	for _, stat := range p.chainEntries {
+		out.ReduceChainRuns += stat.ReduceChainRuns
+		out.ReduceChainSteps += stat.ReduceChainSteps
+		out.ReduceChainClassHits += stat.ReduceChainClassHits
+		out.ReduceChainNanos += stat.ReduceChainNanos
+		if stat.ReduceChainMaxLen > out.ReduceChainMaxLen {
+			out.ReduceChainMaxLen = stat.ReduceChainMaxLen
+		}
+		out.ReduceChainStopNoAction += stat.ReduceChainStopNoAction
+		out.ReduceChainStopMulti += stat.ReduceChainStopMulti
+		out.ReduceChainStopShift += stat.ReduceChainStopShift
+		out.ReduceChainStopAccept += stat.ReduceChainStopAccept
+		out.ReduceChainStopDead += stat.ReduceChainStopDead
+		out.ReduceChainStopCycle += stat.ReduceChainStopCycle
+		out.ReduceChainStopLimit += stat.ReduceChainStopLimit
 	}
 	return out
 }
@@ -430,7 +459,7 @@ func (p *AmbiguityProfile) recordReduceChainStep(state StateID, lookahead Symbol
 	}
 }
 
-func (p *AmbiguityProfile) recordReduceChainRun(state StateID, lookahead Symbol, steps, maxLen int, nanos int64, stop reduceChainStopReason) {
+func (p *AmbiguityProfile) recordReduceChainRun(state StateID, lookahead Symbol, steps, maxLen, classHits int, nanos int64, stop reduceChainStopReason) {
 	if p == nil {
 		return
 	}
@@ -458,6 +487,7 @@ func (p *AmbiguityProfile) recordReduceChainRun(state StateID, lookahead Symbol,
 	}
 	stat.ReduceChainRuns++
 	stat.ReduceChainSteps += uint64(max(steps, 0))
+	stat.ReduceChainClassHits += uint64(max(classHits, 0))
 	if nanos > 0 {
 		stat.ReduceChainNanos += nanos
 	}
