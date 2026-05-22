@@ -15,6 +15,53 @@ type reduceChainSignature struct {
 
 const maxRepeatedReduceChainSignature = 32
 
+type classifiedParseActionClass uint8
+
+const (
+	classifiedParseActionNoAction classifiedParseActionClass = iota
+	classifiedParseActionSingleReduce
+	classifiedParseActionSingleShift
+	classifiedParseActionSingleAccept
+	classifiedParseActionSingleOther
+	classifiedParseActionMulti
+)
+
+type classifiedParseAction struct {
+	class  classifiedParseActionClass
+	action ParseAction
+}
+
+func buildClassifiedParseActions(lang *Language) []classifiedParseAction {
+	if lang == nil || len(lang.ParseActions) == 0 {
+		return nil
+	}
+	out := make([]classifiedParseAction, len(lang.ParseActions))
+	for i := range lang.ParseActions {
+		out[i] = classifyParseActionEntry(lang.ParseActions[i])
+	}
+	return out
+}
+
+func classifyParseActionEntry(entry ParseActionEntry) classifiedParseAction {
+	if len(entry.Actions) == 0 {
+		return classifiedParseAction{class: classifiedParseActionNoAction}
+	}
+	if len(entry.Actions) != 1 {
+		return classifiedParseAction{class: classifiedParseActionMulti}
+	}
+	action := entry.Actions[0]
+	switch action.Type {
+	case ParseActionReduce:
+		return classifiedParseAction{class: classifiedParseActionSingleReduce, action: action}
+	case ParseActionShift:
+		return classifiedParseAction{class: classifiedParseActionSingleShift, action: action}
+	case ParseActionAccept:
+		return classifiedParseAction{class: classifiedParseActionSingleAccept, action: action}
+	default:
+		return classifiedParseAction{class: classifiedParseActionSingleOther, action: action}
+	}
+}
+
 func buildReduceAliasSequences(lang *Language) [][]Symbol {
 	if lang == nil || len(lang.AliasSequences) == 0 {
 		return nil
@@ -309,6 +356,9 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 	if p.ambiguityProfile != nil {
 		return p.chainSingleReduceActionsProfiled(s, tok, anyReduced, nodeCount, arena, entryScratch, gssScratch, tmpEntries, deferParentLinks, trackChildErrors)
 	}
+	if len(p.classifiedActions) == len(p.language.ParseActions) {
+		return p.chainSingleReduceActionsClassified(s, tok, anyReduced, nodeCount, arena, entryScratch, gssScratch, tmpEntries, deferParentLinks, trackChildErrors)
+	}
 	const maxInlineReduceChain = 256
 	parseActions := p.language.ParseActions
 	chainLen := 0
@@ -356,6 +406,61 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 			}
 			return false
 		case ParseActionAccept:
+			if perfCountersEnabled {
+				perfRecordReduceChainBreakAccept()
+			}
+			return false
+		default:
+			if perfCountersEnabled {
+				perfRecordReduceChainBreakMulti()
+			}
+			return false
+		}
+	}
+	return false
+}
+
+func (p *Parser) chainSingleReduceActionsClassified(s *glrStack, tok Token, anyReduced *bool, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, tmpEntries *[]stackEntry, deferParentLinks bool, trackChildErrors *bool) bool {
+	const maxInlineReduceChain = 256
+	actions := p.classifiedActions
+	chainLen := 0
+	var lastSig reduceChainSignature
+	repeatedSigCount := 0
+	for chainLen < maxInlineReduceChain {
+		currentState := s.top().state
+		currentDepth := s.depth()
+		actionIdx := p.lookupActionIndex(currentState, tok.Symbol)
+		if actionIdx == 0 || int(actionIdx) >= len(actions) {
+			return false
+		}
+
+		classified := actions[actionIdx]
+		switch classified.class {
+		case classifiedParseActionSingleReduce:
+			next := classified.action
+			var repeated bool
+			repeatedSigCount, repeated = noteRepeatedReduceChainAction(&lastSig, repeatedSigCount, currentState, currentDepth, next)
+			if repeated {
+				if p != nil && p.glrTrace {
+					fmt.Printf("      -> REDUCE-CHAIN CYCLE state=%d depth=%d sym=%d prod=%d count=%d\n",
+						currentState, currentDepth, next.Symbol, next.ProductionID, repeatedSigCount)
+				}
+				return true
+			}
+			chainLen++
+			if perfCountersEnabled {
+				perfRecordReduceChainStep(chainLen)
+			}
+			p.applyReduceActionDispatch(s, next, tok, anyReduced, nodeCount, arena, entryScratch, gssScratch, tmpEntries, deferParentLinks, trackChildErrors)
+			if s.dead || s.accepted || s.shifted {
+				return false
+			}
+		case classifiedParseActionSingleShift:
+			if perfCountersEnabled {
+				perfRecordReduceChainBreakShift()
+			}
+			return false
+		case classifiedParseActionSingleAccept:
 			if perfCountersEnabled {
 				perfRecordReduceChainBreakAccept()
 			}
