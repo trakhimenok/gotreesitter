@@ -457,12 +457,13 @@ func normalizeJavaScriptTypeScriptOptionalChainLeaves(root *Node, source []byte,
 	default:
 		return
 	}
-	if _, ok := symbolByName(lang, "optional_chain"); !ok {
+	optionalChainSym, ok := symbolByName(lang, "optional_chain")
+	if !ok {
 		return
 	}
 
 	walkResultTreeDenseFirst(root, func(n *Node) {
-		if n.Type(lang) == "optional_chain" && len(n.children) == 1 {
+		if n.symbol == optionalChainSym && len(n.children) == 1 {
 			child := n.children[0]
 			if child != nil && !child.IsNamed() && !child.IsExtra() &&
 				child.startByte == n.startByte && child.endByte == n.endByte &&
@@ -484,13 +485,14 @@ func normalizeJavaScriptTypeScriptCallPrecedence(root *Node, lang *Language) {
 	default:
 		return
 	}
-	if _, ok := symbolByName(lang, "call_expression"); !ok {
+	callSym, ok := symbolByName(lang, "call_expression")
+	if !ok {
 		return
 	}
 
 	walkResultTreeDenseFirst(root, func(n *Node) {
 		for i, child := range n.children {
-			if rewritten := rewriteJavaScriptTypeScriptCallPrecedence(child, lang); rewritten != nil {
+			if rewritten := rewriteJavaScriptTypeScriptCallPrecedenceWithSymbol(child, lang, callSym); rewritten != nil {
 				n.children[i] = rewritten
 				rewritten.parent = n
 				rewritten.childIndex = int32(i)
@@ -500,7 +502,15 @@ func normalizeJavaScriptTypeScriptCallPrecedence(root *Node, lang *Language) {
 }
 
 func rewriteJavaScriptTypeScriptCallPrecedence(node *Node, lang *Language) *Node {
-	if node == nil || lang == nil || node.Type(lang) != "call_expression" || len(node.children) != 2 {
+	callSym, ok := symbolByName(lang, "call_expression")
+	if !ok {
+		return nil
+	}
+	return rewriteJavaScriptTypeScriptCallPrecedenceWithSymbol(node, lang, callSym)
+}
+
+func rewriteJavaScriptTypeScriptCallPrecedenceWithSymbol(node *Node, lang *Language, callSym Symbol) *Node {
+	if node == nil || lang == nil || node.symbol != callSym || len(node.children) != 2 {
 		return nil
 	}
 	function := node.children[0]
@@ -620,17 +630,26 @@ func normalizeJavaScriptTypeScriptUnaryPrecedence(root *Node, lang *Language) {
 	default:
 		return
 	}
-	if _, ok := symbolByName(lang, "unary_expression"); !ok {
+	unarySym, ok := symbolByName(lang, "unary_expression")
+	if !ok {
 		return
 	}
 
 	rewriteResultTreeChildrenPostorder(root, func(n *Node) *Node {
-		return rewriteJavaScriptTypeScriptUnaryPrecedence(n, lang)
+		return rewriteJavaScriptTypeScriptUnaryPrecedenceWithSymbol(n, lang, unarySym)
 	})
 }
 
 func rewriteJavaScriptTypeScriptUnaryPrecedence(node *Node, lang *Language) *Node {
-	if node == nil || lang == nil || node.Type(lang) != "unary_expression" || len(node.children) < 2 {
+	unarySym, ok := symbolByName(lang, "unary_expression")
+	if !ok {
+		return nil
+	}
+	return rewriteJavaScriptTypeScriptUnaryPrecedenceWithSymbol(node, lang, unarySym)
+}
+
+func rewriteJavaScriptTypeScriptUnaryPrecedenceWithSymbol(node *Node, lang *Language, unarySym Symbol) *Node {
+	if node == nil || lang == nil || node.symbol != unarySym || len(node.children) < 2 {
 		return nil
 	}
 	operandIdx := len(node.children) - 1
@@ -665,17 +684,26 @@ func normalizeJavaScriptTypeScriptBinaryPrecedence(root *Node, lang *Language) {
 	default:
 		return
 	}
-	if _, ok := symbolByName(lang, "binary_expression"); !ok {
+	binarySym, ok := symbolByName(lang, "binary_expression")
+	if !ok {
 		return
 	}
 
 	rewriteResultTreeChildrenPostorder(root, func(n *Node) *Node {
-		return rewriteJavaScriptTypeScriptBinaryPrecedence(n, lang)
+		return rewriteJavaScriptTypeScriptBinaryPrecedenceWithSymbol(n, lang, binarySym)
 	})
 }
 
 func rewriteJavaScriptTypeScriptBinaryPrecedence(node *Node, lang *Language) *Node {
-	if node == nil || lang == nil || node.Type(lang) != "binary_expression" || len(node.children) != 3 {
+	binarySym, ok := symbolByName(lang, "binary_expression")
+	if !ok {
+		return nil
+	}
+	return rewriteJavaScriptTypeScriptBinaryPrecedenceWithSymbol(node, lang, binarySym)
+}
+
+func rewriteJavaScriptTypeScriptBinaryPrecedenceWithSymbol(node *Node, lang *Language, binarySym Symbol) *Node {
+	if node == nil || lang == nil || node.symbol != binarySym || len(node.children) != 3 {
 		return nil
 	}
 	left := node.children[0]

@@ -66,6 +66,8 @@ type typeScriptNormalizationContext struct {
 	classDeclarationNamed  bool
 	enumBodySym            Symbol
 	enumAssignmentSym      Symbol
+	importSym              Symbol
+	hasImportSym           bool
 	nameFieldID            FieldID
 	typeParametersFieldID  FieldID
 }
@@ -143,7 +145,7 @@ func normalizeTypeScriptIdentifierKeywordAliases(node *Node, ctx *typeScriptNorm
 }
 
 func normalizeTypeScriptImportKeywordNamedness(node *Node, ctx *typeScriptNormalizationContext) {
-	if node == nil || ctx == nil || ctx.lang == nil || node.Type(ctx.lang) != "import" {
+	if node == nil || ctx == nil || !ctx.hasImportSym || node.symbol != ctx.importSym {
 		return
 	}
 	node.setNamed(false)
@@ -386,6 +388,7 @@ func newTypeScriptNormalizationContext(source []byte, lang *Language) (typeScrip
 			ctx.enumAssignmentSym = enumAssignmentSym
 		}
 	}
+	ctx.importSym, ctx.hasImportSym = lang.SymbolByName("import")
 
 	if syms, ok := visibleLanguageSymbols(lang, true,
 		"type_assertion",
