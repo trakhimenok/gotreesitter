@@ -234,6 +234,7 @@ type runtimeStats struct {
 	MutationChildRefCOW            uint64        `json:"mutation_child_ref_cow,omitempty"`
 	HotAmbiguities                 []hotGLRState `json:"hot_ambiguities,omitempty"`
 	HotReduceChains                []hotGLRState `json:"hot_reduce_chains,omitempty"`
+	HotReduceChainRuns             []hotGLRState `json:"hot_reduce_chain_runs,omitempty"`
 	HotMergeStates                 []hotGLRState `json:"hot_merge_states,omitempty"`
 	HotEquivStates                 []hotGLRState `json:"hot_equiv_states,omitempty"`
 }
@@ -258,6 +259,14 @@ type hotGLRState struct {
 	ReduceChainSteps               uint64         `json:"reduce_chain_steps,omitempty"`
 	ReduceChainMaxLen              int            `json:"reduce_chain_max_len,omitempty"`
 	ReduceChainNS                  int64          `json:"reduce_chain_ns,omitempty"`
+	ReduceChainRuns                uint64         `json:"reduce_chain_runs,omitempty"`
+	ReduceChainStopNoAction        uint64         `json:"reduce_chain_stop_no_action,omitempty"`
+	ReduceChainStopMulti           uint64         `json:"reduce_chain_stop_multi,omitempty"`
+	ReduceChainStopShift           uint64         `json:"reduce_chain_stop_shift,omitempty"`
+	ReduceChainStopAccept          uint64         `json:"reduce_chain_stop_accept,omitempty"`
+	ReduceChainStopDead            uint64         `json:"reduce_chain_stop_dead,omitempty"`
+	ReduceChainStopCycle           uint64         `json:"reduce_chain_stop_cycle,omitempty"`
+	ReduceChainStopLimit           uint64         `json:"reduce_chain_stop_limit,omitempty"`
 	ActionNS                       int64          `json:"action_ns,omitempty"`
 	ExtraShiftNS                   int64          `json:"extra_shift_ns,omitempty"`
 	NoActionNS                     int64          `json:"no_action_ns,omitempty"`
@@ -938,6 +947,7 @@ func statsFromGoTree(r *runner, tree *gotreesitter.Tree, queryCaptures, cursorNo
 	if r != nil && r.profile != nil && r.hotShapeLimit > 0 {
 		stats.HotAmbiguities = hotGLRStatesFromProfile(r.goLang, r.profile.SnapshotTop(r.hotShapeLimit))
 		stats.HotReduceChains = hotGLRStatesFromProfile(r.goLang, r.profile.SnapshotTopReduceChains(r.hotShapeLimit))
+		stats.HotReduceChainRuns = hotGLRStatesFromProfile(r.goLang, r.profile.SnapshotTopReduceChainRuns(r.hotShapeLimit))
 		stats.HotMergeStates = hotGLRStatesFromProfile(r.goLang, r.profile.SnapshotTopMergeStates(r.hotShapeLimit))
 	}
 	if r != nil && r.hotShapeLimit > 0 {
@@ -953,39 +963,47 @@ func hotGLRStatesFromProfile(lang *gotreesitter.Language, stats []gotreesitter.A
 	out := make([]hotGLRState, 0, len(stats))
 	for _, stat := range stats {
 		row := hotGLRState{
-			State:             uint32(stat.State),
-			Lookahead:         uint16(stat.Lookahead),
-			LookaheadName:     symbolName(lang, stat.Lookahead),
-			ActionCount:       stat.ActionCount,
-			ShiftCount:        stat.ShiftCount,
-			ReduceCount:       stat.ReduceCount,
-			ReduceSymbol:      uint16(stat.ReduceSymbol),
-			ChildCount:        stat.ChildCount,
-			ProductionID:      stat.ProductionID,
-			Hits:              stat.Hits,
-			Forks:             stat.Forks,
-			MultiStackHits:    stat.MultiStackHits,
-			StackInTotal:      stat.StackInTotal,
-			StackInMax:        stat.StackInMax,
-			ReduceChainHits:   stat.ReduceChainHits,
-			ReduceChainSteps:  stat.ReduceChainSteps,
-			ReduceChainMaxLen: stat.ReduceChainMaxLen,
-			ReduceChainNS:     stat.ReduceChainNanos,
-			ActionNS:          stat.ActionNanos,
-			ExtraShiftNS:      stat.ExtraShiftNanos,
-			NoActionNS:        stat.NoActionNanos,
-			ConflictChoiceNS:  stat.ConflictChoiceNanos,
-			ConflictForkNS:    stat.ConflictForkNanos,
-			SingleShiftNS:     stat.SingleShiftNanos,
-			SingleReduceNS:    stat.SingleReduceNanos,
-			SingleAcceptNS:    stat.SingleAcceptNanos,
-			SingleRecoverNS:   stat.SingleRecoverNanos,
-			SingleOtherNS:     stat.SingleOtherNanos,
-			MergeCalls:        stat.MergeCalls,
-			MergeStacksIn:     stat.MergeStacksIn,
-			MergeStacksOut:    stat.MergeStacksOut,
-			MergeStacksInMax:  stat.MergeStacksInMax,
-			MergeStacksOutMax: stat.MergeStacksOutMax,
+			State:                   uint32(stat.State),
+			Lookahead:               uint16(stat.Lookahead),
+			LookaheadName:           symbolName(lang, stat.Lookahead),
+			ActionCount:             stat.ActionCount,
+			ShiftCount:              stat.ShiftCount,
+			ReduceCount:             stat.ReduceCount,
+			ReduceSymbol:            uint16(stat.ReduceSymbol),
+			ChildCount:              stat.ChildCount,
+			ProductionID:            stat.ProductionID,
+			Hits:                    stat.Hits,
+			Forks:                   stat.Forks,
+			MultiStackHits:          stat.MultiStackHits,
+			StackInTotal:            stat.StackInTotal,
+			StackInMax:              stat.StackInMax,
+			ReduceChainHits:         stat.ReduceChainHits,
+			ReduceChainSteps:        stat.ReduceChainSteps,
+			ReduceChainMaxLen:       stat.ReduceChainMaxLen,
+			ReduceChainNS:           stat.ReduceChainNanos,
+			ReduceChainRuns:         stat.ReduceChainRuns,
+			ReduceChainStopNoAction: stat.ReduceChainStopNoAction,
+			ReduceChainStopMulti:    stat.ReduceChainStopMulti,
+			ReduceChainStopShift:    stat.ReduceChainStopShift,
+			ReduceChainStopAccept:   stat.ReduceChainStopAccept,
+			ReduceChainStopDead:     stat.ReduceChainStopDead,
+			ReduceChainStopCycle:    stat.ReduceChainStopCycle,
+			ReduceChainStopLimit:    stat.ReduceChainStopLimit,
+			ActionNS:                stat.ActionNanos,
+			ExtraShiftNS:            stat.ExtraShiftNanos,
+			NoActionNS:              stat.NoActionNanos,
+			ConflictChoiceNS:        stat.ConflictChoiceNanos,
+			ConflictForkNS:          stat.ConflictForkNanos,
+			SingleShiftNS:           stat.SingleShiftNanos,
+			SingleReduceNS:          stat.SingleReduceNanos,
+			SingleAcceptNS:          stat.SingleAcceptNanos,
+			SingleRecoverNS:         stat.SingleRecoverNanos,
+			SingleOtherNS:           stat.SingleOtherNanos,
+			MergeCalls:              stat.MergeCalls,
+			MergeStacksIn:           stat.MergeStacksIn,
+			MergeStacksOut:          stat.MergeStacksOut,
+			MergeStacksInMax:        stat.MergeStacksInMax,
+			MergeStacksOutMax:       stat.MergeStacksOutMax,
 		}
 		if stat.ReduceSymbol != 0 || stat.ChildCount != 0 || stat.ProductionID != 0 {
 			row.ReduceSymbolName = symbolName(lang, stat.ReduceSymbol)

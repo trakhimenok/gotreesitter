@@ -309,6 +309,17 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 	const maxInlineReduceChain = 256
 	parseActions := p.language.ParseActions
 	chainLen := 0
+	chainStartState := s.top().state
+	chainStart := time.Time{}
+	if p.ambiguityProfile != nil {
+		chainStart = time.Now()
+	}
+	recordChainRun := func(stop reduceChainStopReason) {
+		if p.ambiguityProfile == nil {
+			return
+		}
+		p.ambiguityProfile.recordReduceChainRun(chainStartState, tok.Symbol, chainLen, chainLen, time.Since(chainStart).Nanoseconds(), stop)
+	}
 	var lastSig reduceChainSignature
 	repeatedSigCount := 0
 	for chainLen < maxInlineReduceChain {
@@ -316,6 +327,7 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 		currentDepth := s.depth()
 		actionIdx := p.lookupActionIndex(currentState, tok.Symbol)
 		if actionIdx == 0 || int(actionIdx) >= len(parseActions) {
+			recordChainRun(reduceChainStopNoAction)
 			return false
 		}
 
@@ -324,6 +336,7 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 			if perfCountersEnabled {
 				perfRecordReduceChainBreakMulti()
 			}
+			recordChainRun(reduceChainStopMulti)
 			return false
 		}
 
@@ -337,6 +350,7 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 					fmt.Printf("      -> REDUCE-CHAIN CYCLE state=%d depth=%d sym=%d prod=%d count=%d\n",
 						currentState, currentDepth, next.Symbol, next.ProductionID, repeatedSigCount)
 				}
+				recordChainRun(reduceChainStopCycle)
 				return true
 			}
 			chainLen++
@@ -352,25 +366,37 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 				p.ambiguityProfile.recordReduceChainStep(currentState, tok.Symbol, next, chainLen, time.Since(reduceStart).Nanoseconds())
 			}
 			if s.dead || s.accepted || s.shifted {
+				switch {
+				case s.accepted:
+					recordChainRun(reduceChainStopAccept)
+				case s.shifted:
+					recordChainRun(reduceChainStopShift)
+				default:
+					recordChainRun(reduceChainStopDead)
+				}
 				return false
 			}
 		case ParseActionShift:
 			if perfCountersEnabled {
 				perfRecordReduceChainBreakShift()
 			}
+			recordChainRun(reduceChainStopShift)
 			return false
 		case ParseActionAccept:
 			if perfCountersEnabled {
 				perfRecordReduceChainBreakAccept()
 			}
+			recordChainRun(reduceChainStopAccept)
 			return false
 		default:
 			if perfCountersEnabled {
 				perfRecordReduceChainBreakMulti()
 			}
+			recordChainRun(reduceChainStopMulti)
 			return false
 		}
 	}
+	recordChainRun(reduceChainStopLimit)
 	return false
 }
 

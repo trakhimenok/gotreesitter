@@ -114,6 +114,7 @@ type runtimeStats struct {
 	NoTreeLeafNodes                uint64        `json:"notree_leaf_nodes,omitempty"`
 	HotAmbiguities                 []hotGLRState `json:"hot_ambiguities,omitempty"`
 	HotReduceChains                []hotGLRState `json:"hot_reduce_chains,omitempty"`
+	HotReduceChainRuns             []hotGLRState `json:"hot_reduce_chain_runs,omitempty"`
 	HotMergeStates                 []hotGLRState `json:"hot_merge_states,omitempty"`
 	HotEquivStates                 []hotGLRState `json:"hot_equiv_states,omitempty"`
 }
@@ -138,6 +139,14 @@ type hotGLRState struct {
 	ReduceChainSteps               uint64 `json:"reduce_chain_steps,omitempty"`
 	ReduceChainMaxLen              int    `json:"reduce_chain_max_len,omitempty"`
 	ReduceChainNS                  int64  `json:"reduce_chain_ns,omitempty"`
+	ReduceChainRuns                uint64 `json:"reduce_chain_runs,omitempty"`
+	ReduceChainStopNoAction        uint64 `json:"reduce_chain_stop_no_action,omitempty"`
+	ReduceChainStopMulti           uint64 `json:"reduce_chain_stop_multi,omitempty"`
+	ReduceChainStopShift           uint64 `json:"reduce_chain_stop_shift,omitempty"`
+	ReduceChainStopAccept          uint64 `json:"reduce_chain_stop_accept,omitempty"`
+	ReduceChainStopDead            uint64 `json:"reduce_chain_stop_dead,omitempty"`
+	ReduceChainStopCycle           uint64 `json:"reduce_chain_stop_cycle,omitempty"`
+	ReduceChainStopLimit           uint64 `json:"reduce_chain_stop_limit,omitempty"`
 	ActionNS                       int64  `json:"action_ns,omitempty"`
 	ExtraShiftNS                   int64  `json:"extra_shift_ns,omitempty"`
 	NoActionNS                     int64  `json:"no_action_ns,omitempty"`
@@ -194,31 +203,32 @@ type langAgg struct {
 }
 
 type langScore struct {
-	lang              string
-	samples           int
-	parityFailures    int
-	queryFailures     int
-	highlightFailures int
-	bytes             int64
-	cgoFull           int64
-	goFull            int64
-	goNoTree          int64
-	goQuery           int64
-	goCursor          int64
-	goEdit            int64
-	goNoop            int64
-	goNoTreeRuntime   runtimeStats
-	fullRatio         float64
-	noTreeRatio       float64
-	queryRatio        float64
-	queryOverFull     float64
-	fullOverNoTree    float64
-	attrs             map[string]float64
-	hotAmbiguities    []hotGLRState
-	hotReduceChains   []hotGLRState
-	hotMergeStates    []hotGLRState
-	hotEquivStates    []hotGLRState
-	bucket            string
+	lang               string
+	samples            int
+	parityFailures     int
+	queryFailures      int
+	highlightFailures  int
+	bytes              int64
+	cgoFull            int64
+	goFull             int64
+	goNoTree           int64
+	goQuery            int64
+	goCursor           int64
+	goEdit             int64
+	goNoop             int64
+	goNoTreeRuntime    runtimeStats
+	fullRatio          float64
+	noTreeRatio        float64
+	queryRatio         float64
+	queryOverFull      float64
+	fullOverNoTree     float64
+	attrs              map[string]float64
+	hotAmbiguities     []hotGLRState
+	hotReduceChains    []hotGLRState
+	hotReduceChainRuns []hotGLRState
+	hotMergeStates     []hotGLRState
+	hotEquivStates     []hotGLRState
+	bucket             string
 }
 
 func main() {
@@ -433,6 +443,15 @@ func scoreRows(rows []reportRow) []langScore {
 				}
 				return h.ReduceChainSteps
 			}, 5)
+			s.hotReduceChainRuns = topHotStates(r.HotReduceChainRuns, func(h hotGLRState) uint64 {
+				if h.ReduceChainNS > 0 {
+					return uint64(h.ReduceChainNS)
+				}
+				if h.ReduceChainSteps > 0 {
+					return h.ReduceChainSteps
+				}
+				return h.ReduceChainRuns
+			}, 5)
 			s.hotMergeStates = topHotStates(r.HotMergeStates, func(h hotGLRState) uint64 {
 				return h.MergeStacksIn
 			}, 5)
@@ -578,12 +597,13 @@ func render(scores []langScore) {
 		fmt.Println("## Hot GLR Shapes")
 		fmt.Println()
 		for _, s := range scores {
-			if len(s.hotAmbiguities) == 0 && len(s.hotReduceChains) == 0 && len(s.hotMergeStates) == 0 && len(s.hotEquivStates) == 0 {
+			if len(s.hotAmbiguities) == 0 && len(s.hotReduceChains) == 0 && len(s.hotReduceChainRuns) == 0 && len(s.hotMergeStates) == 0 && len(s.hotEquivStates) == 0 {
 				continue
 			}
 			fmt.Printf("### %s\n\n", s.lang)
 			printHotTable("fork/action buckets", s.hotAmbiguities, "action_ns")
 			printHotTable("reduce-chain buckets", s.hotReduceChains, "reduce_chain_ns")
+			printHotReduceChainRunTable("reduce-chain run buckets", s.hotReduceChainRuns)
 			printHotTable("merge-state buckets", s.hotMergeStates, "merge_in")
 			printHotEquivTable("equivalence-state buckets", s.hotEquivStates)
 		}
@@ -803,6 +823,14 @@ func aggregateHotStates(in []hotGLRState) []hotGLRState {
 		dst.ReduceChainHits += h.ReduceChainHits
 		dst.ReduceChainSteps += h.ReduceChainSteps
 		dst.ReduceChainNS += h.ReduceChainNS
+		dst.ReduceChainRuns += h.ReduceChainRuns
+		dst.ReduceChainStopNoAction += h.ReduceChainStopNoAction
+		dst.ReduceChainStopMulti += h.ReduceChainStopMulti
+		dst.ReduceChainStopShift += h.ReduceChainStopShift
+		dst.ReduceChainStopAccept += h.ReduceChainStopAccept
+		dst.ReduceChainStopDead += h.ReduceChainStopDead
+		dst.ReduceChainStopCycle += h.ReduceChainStopCycle
+		dst.ReduceChainStopLimit += h.ReduceChainStopLimit
 		dst.ActionNS += h.ActionNS
 		dst.ExtraShiftNS += h.ExtraShiftNS
 		dst.NoActionNS += h.NoActionNS
@@ -852,7 +880,7 @@ func aggregateHotStates(in []hotGLRState) []hotGLRState {
 
 func hasHotShapes(scores []langScore) bool {
 	for _, s := range scores {
-		if len(s.hotAmbiguities) > 0 || len(s.hotReduceChains) > 0 || len(s.hotMergeStates) > 0 || len(s.hotEquivStates) > 0 {
+		if len(s.hotAmbiguities) > 0 || len(s.hotReduceChains) > 0 || len(s.hotReduceChainRuns) > 0 || len(s.hotMergeStates) > 0 || len(s.hotEquivStates) > 0 {
 			return true
 		}
 	}
@@ -912,6 +940,35 @@ func printHotTable(label string, rows []hotGLRState, metric string) {
 			h.MergeStacksIn,
 			h.MergeStacksOut,
 			scoreText,
+		)
+	}
+	fmt.Println()
+}
+
+func printHotReduceChainRunTable(label string, rows []hotGLRState) {
+	if len(rows) == 0 {
+		return
+	}
+	fmt.Printf("`%s`\n\n", label)
+	fmt.Println("| state | lookahead | lookahead_name | runs | steps | avg_len | max_len | ns | stop_shift | stop_multi | stop_no_action | stop_accept | stop_dead | stop_cycle | stop_limit |")
+	fmt.Println("| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	for _, h := range rows {
+		fmt.Printf("| %d | %d | `%s` | %d | %d | %.2f | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n",
+			h.State,
+			h.Lookahead,
+			escapePipes(h.LookaheadName),
+			h.ReduceChainRuns,
+			h.ReduceChainSteps,
+			safeRatioUint(h.ReduceChainSteps, h.ReduceChainRuns),
+			h.ReduceChainMaxLen,
+			nsText(h.ReduceChainNS),
+			h.ReduceChainStopShift,
+			h.ReduceChainStopMulti,
+			h.ReduceChainStopNoAction,
+			h.ReduceChainStopAccept,
+			h.ReduceChainStopDead,
+			h.ReduceChainStopCycle,
+			h.ReduceChainStopLimit,
 		)
 	}
 	fmt.Println()
@@ -1077,6 +1134,7 @@ func (r *runtimeStats) add(o runtimeStats) {
 	r.NoTreeLeafNodes += o.NoTreeLeafNodes
 	r.HotAmbiguities = append(r.HotAmbiguities, o.HotAmbiguities...)
 	r.HotReduceChains = append(r.HotReduceChains, o.HotReduceChains...)
+	r.HotReduceChainRuns = append(r.HotReduceChainRuns, o.HotReduceChainRuns...)
 	r.HotMergeStates = append(r.HotMergeStates, o.HotMergeStates...)
 	r.HotEquivStates = append(r.HotEquivStates, o.HotEquivStates...)
 }

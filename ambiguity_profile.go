@@ -11,6 +11,7 @@ type AmbiguityProfile struct {
 	mu            sync.Mutex
 	entries       map[AmbiguityKey]*AmbiguityStat
 	reduceEntries map[AmbiguityKey]*AmbiguityStat
+	chainEntries  map[AmbiguityKey]*AmbiguityStat
 	mergeEntries  map[StateID]*AmbiguityStat
 }
 
@@ -28,39 +29,47 @@ type AmbiguityKey struct {
 
 // AmbiguityStat is a snapshot row from AmbiguityProfile.
 type AmbiguityStat struct {
-	State               StateID
-	Lookahead           Symbol
-	ActionCount         uint8
-	ShiftCount          uint8
-	ReduceCount         uint8
-	ReduceSymbol        Symbol
-	ChildCount          uint8
-	ProductionID        uint16
-	Actions             []ParseAction
-	Hits                uint64
-	Forks               uint64
-	MultiStackHits      uint64
-	StackInTotal        uint64
-	StackInMax          int
-	ReduceChainHits     uint64
-	ReduceChainSteps    uint64
-	ReduceChainMaxLen   int
-	ReduceChainNanos    int64
-	ActionNanos         int64
-	ExtraShiftNanos     int64
-	NoActionNanos       int64
-	ConflictChoiceNanos int64
-	ConflictForkNanos   int64
-	SingleShiftNanos    int64
-	SingleReduceNanos   int64
-	SingleAcceptNanos   int64
-	SingleRecoverNanos  int64
-	SingleOtherNanos    int64
-	MergeCalls          uint64
-	MergeStacksIn       uint64
-	MergeStacksOut      uint64
-	MergeStacksInMax    int
-	MergeStacksOutMax   int
+	State                   StateID
+	Lookahead               Symbol
+	ActionCount             uint8
+	ShiftCount              uint8
+	ReduceCount             uint8
+	ReduceSymbol            Symbol
+	ChildCount              uint8
+	ProductionID            uint16
+	Actions                 []ParseAction
+	Hits                    uint64
+	Forks                   uint64
+	MultiStackHits          uint64
+	StackInTotal            uint64
+	StackInMax              int
+	ReduceChainHits         uint64
+	ReduceChainSteps        uint64
+	ReduceChainMaxLen       int
+	ReduceChainNanos        int64
+	ReduceChainRuns         uint64
+	ReduceChainStopNoAction uint64
+	ReduceChainStopMulti    uint64
+	ReduceChainStopShift    uint64
+	ReduceChainStopAccept   uint64
+	ReduceChainStopDead     uint64
+	ReduceChainStopCycle    uint64
+	ReduceChainStopLimit    uint64
+	ActionNanos             int64
+	ExtraShiftNanos         int64
+	NoActionNanos           int64
+	ConflictChoiceNanos     int64
+	ConflictForkNanos       int64
+	SingleShiftNanos        int64
+	SingleReduceNanos       int64
+	SingleAcceptNanos       int64
+	SingleRecoverNanos      int64
+	SingleOtherNanos        int64
+	MergeCalls              uint64
+	MergeStacksIn           uint64
+	MergeStacksOut          uint64
+	MergeStacksInMax        int
+	MergeStacksOutMax       int
 }
 
 type ambiguityActionTimingKind uint8
@@ -77,11 +86,24 @@ const (
 	ambiguityActionSingleOther
 )
 
+type reduceChainStopReason uint8
+
+const (
+	reduceChainStopNoAction reduceChainStopReason = iota + 1
+	reduceChainStopMulti
+	reduceChainStopShift
+	reduceChainStopAccept
+	reduceChainStopDead
+	reduceChainStopCycle
+	reduceChainStopLimit
+)
+
 // NewAmbiguityProfile creates an empty GLR ambiguity profile.
 func NewAmbiguityProfile() *AmbiguityProfile {
 	return &AmbiguityProfile{
 		entries:       make(map[AmbiguityKey]*AmbiguityStat),
 		reduceEntries: make(map[AmbiguityKey]*AmbiguityStat),
+		chainEntries:  make(map[AmbiguityKey]*AmbiguityStat),
 		mergeEntries:  make(map[StateID]*AmbiguityStat),
 	}
 }
@@ -95,6 +117,7 @@ func (p *AmbiguityProfile) Reset() {
 	defer p.mu.Unlock()
 	clear(p.entries)
 	clear(p.reduceEntries)
+	clear(p.chainEntries)
 	clear(p.mergeEntries)
 }
 
@@ -161,6 +184,43 @@ func (p *AmbiguityProfile) SnapshotTopReduceChains(limit int) []AmbiguityStat {
 		}
 		if out[i].ReduceChainHits != out[j].ReduceChainHits {
 			return out[i].ReduceChainHits > out[j].ReduceChainHits
+		}
+		if out[i].ReduceChainMaxLen != out[j].ReduceChainMaxLen {
+			return out[i].ReduceChainMaxLen > out[j].ReduceChainMaxLen
+		}
+		if out[i].State != out[j].State {
+			return out[i].State < out[j].State
+		}
+		return out[i].Lookahead < out[j].Lookahead
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// SnapshotTopReduceChainRuns returns the starting states/lookaheads that begin
+// the most expensive deterministic reduce chains.
+func (p *AmbiguityProfile) SnapshotTopReduceChainRuns(limit int) []AmbiguityStat {
+	if p == nil || limit == 0 {
+		return nil
+	}
+	p.mu.Lock()
+	out := make([]AmbiguityStat, 0, len(p.chainEntries))
+	for _, stat := range p.chainEntries {
+		out = append(out, *stat)
+	}
+	p.mu.Unlock()
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ReduceChainNanos != out[j].ReduceChainNanos && (out[i].ReduceChainNanos != 0 || out[j].ReduceChainNanos != 0) {
+			return out[i].ReduceChainNanos > out[j].ReduceChainNanos
+		}
+		if out[i].ReduceChainSteps != out[j].ReduceChainSteps {
+			return out[i].ReduceChainSteps > out[j].ReduceChainSteps
+		}
+		if out[i].ReduceChainRuns != out[j].ReduceChainRuns {
+			return out[i].ReduceChainRuns > out[j].ReduceChainRuns
 		}
 		if out[i].ReduceChainMaxLen != out[j].ReduceChainMaxLen {
 			return out[i].ReduceChainMaxLen > out[j].ReduceChainMaxLen
@@ -367,6 +427,58 @@ func (p *AmbiguityProfile) recordReduceChainStep(state StateID, lookahead Symbol
 	}
 	if chainLen > stat.ReduceChainMaxLen {
 		stat.ReduceChainMaxLen = chainLen
+	}
+}
+
+func (p *AmbiguityProfile) recordReduceChainRun(state StateID, lookahead Symbol, steps, maxLen int, nanos int64, stop reduceChainStopReason) {
+	if p == nil {
+		return
+	}
+	key := AmbiguityKey{
+		State:       state,
+		Lookahead:   lookahead,
+		ActionCount: 1,
+		ReduceCount: 1,
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.chainEntries == nil {
+		p.chainEntries = make(map[AmbiguityKey]*AmbiguityStat)
+	}
+	stat := p.chainEntries[key]
+	if stat == nil {
+		stat = &AmbiguityStat{
+			State:       state,
+			Lookahead:   lookahead,
+			ActionCount: key.ActionCount,
+			ReduceCount: key.ReduceCount,
+		}
+		p.chainEntries[key] = stat
+	}
+	stat.ReduceChainRuns++
+	stat.ReduceChainSteps += uint64(max(steps, 0))
+	if nanos > 0 {
+		stat.ReduceChainNanos += nanos
+	}
+	if maxLen > stat.ReduceChainMaxLen {
+		stat.ReduceChainMaxLen = maxLen
+	}
+	switch stop {
+	case reduceChainStopNoAction:
+		stat.ReduceChainStopNoAction++
+	case reduceChainStopMulti:
+		stat.ReduceChainStopMulti++
+	case reduceChainStopShift:
+		stat.ReduceChainStopShift++
+	case reduceChainStopAccept:
+		stat.ReduceChainStopAccept++
+	case reduceChainStopDead:
+		stat.ReduceChainStopDead++
+	case reduceChainStopCycle:
+		stat.ReduceChainStopCycle++
+	case reduceChainStopLimit:
+		stat.ReduceChainStopLimit++
 	}
 }
 
