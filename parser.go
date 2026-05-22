@@ -2594,12 +2594,18 @@ func (p *Parser) prepareParseStacksForIteration(stacks []glrStack, scratch *pars
 		return result
 	}
 	scratch.merge.language = p.language
+	if p.ambiguityProfile != nil {
+		p.ambiguityProfile.recordMergeBefore(stacks)
+	}
 	if phaseTiming && glrMergeNanos != nil {
 		mergeStart := time.Now()
 		result.stacks = mergeStacksWithScratch(stacks, &scratch.merge)
 		*glrMergeNanos += time.Since(mergeStart).Nanoseconds()
 	} else {
 		result.stacks = mergeStacksWithScratch(stacks, &scratch.merge)
+	}
+	if p.ambiguityProfile != nil {
+		p.ambiguityProfile.recordMergeAfter(result.stacks)
 	}
 	if len(result.stacks) == 0 {
 		result.stop(ParseStopNoStacksAlive, true)

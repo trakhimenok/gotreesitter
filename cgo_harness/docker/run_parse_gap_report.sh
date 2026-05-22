@@ -24,6 +24,7 @@ TIME_PARITY_FAILURES=0
 GATE_ONLY=0
 BUILD_IMAGE=1
 PHASE_TIMING=0
+HOT_SHAPES=0
 
 usage() {
   cat <<'EOF'
@@ -51,6 +52,7 @@ Options:
   --time-parity-failures    Also run timing modes for parity-blocked samples
   --gate-only               Run parse/highlight/query correctness gates only
   --phase-timing            Enable parser phase/subphase timing in report rows
+  --hot-shapes <n>          Include top-N GLR fork/reduce/merge hot-shape rows in runtime JSON
   --no-build                Skip Docker image build in underlying runner
   -h, --help                Show this help
 
@@ -82,6 +84,7 @@ while [[ $# -gt 0 ]]; do
     --time-parity-failures) TIME_PARITY_FAILURES=1; shift ;;
     --gate-only) GATE_ONLY=1; shift ;;
     --phase-timing) PHASE_TIMING=1; shift ;;
+    --hot-shapes) HOT_SHAPES="$2"; shift 2 ;;
     --no-build) BUILD_IMAGE=0; shift ;;
     -h|--help)
       usage
@@ -159,6 +162,7 @@ fi
   echo "time_parity_failures=$TIME_PARITY_FAILURES"
   echo "gate_only=$GATE_ONLY"
   echo "phase_timing=$PHASE_TIMING"
+  echo "hot_shapes=$HOT_SHAPES"
 } >"$OUT_DIR/wrapper-metadata.txt"
 
 allow_arg_text=""
@@ -178,6 +182,10 @@ phase_timing_env_text="GOT_PARSE_PHASE_TIMING='0'"
 if [[ "$PHASE_TIMING" == "1" ]]; then
   phase_timing_arg_text="--phase-timing"
   phase_timing_env_text="GOT_PARSE_PHASE_TIMING='1'"
+fi
+hot_shapes_arg_text=""
+if [[ "$HOT_SHAPES" != "0" ]]; then
+  hot_shapes_arg_text="--hot-shapes '$HOT_SHAPES'"
 fi
 
 inner_cmd=$(cat <<EOF
@@ -209,7 +217,8 @@ env \
     $allow_arg_text \
     $time_parity_arg_text \
     $gate_only_arg_text \
-    $phase_timing_arg_text
+    $phase_timing_arg_text \
+    $hot_shapes_arg_text
 EOF
 )
 

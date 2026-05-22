@@ -340,6 +340,9 @@ func (p *Parser) chainSingleReduceActions(s *glrStack, tok Token, anyReduced *bo
 			if perfCountersEnabled {
 				perfRecordReduceChainStep(chainLen)
 			}
+			if p.ambiguityProfile != nil {
+				p.ambiguityProfile.recordReduceChainStep(currentState, tok.Symbol, chainLen)
+			}
 			p.applyReduceActionDispatch(s, next, tok, anyReduced, nodeCount, arena, entryScratch, gssScratch, tmpEntries, deferParentLinks, trackChildErrors)
 			if s.dead || s.accepted || s.shifted {
 				return false

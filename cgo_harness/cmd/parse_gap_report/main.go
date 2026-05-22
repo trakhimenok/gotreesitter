@@ -81,13 +81,15 @@ type sample struct {
 }
 
 type runner struct {
-	name     string
-	entry    grammars.LangEntry
-	support  grammars.ParseSupport
-	goLang   *gotreesitter.Language
-	goParser *gotreesitter.Parser
-	cLang    *sitter.Language
-	c        *sitter.Parser
+	name          string
+	entry         grammars.LangEntry
+	support       grammars.ParseSupport
+	goLang        *gotreesitter.Language
+	goParser      *gotreesitter.Parser
+	cLang         *sitter.Language
+	c             *sitter.Parser
+	profile       *gotreesitter.AmbiguityProfile
+	hotShapeLimit int
 }
 
 type reportRow struct {
@@ -128,71 +130,107 @@ type paritySummary struct {
 }
 
 type runtimeStats struct {
-	Tokens                  uint64 `json:"tokens,omitempty"`
-	Iterations              int    `json:"iterations,omitempty"`
-	NodesAllocated          int    `json:"nodes_allocated,omitempty"`
-	FinalNodes              uint64 `json:"final_nodes,omitempty"`
-	GSSNodes                uint64 `json:"gss_nodes,omitempty"`
-	MaxStacksSeen           int    `json:"max_stacks_seen,omitempty"`
-	SingleStackIterations   int    `json:"single_stack_iterations,omitempty"`
-	MultiStackIterations    int    `json:"multi_stack_iterations,omitempty"`
-	SingleStackTokens       uint64 `json:"single_stack_tokens,omitempty"`
-	MultiStackTokens        uint64 `json:"multi_stack_tokens,omitempty"`
-	MergeStacksIn           uint64 `json:"merge_stacks_in,omitempty"`
-	MergeStacksOut          uint64 `json:"merge_stacks_out,omitempty"`
-	MergeSlotsUsed          uint64 `json:"merge_slots_used,omitempty"`
-	GlobalCullStacksIn      uint64 `json:"global_cull_stacks_in,omitempty"`
-	GlobalCullStacksOut     uint64 `json:"global_cull_stacks_out,omitempty"`
-	ArenaLiveB              int64  `json:"arena_live_b,omitempty"`
-	ArenaCapacityB          int64  `json:"arena_capacity_b,omitempty"`
-	ArenaCapacityWaste      uint64 `json:"arena_capacity_waste,omitempty"`
-	FinalChildRangeDrains   uint64 `json:"final_child_range_drains,omitempty"`
-	PublicNodesMaterialized uint64 `json:"public_nodes_materialized,omitempty"`
-	DenseFallbacks          uint64 `json:"dense_fallbacks,omitempty"`
-	ResultSelectionNS       int64  `json:"result_selection_ns,omitempty"`
-	ResultBuildNS           int64  `json:"result_build_ns,omitempty"`
-	ResultCompatibilityNS   int64  `json:"result_compatibility_ns,omitempty"`
-	ResultParentLinkNS      int64  `json:"result_parent_link_ns,omitempty"`
-	ResultFinalizeRootNS    int64  `json:"result_finalize_root_ns,omitempty"`
-	ResultExtendTrailingNS  int64  `json:"result_extend_trailing_ns,omitempty"`
-	ResultNormalizeRootNS   int64  `json:"result_normalize_root_start_ns,omitempty"`
-	TransientParentMatNS    int64  `json:"transient_parent_materialize_ns,omitempty"`
-	TransientChildMatNS     int64  `json:"transient_child_materialize_ns,omitempty"`
-	NormalizationNS         int64  `json:"normalization_ns,omitempty"`
-	NormalizationPassesRun  uint64 `json:"normalization_passes_run,omitempty"`
-	NormalizationNodes      uint64 `json:"normalization_nodes_visited,omitempty"`
-	NormalizationRewrites   uint64 `json:"normalization_nodes_rewritten,omitempty"`
-	ParseWallNS             int64  `json:"parse_wall_ns,omitempty"`
-	ParserLoopNS            int64  `json:"parser_loop_ns,omitempty"`
-	TokenNextNS             int64  `json:"token_next_ns,omitempty"`
-	ActionDispatchNS        int64  `json:"action_dispatch_ns,omitempty"`
-	ActionLookupNS          int64  `json:"action_lookup_ns,omitempty"`
-	GLRMergeNS              int64  `json:"glr_merge_ns,omitempty"`
-	GLRCullNS               int64  `json:"glr_cull_ns,omitempty"`
-	QueryCaptures           uint64 `json:"query_captures,omitempty"`
-	CursorNodes             uint64 `json:"cursor_nodes,omitempty"`
-	MergeCalls              uint64 `json:"merge_calls,omitempty"`
-	MergeDeadPruned         uint64 `json:"merge_dead_pruned,omitempty"`
-	MergeReplacements       uint64 `json:"merge_replacements,omitempty"`
-	StackEquivalentCalls    uint64 `json:"stack_equivalent_calls,omitempty"`
-	StackEquivalentTrue     uint64 `json:"stack_equivalent_true,omitempty"`
-	StackCompareCalls       uint64 `json:"stack_compare_calls,omitempty"`
-	ForkCount               uint64 `json:"fork_count,omitempty"`
-	ConflictRR              uint64 `json:"conflict_rr,omitempty"`
-	ConflictRS              uint64 `json:"conflict_rs,omitempty"`
-	ConflictOther           uint64 `json:"conflict_other,omitempty"`
-	LexBytes                uint64 `json:"lex_bytes,omitempty"`
-	LexTokens               uint64 `json:"lex_tokens,omitempty"`
-	ReduceChainSteps        uint64 `json:"reduce_chain_steps,omitempty"`
-	ReduceChainMaxLen       uint64 `json:"reduce_chain_max_len,omitempty"`
-	ParentChildPointers     uint64 `json:"parent_child_pointers,omitempty"`
-	NoTreeReduceNodes       uint64 `json:"notree_reduce_nodes,omitempty"`
-	NoTreeLeafNodes         uint64 `json:"notree_leaf_nodes,omitempty"`
-	CloneTreePublicNodes    uint64 `json:"clone_tree_public_nodes,omitempty"`
-	CloneOffsetPublicNodes  uint64 `json:"clone_offset_public_nodes,omitempty"`
-	NodeEditCompactRefs     uint64 `json:"node_edit_compact_refs,omitempty"`
-	NodeEditPublicFallbacks uint64 `json:"node_edit_public_fallbacks,omitempty"`
-	MutationChildRefCOW     uint64 `json:"mutation_child_ref_cow,omitempty"`
+	Tokens                  uint64        `json:"tokens,omitempty"`
+	Iterations              int           `json:"iterations,omitempty"`
+	NodesAllocated          int           `json:"nodes_allocated,omitempty"`
+	FinalNodes              uint64        `json:"final_nodes,omitempty"`
+	GSSNodes                uint64        `json:"gss_nodes,omitempty"`
+	MaxStacksSeen           int           `json:"max_stacks_seen,omitempty"`
+	SingleStackIterations   int           `json:"single_stack_iterations,omitempty"`
+	MultiStackIterations    int           `json:"multi_stack_iterations,omitempty"`
+	SingleStackTokens       uint64        `json:"single_stack_tokens,omitempty"`
+	MultiStackTokens        uint64        `json:"multi_stack_tokens,omitempty"`
+	MergeStacksIn           uint64        `json:"merge_stacks_in,omitempty"`
+	MergeStacksOut          uint64        `json:"merge_stacks_out,omitempty"`
+	MergeSlotsUsed          uint64        `json:"merge_slots_used,omitempty"`
+	GlobalCullStacksIn      uint64        `json:"global_cull_stacks_in,omitempty"`
+	GlobalCullStacksOut     uint64        `json:"global_cull_stacks_out,omitempty"`
+	ArenaLiveB              int64         `json:"arena_live_b,omitempty"`
+	ArenaCapacityB          int64         `json:"arena_capacity_b,omitempty"`
+	ArenaCapacityWaste      uint64        `json:"arena_capacity_waste,omitempty"`
+	FinalChildRangeDrains   uint64        `json:"final_child_range_drains,omitempty"`
+	PublicNodesMaterialized uint64        `json:"public_nodes_materialized,omitempty"`
+	DenseFallbacks          uint64        `json:"dense_fallbacks,omitempty"`
+	ResultSelectionNS       int64         `json:"result_selection_ns,omitempty"`
+	ResultBuildNS           int64         `json:"result_build_ns,omitempty"`
+	ResultCompatibilityNS   int64         `json:"result_compatibility_ns,omitempty"`
+	ResultParentLinkNS      int64         `json:"result_parent_link_ns,omitempty"`
+	ResultFinalizeRootNS    int64         `json:"result_finalize_root_ns,omitempty"`
+	ResultExtendTrailingNS  int64         `json:"result_extend_trailing_ns,omitempty"`
+	ResultNormalizeRootNS   int64         `json:"result_normalize_root_start_ns,omitempty"`
+	TransientParentMatNS    int64         `json:"transient_parent_materialize_ns,omitempty"`
+	TransientChildMatNS     int64         `json:"transient_child_materialize_ns,omitempty"`
+	NormalizationNS         int64         `json:"normalization_ns,omitempty"`
+	NormalizationPassesRun  uint64        `json:"normalization_passes_run,omitempty"`
+	NormalizationNodes      uint64        `json:"normalization_nodes_visited,omitempty"`
+	NormalizationRewrites   uint64        `json:"normalization_nodes_rewritten,omitempty"`
+	ParseWallNS             int64         `json:"parse_wall_ns,omitempty"`
+	ParserLoopNS            int64         `json:"parser_loop_ns,omitempty"`
+	TokenNextNS             int64         `json:"token_next_ns,omitempty"`
+	ActionDispatchNS        int64         `json:"action_dispatch_ns,omitempty"`
+	ActionLookupNS          int64         `json:"action_lookup_ns,omitempty"`
+	GLRMergeNS              int64         `json:"glr_merge_ns,omitempty"`
+	GLRCullNS               int64         `json:"glr_cull_ns,omitempty"`
+	QueryCaptures           uint64        `json:"query_captures,omitempty"`
+	CursorNodes             uint64        `json:"cursor_nodes,omitempty"`
+	MergeCalls              uint64        `json:"merge_calls,omitempty"`
+	MergeDeadPruned         uint64        `json:"merge_dead_pruned,omitempty"`
+	MergeReplacements       uint64        `json:"merge_replacements,omitempty"`
+	StackEquivalentCalls    uint64        `json:"stack_equivalent_calls,omitempty"`
+	StackEquivalentTrue     uint64        `json:"stack_equivalent_true,omitempty"`
+	StackCompareCalls       uint64        `json:"stack_compare_calls,omitempty"`
+	ForkCount               uint64        `json:"fork_count,omitempty"`
+	ConflictRR              uint64        `json:"conflict_rr,omitempty"`
+	ConflictRS              uint64        `json:"conflict_rs,omitempty"`
+	ConflictOther           uint64        `json:"conflict_other,omitempty"`
+	LexBytes                uint64        `json:"lex_bytes,omitempty"`
+	LexTokens               uint64        `json:"lex_tokens,omitempty"`
+	ReduceChainSteps        uint64        `json:"reduce_chain_steps,omitempty"`
+	ReduceChainMaxLen       uint64        `json:"reduce_chain_max_len,omitempty"`
+	ParentChildPointers     uint64        `json:"parent_child_pointers,omitempty"`
+	NoTreeReduceNodes       uint64        `json:"notree_reduce_nodes,omitempty"`
+	NoTreeLeafNodes         uint64        `json:"notree_leaf_nodes,omitempty"`
+	CloneTreePublicNodes    uint64        `json:"clone_tree_public_nodes,omitempty"`
+	CloneOffsetPublicNodes  uint64        `json:"clone_offset_public_nodes,omitempty"`
+	NodeEditCompactRefs     uint64        `json:"node_edit_compact_refs,omitempty"`
+	NodeEditPublicFallbacks uint64        `json:"node_edit_public_fallbacks,omitempty"`
+	MutationChildRefCOW     uint64        `json:"mutation_child_ref_cow,omitempty"`
+	HotAmbiguities          []hotGLRState `json:"hot_ambiguities,omitempty"`
+	HotReduceChains         []hotGLRState `json:"hot_reduce_chains,omitempty"`
+	HotMergeStates          []hotGLRState `json:"hot_merge_states,omitempty"`
+}
+
+type hotGLRState struct {
+	State             uint32         `json:"state"`
+	Lookahead         uint16         `json:"lookahead,omitempty"`
+	ActionCount       uint8          `json:"action_count,omitempty"`
+	ShiftCount        uint8          `json:"shift_count,omitempty"`
+	ReduceCount       uint8          `json:"reduce_count,omitempty"`
+	Hits              uint64         `json:"hits,omitempty"`
+	Forks             uint64         `json:"forks,omitempty"`
+	MultiStackHits    uint64         `json:"multi_stack_hits,omitempty"`
+	StackInTotal      uint64         `json:"stack_in_total,omitempty"`
+	StackInMax        int            `json:"stack_in_max,omitempty"`
+	ReduceChainHits   uint64         `json:"reduce_chain_hits,omitempty"`
+	ReduceChainSteps  uint64         `json:"reduce_chain_steps,omitempty"`
+	ReduceChainMaxLen int            `json:"reduce_chain_max_len,omitempty"`
+	MergeCalls        uint64         `json:"merge_calls,omitempty"`
+	MergeStacksIn     uint64         `json:"merge_stacks_in,omitempty"`
+	MergeStacksOut    uint64         `json:"merge_stacks_out,omitempty"`
+	MergeStacksInMax  int            `json:"merge_stacks_in_max,omitempty"`
+	MergeStacksOutMax int            `json:"merge_stacks_out_max,omitempty"`
+	Actions           []hotGLRAction `json:"actions,omitempty"`
+}
+
+type hotGLRAction struct {
+	Type              uint8  `json:"type"`
+	State             uint32 `json:"state,omitempty"`
+	Symbol            uint16 `json:"symbol,omitempty"`
+	ChildCount        uint8  `json:"child_count,omitempty"`
+	DynamicPrecedence int16  `json:"dynamic_precedence,omitempty"`
+	ProductionID      uint16 `json:"production_id,omitempty"`
+	Extra             bool   `json:"extra,omitempty"`
+	Repetition        bool   `json:"repetition,omitempty"`
 }
 
 type runMeasurement struct {
@@ -231,6 +269,7 @@ type metadata struct {
 	Languages          []string          `json:"languages"`
 	Count              int               `json:"count"`
 	GateOnly           bool              `json:"gate_only"`
+	HotShapeLimit      int               `json:"hot_shape_limit,omitempty"`
 	CorpusManifest     string            `json:"corpus_manifest,omitempty"`
 	CorpusManifestSHA  string            `json:"corpus_manifest_sha256,omitempty"`
 	QueryManifest      string            `json:"query_manifest,omitempty"`
@@ -261,6 +300,7 @@ func main() {
 		gateOnly        bool
 		arenaBreakdown  bool
 		phaseTiming     bool
+		hotShapeLimit   int
 	)
 	flag.StringVar(&langsFlag, "langs", "go,python,rust,java,c", "comma-separated languages to include")
 	flag.StringVar(&modesFlag, "modes", "cgo_full,go_full,go_no_tree", "comma-separated modes")
@@ -275,6 +315,7 @@ func main() {
 	flag.BoolVar(&gateOnly, "gate-only", false, "run only parse/highlight/query correctness gates and skip timing modes")
 	flag.BoolVar(&arenaBreakdown, "arena-breakdown", true, "enable detailed gotreesitter arena breakdown while measuring")
 	flag.BoolVar(&phaseTiming, "phase-timing", false, "enable gotreesitter parser phase timing while measuring")
+	flag.IntVar(&hotShapeLimit, "hot-shapes", 0, "include top-N GLR fork/reduce/merge hot-shape rows in runtime JSON")
 	flag.Parse()
 
 	if countFlag <= 0 {
@@ -361,7 +402,7 @@ func main() {
 	unsupportedSamples := 0
 
 	for _, s := range samples {
-		r, err := runnerForLanguage(s.Language, entries, support, runners)
+		r, err := runnerForLanguage(s.Language, entries, support, runners, hotShapeLimit)
 		if err != nil {
 			unsupportedSamples++
 			row := errorRow(common, s, "setup", countFlag, err)
@@ -426,6 +467,7 @@ func main() {
 		Languages:          langs,
 		Count:              countFlag,
 		GateOnly:           gateOnly,
+		HotShapeLimit:      hotShapeLimit,
 		CorpusManifest:     relOrAbs(repoRoot, corpusPath),
 		CorpusManifestSHA:  sha256File(corpusPath),
 		QueryManifest:      relOrAbs(repoRoot, queryPath),
@@ -492,8 +534,9 @@ func registryMaps() (map[string]grammars.LangEntry, map[string]grammars.ParseSup
 	return entries, support
 }
 
-func runnerForLanguage(name string, entries map[string]grammars.LangEntry, support map[string]grammars.ParseSupport, cache map[string]*runner) (*runner, error) {
+func runnerForLanguage(name string, entries map[string]grammars.LangEntry, support map[string]grammars.ParseSupport, cache map[string]*runner, hotShapeLimit int) (*runner, error) {
 	if r := cache[name]; r != nil {
+		r.setHotShapeLimit(hotShapeLimit)
 		return r, nil
 	}
 	entry, ok := entries[name]
@@ -523,8 +566,32 @@ func runnerForLanguage(name string, entries map[string]grammars.LangEntry, suppo
 		cLang:    cLang,
 		c:        cParser,
 	}
+	r.setHotShapeLimit(hotShapeLimit)
 	cache[name] = r
 	return r, nil
+}
+
+func (r *runner) setHotShapeLimit(limit int) {
+	if r == nil {
+		return
+	}
+	r.hotShapeLimit = limit
+	if limit <= 0 {
+		r.profile = nil
+		r.goParser.SetAmbiguityProfile(nil)
+		return
+	}
+	if r.profile == nil {
+		r.profile = gotreesitter.NewAmbiguityProfile()
+	}
+	r.goParser.SetAmbiguityProfile(r.profile)
+}
+
+func (r *runner) resetMeasurementDiagnostics() {
+	gotreesitter.ResetPerfCounters()
+	if r != nil && r.profile != nil {
+		r.profile.Reset()
+	}
 }
 
 func (r *runner) close() {
@@ -629,7 +696,7 @@ func measureMode(r *runner, mode string, source []byte, count int, queries []que
 	var last runtimeStats
 	durations := make([]int64, 0, count)
 	for i := 0; i < count; i++ {
-		gotreesitter.ResetPerfCounters()
+		r.resetMeasurementDiagnostics()
 		start := time.Now()
 		stats, err := runModeOnce(r, mode, source, queries, edits)
 		elapsed := time.Since(start).Nanoseconds()
@@ -667,13 +734,13 @@ func runModeOnce(r *runner, mode string, source []byte, queries []querySpec, edi
 		return runtimeStats{}, nil
 	case "go_full":
 		tree, err := parseGo(r, source)
-		return statsFromGoTree(tree, 0, 0), releaseTree(tree, err)
+		return statsFromGoTree(r, tree, 0, 0), releaseTree(tree, err)
 	case "go_no_compat":
 		tree, err := r.goParser.ParseNoResultCompatibilityBenchmarkOnly(source)
-		return statsFromGoTree(tree, 0, 0), releaseTree(tree, err)
+		return statsFromGoTree(r, tree, 0, 0), releaseTree(tree, err)
 	case "go_no_tree":
 		tree, err := r.goParser.ParseNoTreeBenchmarkOnly(source)
-		return statsFromGoTree(tree, 0, 0), releaseTree(tree, err)
+		return statsFromGoTree(r, tree, 0, 0), releaseTree(tree, err)
 	case "go_parse_query":
 		if len(queries) == 0 {
 			return runtimeStats{}, fmt.Errorf("no query manifest entry for %s", r.name)
@@ -684,30 +751,30 @@ func runModeOnce(r *runner, mode string, source []byte, queries []querySpec, edi
 			return runtimeStats{}, err
 		}
 		captures, qErr := runGoQuery(r, tree, source, queries[0].Query)
-		stats := statsFromGoTree(tree, captures, 0)
+		stats := statsFromGoTree(r, tree, captures, 0)
 		return stats, releaseTree(tree, qErr)
 	case "go_cursor_walk":
 		tree, err := parseGo(r, source)
 		if err != nil {
-			return statsFromGoTree(tree, 0, 0), releaseTree(tree, err)
+			return statsFromGoTree(r, tree, 0, 0), releaseTree(tree, err)
 		}
 		nodes := walkCursor(tree)
-		stats := statsFromGoTree(tree, 0, nodes)
+		stats := statsFromGoTree(r, tree, 0, nodes)
 		return stats, releaseTree(tree, nil)
 	case "go_sexpr":
 		tree, err := parseGo(r, source)
 		if err != nil {
-			return statsFromGoTree(tree, 0, 0), releaseTree(tree, err)
+			return statsFromGoTree(r, tree, 0, 0), releaseTree(tree, err)
 		}
 		_ = tree.RootNode().SExpr(r.goLang)
-		return statsFromGoTree(tree, 0, 0), releaseTree(tree, nil)
+		return statsFromGoTree(r, tree, 0, 0), releaseTree(tree, nil)
 	case "go_parent_sibling":
 		tree, err := parseGo(r, source)
 		if err != nil {
-			return statsFromGoTree(tree, 0, 0), releaseTree(tree, err)
+			return statsFromGoTree(r, tree, 0, 0), releaseTree(tree, err)
 		}
 		touchParentSibling(tree.RootNode())
-		return statsFromGoTree(tree, 0, 0), releaseTree(tree, nil)
+		return statsFromGoTree(r, tree, 0, 0), releaseTree(tree, nil)
 	case "go_edit":
 		stats, err := runGoEdit(r, source, false)
 		return stats, err
@@ -726,7 +793,7 @@ func releaseTree(tree *gotreesitter.Tree, err error) error {
 	return err
 }
 
-func statsFromGoTree(tree *gotreesitter.Tree, queryCaptures, cursorNodes uint64) runtimeStats {
+func statsFromGoTree(r *runner, tree *gotreesitter.Tree, queryCaptures, cursorNodes uint64) runtimeStats {
 	if tree == nil {
 		return runtimeStats{}
 	}
@@ -768,7 +835,58 @@ func statsFromGoTree(tree *gotreesitter.Tree, queryCaptures, cursorNodes uint64)
 	stats.ReduceChainSteps = perf.ReduceChainSteps
 	stats.ReduceChainMaxLen = perf.ReduceChainMaxLen
 	stats.ParentChildPointers = perf.ParentChildPointers
+	if r != nil && r.profile != nil && r.hotShapeLimit > 0 {
+		stats.HotAmbiguities = hotGLRStatesFromProfile(r.profile.SnapshotTop(r.hotShapeLimit))
+		stats.HotReduceChains = hotGLRStatesFromProfile(r.profile.SnapshotTopReduceChains(r.hotShapeLimit))
+		stats.HotMergeStates = hotGLRStatesFromProfile(r.profile.SnapshotTopMergeStates(r.hotShapeLimit))
+	}
 	return stats
+}
+
+func hotGLRStatesFromProfile(stats []gotreesitter.AmbiguityStat) []hotGLRState {
+	if len(stats) == 0 {
+		return nil
+	}
+	out := make([]hotGLRState, 0, len(stats))
+	for _, stat := range stats {
+		row := hotGLRState{
+			State:             uint32(stat.State),
+			Lookahead:         uint16(stat.Lookahead),
+			ActionCount:       stat.ActionCount,
+			ShiftCount:        stat.ShiftCount,
+			ReduceCount:       stat.ReduceCount,
+			Hits:              stat.Hits,
+			Forks:             stat.Forks,
+			MultiStackHits:    stat.MultiStackHits,
+			StackInTotal:      stat.StackInTotal,
+			StackInMax:        stat.StackInMax,
+			ReduceChainHits:   stat.ReduceChainHits,
+			ReduceChainSteps:  stat.ReduceChainSteps,
+			ReduceChainMaxLen: stat.ReduceChainMaxLen,
+			MergeCalls:        stat.MergeCalls,
+			MergeStacksIn:     stat.MergeStacksIn,
+			MergeStacksOut:    stat.MergeStacksOut,
+			MergeStacksInMax:  stat.MergeStacksInMax,
+			MergeStacksOutMax: stat.MergeStacksOutMax,
+		}
+		if len(stat.Actions) > 0 {
+			row.Actions = make([]hotGLRAction, 0, len(stat.Actions))
+			for _, action := range stat.Actions {
+				row.Actions = append(row.Actions, hotGLRAction{
+					Type:              uint8(action.Type),
+					State:             uint32(action.State),
+					Symbol:            uint16(action.Symbol),
+					ChildCount:        action.ChildCount,
+					DynamicPrecedence: action.DynamicPrecedence,
+					ProductionID:      action.ProductionID,
+					Extra:             action.Extra,
+					Repetition:        action.Repetition,
+				})
+			}
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 func subUint64(a, b uint64) uint64 {
@@ -844,7 +962,7 @@ func runGoEdit(r *runner, source []byte, noop bool) (runtimeStats, error) {
 		return runtimeStats{}, err
 	}
 	defer tree.Release()
-	stats := statsFromGoTree(tree, 0, 0)
+	stats := statsFromGoTree(r, tree, 0, 0)
 	if ok {
 		stats.ParseWallNS = profile.ReparseNanos + profile.ReuseCursorNanos
 		stats.ParserLoopNS = profile.ParserLoopNanos

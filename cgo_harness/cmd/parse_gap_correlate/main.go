@@ -33,48 +33,72 @@ type paritySummary struct {
 }
 
 type runtimeStats struct {
-	Tokens                  uint64 `json:"tokens,omitempty"`
-	NodesAllocated          int    `json:"nodes_allocated,omitempty"`
-	FinalNodes              uint64 `json:"final_nodes,omitempty"`
-	GSSNodes                uint64 `json:"gss_nodes,omitempty"`
-	MaxStacksSeen           int    `json:"max_stacks_seen,omitempty"`
-	SingleStackTokens       uint64 `json:"single_stack_tokens,omitempty"`
-	MultiStackTokens        uint64 `json:"multi_stack_tokens,omitempty"`
-	MergeStacksIn           uint64 `json:"merge_stacks_in,omitempty"`
-	MergeStacksOut          uint64 `json:"merge_stacks_out,omitempty"`
-	ArenaLiveB              int64  `json:"arena_live_b,omitempty"`
-	ArenaCapacityB          int64  `json:"arena_capacity_b,omitempty"`
-	ArenaCapacityWaste      uint64 `json:"arena_capacity_waste,omitempty"`
-	FinalChildRangeDrains   uint64 `json:"final_child_range_drains,omitempty"`
-	PublicNodesMaterialized uint64 `json:"public_nodes_materialized,omitempty"`
-	DenseFallbacks          uint64 `json:"dense_fallbacks,omitempty"`
-	ResultSelectionNS       int64  `json:"result_selection_ns,omitempty"`
-	ResultBuildNS           int64  `json:"result_build_ns,omitempty"`
-	ResultCompatibilityNS   int64  `json:"result_compatibility_ns,omitempty"`
-	ResultParentLinkNS      int64  `json:"result_parent_link_ns,omitempty"`
-	ResultFinalizeRootNS    int64  `json:"result_finalize_root_ns,omitempty"`
-	ResultExtendTrailingNS  int64  `json:"result_extend_trailing_ns,omitempty"`
-	NormalizationNS         int64  `json:"normalization_ns,omitempty"`
-	NormalizationNodes      uint64 `json:"normalization_nodes_visited,omitempty"`
-	NormalizationRewrites   uint64 `json:"normalization_nodes_rewritten,omitempty"`
-	ParseWallNS             int64  `json:"parse_wall_ns,omitempty"`
-	ParserLoopNS            int64  `json:"parser_loop_ns,omitempty"`
-	TokenNextNS             int64  `json:"token_next_ns,omitempty"`
-	ActionDispatchNS        int64  `json:"action_dispatch_ns,omitempty"`
-	ActionLookupNS          int64  `json:"action_lookup_ns,omitempty"`
-	GLRMergeNS              int64  `json:"glr_merge_ns,omitempty"`
-	GLRCullNS               int64  `json:"glr_cull_ns,omitempty"`
-	MergeCalls              uint64 `json:"merge_calls,omitempty"`
-	ForkCount               uint64 `json:"fork_count,omitempty"`
-	ConflictRR              uint64 `json:"conflict_rr,omitempty"`
-	ConflictRS              uint64 `json:"conflict_rs,omitempty"`
-	ConflictOther           uint64 `json:"conflict_other,omitempty"`
-	LexBytes                uint64 `json:"lex_bytes,omitempty"`
-	LexTokens               uint64 `json:"lex_tokens,omitempty"`
-	ReduceChainSteps        uint64 `json:"reduce_chain_steps,omitempty"`
-	ReduceChainMaxLen       uint64 `json:"reduce_chain_max_len,omitempty"`
-	NoTreeReduceNodes       uint64 `json:"notree_reduce_nodes,omitempty"`
-	NoTreeLeafNodes         uint64 `json:"notree_leaf_nodes,omitempty"`
+	Tokens                  uint64        `json:"tokens,omitempty"`
+	NodesAllocated          int           `json:"nodes_allocated,omitempty"`
+	FinalNodes              uint64        `json:"final_nodes,omitempty"`
+	GSSNodes                uint64        `json:"gss_nodes,omitempty"`
+	MaxStacksSeen           int           `json:"max_stacks_seen,omitempty"`
+	SingleStackTokens       uint64        `json:"single_stack_tokens,omitempty"`
+	MultiStackTokens        uint64        `json:"multi_stack_tokens,omitempty"`
+	MergeStacksIn           uint64        `json:"merge_stacks_in,omitempty"`
+	MergeStacksOut          uint64        `json:"merge_stacks_out,omitempty"`
+	ArenaLiveB              int64         `json:"arena_live_b,omitempty"`
+	ArenaCapacityB          int64         `json:"arena_capacity_b,omitempty"`
+	ArenaCapacityWaste      uint64        `json:"arena_capacity_waste,omitempty"`
+	FinalChildRangeDrains   uint64        `json:"final_child_range_drains,omitempty"`
+	PublicNodesMaterialized uint64        `json:"public_nodes_materialized,omitempty"`
+	DenseFallbacks          uint64        `json:"dense_fallbacks,omitempty"`
+	ResultSelectionNS       int64         `json:"result_selection_ns,omitempty"`
+	ResultBuildNS           int64         `json:"result_build_ns,omitempty"`
+	ResultCompatibilityNS   int64         `json:"result_compatibility_ns,omitempty"`
+	ResultParentLinkNS      int64         `json:"result_parent_link_ns,omitempty"`
+	ResultFinalizeRootNS    int64         `json:"result_finalize_root_ns,omitempty"`
+	ResultExtendTrailingNS  int64         `json:"result_extend_trailing_ns,omitempty"`
+	NormalizationNS         int64         `json:"normalization_ns,omitempty"`
+	NormalizationNodes      uint64        `json:"normalization_nodes_visited,omitempty"`
+	NormalizationRewrites   uint64        `json:"normalization_nodes_rewritten,omitempty"`
+	ParseWallNS             int64         `json:"parse_wall_ns,omitempty"`
+	ParserLoopNS            int64         `json:"parser_loop_ns,omitempty"`
+	TokenNextNS             int64         `json:"token_next_ns,omitempty"`
+	ActionDispatchNS        int64         `json:"action_dispatch_ns,omitempty"`
+	ActionLookupNS          int64         `json:"action_lookup_ns,omitempty"`
+	GLRMergeNS              int64         `json:"glr_merge_ns,omitempty"`
+	GLRCullNS               int64         `json:"glr_cull_ns,omitempty"`
+	MergeCalls              uint64        `json:"merge_calls,omitempty"`
+	ForkCount               uint64        `json:"fork_count,omitempty"`
+	ConflictRR              uint64        `json:"conflict_rr,omitempty"`
+	ConflictRS              uint64        `json:"conflict_rs,omitempty"`
+	ConflictOther           uint64        `json:"conflict_other,omitempty"`
+	LexBytes                uint64        `json:"lex_bytes,omitempty"`
+	LexTokens               uint64        `json:"lex_tokens,omitempty"`
+	ReduceChainSteps        uint64        `json:"reduce_chain_steps,omitempty"`
+	ReduceChainMaxLen       uint64        `json:"reduce_chain_max_len,omitempty"`
+	NoTreeReduceNodes       uint64        `json:"notree_reduce_nodes,omitempty"`
+	NoTreeLeafNodes         uint64        `json:"notree_leaf_nodes,omitempty"`
+	HotAmbiguities          []hotGLRState `json:"hot_ambiguities,omitempty"`
+	HotReduceChains         []hotGLRState `json:"hot_reduce_chains,omitempty"`
+	HotMergeStates          []hotGLRState `json:"hot_merge_states,omitempty"`
+}
+
+type hotGLRState struct {
+	State             uint32 `json:"state"`
+	Lookahead         uint16 `json:"lookahead,omitempty"`
+	ActionCount       uint8  `json:"action_count,omitempty"`
+	ShiftCount        uint8  `json:"shift_count,omitempty"`
+	ReduceCount       uint8  `json:"reduce_count,omitempty"`
+	Hits              uint64 `json:"hits,omitempty"`
+	Forks             uint64 `json:"forks,omitempty"`
+	MultiStackHits    uint64 `json:"multi_stack_hits,omitempty"`
+	StackInTotal      uint64 `json:"stack_in_total,omitempty"`
+	StackInMax        int    `json:"stack_in_max,omitempty"`
+	ReduceChainHits   uint64 `json:"reduce_chain_hits,omitempty"`
+	ReduceChainSteps  uint64 `json:"reduce_chain_steps,omitempty"`
+	ReduceChainMaxLen int    `json:"reduce_chain_max_len,omitempty"`
+	MergeCalls        uint64 `json:"merge_calls,omitempty"`
+	MergeStacksIn     uint64 `json:"merge_stacks_in,omitempty"`
+	MergeStacksOut    uint64 `json:"merge_stacks_out,omitempty"`
+	MergeStacksInMax  int    `json:"merge_stacks_in_max,omitempty"`
+	MergeStacksOutMax int    `json:"merge_stacks_out_max,omitempty"`
 }
 
 type modeAgg struct {
@@ -118,6 +142,9 @@ type langScore struct {
 	queryOverFull     float64
 	fullOverNoTree    float64
 	attrs             map[string]float64
+	hotAmbiguities    []hotGLRState
+	hotReduceChains   []hotGLRState
+	hotMergeStates    []hotGLRState
 	bucket            string
 }
 
@@ -274,6 +301,18 @@ func scoreRows(rows []reportRow) []langScore {
 			s.attrs["result_build_share"] = float64(r.ResultBuildNS) / wall
 			s.attrs["result_compat_share"] = float64(r.ResultCompatibilityNS) / wall
 			s.attrs["normalization_share"] = float64(r.NormalizationNS) / wall
+			s.hotAmbiguities = topHotStates(r.HotAmbiguities, func(h hotGLRState) uint64 {
+				if h.StackInTotal > 0 {
+					return h.StackInTotal
+				}
+				return h.Hits
+			}, 5)
+			s.hotReduceChains = topHotStates(r.HotReduceChains, func(h hotGLRState) uint64 {
+				return h.ReduceChainSteps
+			}, 5)
+			s.hotMergeStates = topHotStates(r.HotMergeStates, func(h hotGLRState) uint64 {
+				return h.MergeStacksIn
+			}, 5)
 		}
 		s.bucket = classify(s)
 		scores = append(scores, s)
@@ -404,6 +443,21 @@ func render(scores []langScore) {
 		fmt.Printf("| %s | %.3f | %d |\n", corrs[i].name, corrs[i].r, corrs[i].n)
 	}
 
+	if hasHotShapes(scores) {
+		fmt.Println()
+		fmt.Println("## Hot GLR Shapes")
+		fmt.Println()
+		for _, s := range scores {
+			if len(s.hotAmbiguities) == 0 && len(s.hotReduceChains) == 0 && len(s.hotMergeStates) == 0 {
+				continue
+			}
+			fmt.Printf("### %s\n\n", s.lang)
+			printHotTable("fork/action buckets", s.hotAmbiguities, "stack_in")
+			printHotTable("reduce-chain buckets", s.hotReduceChains, "reduce_steps")
+			printHotTable("merge-state buckets", s.hotMergeStates, "merge_in")
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("## Attention Buckets")
 	fmt.Println()
@@ -420,6 +474,117 @@ func render(scores []langScore) {
 		sort.Strings(buckets[key])
 		fmt.Printf("- `%s`: %s\n", key, strings.Join(buckets[key], ", "))
 	}
+}
+
+func topHotStates(in []hotGLRState, score func(h hotGLRState) uint64, limit int) []hotGLRState {
+	if len(in) == 0 || limit == 0 {
+		return nil
+	}
+	out := aggregateHotStates(in)
+	sort.Slice(out, func(i, j int) bool {
+		di, dj := score(out[i]), score(out[j])
+		if di == dj {
+			if out[i].State == out[j].State {
+				return out[i].Lookahead < out[j].Lookahead
+			}
+			return out[i].State < out[j].State
+		}
+		return di > dj
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func aggregateHotStates(in []hotGLRState) []hotGLRState {
+	type key struct {
+		state       uint32
+		lookahead   uint16
+		actionCount uint8
+		shiftCount  uint8
+		reduceCount uint8
+	}
+	byKey := map[key]*hotGLRState{}
+	for _, h := range in {
+		k := key{h.State, h.Lookahead, h.ActionCount, h.ShiftCount, h.ReduceCount}
+		dst := byKey[k]
+		if dst == nil {
+			copied := h
+			byKey[k] = &copied
+			continue
+		}
+		dst.Hits += h.Hits
+		dst.Forks += h.Forks
+		dst.MultiStackHits += h.MultiStackHits
+		dst.StackInTotal += h.StackInTotal
+		if h.StackInMax > dst.StackInMax {
+			dst.StackInMax = h.StackInMax
+		}
+		dst.ReduceChainHits += h.ReduceChainHits
+		dst.ReduceChainSteps += h.ReduceChainSteps
+		if h.ReduceChainMaxLen > dst.ReduceChainMaxLen {
+			dst.ReduceChainMaxLen = h.ReduceChainMaxLen
+		}
+		dst.MergeCalls += h.MergeCalls
+		dst.MergeStacksIn += h.MergeStacksIn
+		dst.MergeStacksOut += h.MergeStacksOut
+		if h.MergeStacksInMax > dst.MergeStacksInMax {
+			dst.MergeStacksInMax = h.MergeStacksInMax
+		}
+		if h.MergeStacksOutMax > dst.MergeStacksOutMax {
+			dst.MergeStacksOutMax = h.MergeStacksOutMax
+		}
+	}
+	out := make([]hotGLRState, 0, len(byKey))
+	for _, h := range byKey {
+		out = append(out, *h)
+	}
+	return out
+}
+
+func hasHotShapes(scores []langScore) bool {
+	for _, s := range scores {
+		if len(s.hotAmbiguities) > 0 || len(s.hotReduceChains) > 0 || len(s.hotMergeStates) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func printHotTable(label string, rows []hotGLRState, metric string) {
+	if len(rows) == 0 {
+		return
+	}
+	fmt.Printf("`%s`\n\n", label)
+	fmt.Println("| state | lookahead | actions | shifts | reduces | forks | multi_stack | stack_in | reduce_steps | merge_in | merge_out | metric |")
+	fmt.Println("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+	for _, h := range rows {
+		var score uint64
+		switch metric {
+		case "reduce_steps":
+			score = h.ReduceChainSteps
+		case "merge_in":
+			score = h.MergeStacksIn
+		default:
+			score = h.StackInTotal
+		}
+		fmt.Printf("| %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d |\n",
+			h.State,
+			h.Lookahead,
+			h.ActionCount,
+			h.ShiftCount,
+			h.ReduceCount,
+			h.Forks,
+			h.MultiStackHits,
+			h.StackInTotal,
+			h.ReduceChainSteps,
+			h.MergeStacksIn,
+			h.MergeStacksOut,
+			score,
+		)
+	}
+	fmt.Println()
 }
 
 func attrNames(scores []langScore) []string {
@@ -509,6 +674,9 @@ func (r *runtimeStats) add(o runtimeStats) {
 	}
 	r.NoTreeReduceNodes += o.NoTreeReduceNodes
 	r.NoTreeLeafNodes += o.NoTreeLeafNodes
+	r.HotAmbiguities = append(r.HotAmbiguities, o.HotAmbiguities...)
+	r.HotReduceChains = append(r.HotReduceChains, o.HotReduceChains...)
+	r.HotMergeStates = append(r.HotMergeStates, o.HotMergeStates...)
 }
 
 func ratio(num, den int64) float64 {
