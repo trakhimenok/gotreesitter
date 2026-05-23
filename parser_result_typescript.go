@@ -642,7 +642,10 @@ func normalizeTypeScriptRecoveredMemberModifiers(node *Node, ctx *typeScriptNorm
 	default:
 		return
 	}
-	tokens, ok := scanTypeScriptMemberPrefixTokens(ctx.source, node.startByte, node.endByte)
+	if !typeScriptMemberPrefixStartsWithModifier(ctx.source, node.startByte, node.endByte) {
+		return
+	}
+	tokens, ok := scanTypeScriptMemberPrefixTokens(ctx.source, node.startByte, node.endByte, node.startPoint)
 	if !ok || len(tokens) < 2 {
 		return
 	}
@@ -747,6 +750,67 @@ func typeScriptMemberModifierSymbol(ctx *typeScriptNormalizationContext, text st
 		return typeScriptMemberModifier{}
 	}
 	return typeScriptMemberModifier{sym: sym, ok: true}
+}
+
+func typeScriptMemberPrefixStartsWithModifier(source []byte, startByte, endByte uint32) bool {
+	if int(startByte) >= len(source) || startByte >= endByte || int(endByte) > len(source) {
+		return false
+	}
+	pos := int(startByte)
+	end := int(endByte)
+	for pos < end {
+		switch source[pos] {
+		case ' ', '\t', '\n', '\r':
+			pos++
+			continue
+		}
+		break
+	}
+	if pos >= end || !isTypeScriptIdentifierStartByte(source[pos]) {
+		return false
+	}
+	start := pos
+	pos++
+	for pos < end {
+		ch := source[pos]
+		if ch == '_' || ch == '$' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') {
+			pos++
+			continue
+		}
+		break
+	}
+	return typeScriptMemberPrefixBytesAreModifier(source[start:pos])
+}
+
+func typeScriptMemberPrefixBytesAreModifier(b []byte) bool {
+	switch len(b) {
+	case 3:
+		return typeScriptBytesEqualString(b, "get") || typeScriptBytesEqualString(b, "set")
+	case 5:
+		return typeScriptBytesEqualString(b, "async")
+	case 6:
+		return typeScriptBytesEqualString(b, "public") || typeScriptBytesEqualString(b, "static")
+	case 7:
+		return typeScriptBytesEqualString(b, "private")
+	case 8:
+		return typeScriptBytesEqualString(b, "readonly") || typeScriptBytesEqualString(b, "abstract")
+	case 9:
+		return typeScriptBytesEqualString(b, "protected")
+	default:
+		return false
+	}
+}
+
+func typeScriptBytesEqualString(b []byte, s string) bool {
+	if len(b) != len(s) {
+		return false
+	}
+	for i := range b {
+		if b[i] != s[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func buildTypeScriptMemberModifierNode(arena *nodeArena, ctx *typeScriptNormalizationContext, tok typeScriptMemberToken, mod typeScriptMemberModifier) *Node {
@@ -909,14 +973,16 @@ func typeScriptNextNonspaceByte(source []byte, after uint32) byte {
 	return 0
 }
 
-func scanTypeScriptMemberPrefixTokens(source []byte, startByte, endByte uint32) ([]typeScriptMemberToken, bool) {
+func scanTypeScriptMemberPrefixTokens(source []byte, startByte, endByte uint32, startPoint Point) ([]typeScriptMemberToken, bool) {
 	if int(startByte) >= len(source) || startByte >= endByte || int(endByte) > len(source) {
 		return nil, false
 	}
 	pos := int(startByte)
 	end := int(endByte)
+	point := startPoint
 	var tokens []typeScriptMemberToken
 	for pos < end {
+		spaceStart := pos
 		for pos < end {
 			switch source[pos] {
 			case ' ', '\t', '\n', '\r':
@@ -925,12 +991,16 @@ func scanTypeScriptMemberPrefixTokens(source []byte, startByte, endByte uint32) 
 			}
 			break
 		}
+		if pos > spaceStart {
+			point = advancePointByBytes(point, source[spaceStart:pos])
+		}
 		if pos >= end {
 			break
 		}
 		switch ch := source[pos]; {
 		case isTypeScriptIdentifierStartByte(ch):
 			tokStart := pos
+			tokStartPoint := point
 			pos++
 			for pos < end {
 				next := source[pos]
@@ -940,31 +1010,37 @@ func scanTypeScriptMemberPrefixTokens(source []byte, startByte, endByte uint32) 
 				}
 				break
 			}
+			tokEndPoint := advancePointByBytes(tokStartPoint, source[tokStart:pos])
 			tokens = append(tokens, typeScriptMemberToken{
 				text:       string(source[tokStart:pos]),
 				startByte:  uint32(tokStart),
 				endByte:    uint32(pos),
-				startPoint: advancePointByBytes(Point{}, source[:tokStart]),
-				endPoint:   advancePointByBytes(Point{}, source[:pos]),
+				startPoint: tokStartPoint,
+				endPoint:   tokEndPoint,
 				kind:       typeScriptMemberTokenIdentifier,
 			})
+			point = tokEndPoint
 		case ch >= '0' && ch <= '9':
 			tokStart := pos
+			tokStartPoint := point
 			pos++
 			for pos < end && source[pos] >= '0' && source[pos] <= '9' {
 				pos++
 			}
+			tokEndPoint := advancePointByBytes(tokStartPoint, source[tokStart:pos])
 			tokens = append(tokens, typeScriptMemberToken{
 				text:       string(source[tokStart:pos]),
 				startByte:  uint32(tokStart),
 				endByte:    uint32(pos),
-				startPoint: advancePointByBytes(Point{}, source[:tokStart]),
-				endPoint:   advancePointByBytes(Point{}, source[:pos]),
+				startPoint: tokStartPoint,
+				endPoint:   tokEndPoint,
 				kind:       typeScriptMemberTokenNumber,
 			})
+			point = tokEndPoint
 		case ch == '\'' || ch == '"':
 			quote := ch
 			tokStart := pos
+			tokStartPoint := point
 			pos++
 			for pos < end {
 				if source[pos] == '\\' {
@@ -980,14 +1056,16 @@ func scanTypeScriptMemberPrefixTokens(source []byte, startByte, endByte uint32) 
 			if pos > end || source[pos-1] != quote {
 				return nil, false
 			}
+			tokEndPoint := advancePointByBytes(tokStartPoint, source[tokStart:pos])
 			tokens = append(tokens, typeScriptMemberToken{
 				text:       string(source[tokStart:pos]),
 				startByte:  uint32(tokStart),
 				endByte:    uint32(pos),
-				startPoint: advancePointByBytes(Point{}, source[:tokStart]),
-				endPoint:   advancePointByBytes(Point{}, source[:pos]),
+				startPoint: tokStartPoint,
+				endPoint:   tokEndPoint,
 				kind:       typeScriptMemberTokenString,
 			})
+			point = tokEndPoint
 		default:
 			return tokens, len(tokens) > 1
 		}

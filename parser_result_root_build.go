@@ -353,7 +353,15 @@ func (p *Parser) shouldDeferResultParentLinks(root *Node) bool {
 	if p.noResultCompatibilityBenchmarkOnly && !p.noTreeBenchmarkOnly {
 		return true
 	}
-	return (p.language.Name == "java" || p.language.Name == "python") && !p.noTreeBenchmarkOnly
+	if p.noTreeBenchmarkOnly {
+		return false
+	}
+	switch p.language.Name {
+	case "java", "python", "typescript", "tsx":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) normalizeRootSourceStart(root *Node, source []byte) {
