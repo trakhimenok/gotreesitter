@@ -1378,6 +1378,9 @@ func rewriteJavaScriptTypeScriptCallTarget(target, arguments, callNode *Node, la
 		return nil
 	}
 	if isJavaScriptTypeScriptCallableShape(target, lang) {
+		if len(callNode.children) == 2 && target == callNode.children[0] && arguments == callNode.children[1] {
+			return nil
+		}
 		rewrittenCall := cloneNodeInArena(callNode.ownerArena, callNode)
 		rewrittenCall.children = cloneNodeSliceInArena(callNode.ownerArena, []*Node{target, arguments})
 		populateParentNode(rewrittenCall, rewrittenCall.children)
