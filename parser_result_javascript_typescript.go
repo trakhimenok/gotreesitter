@@ -24,7 +24,6 @@ func normalizeTypeScriptTreeCompatibility(root *Node, source []byte, lang *Langu
 func normalizeTypeScriptTreeCompatibilityWithParser(root *Node, source []byte, parser *Parser, lang *Language) {
 	recordPasses := parser != nil && parser.currentMaterializationTiming() != nil
 	if !recordPasses {
-		normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "empty_statement", ";")
 		normalizeJavaScriptTypeScriptOptionalChainLeaves(root, source, lang)
 		normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedence(root, source, lang)
 		normalizeTypeScriptRecoveredNamespaceRoot(root, source, lang)
@@ -44,9 +43,6 @@ func normalizeTypeScriptTreeCompatibilityWithParser(root *Node, source []byte, p
 	}
 	recordTypeScriptCompatSourceFlagMetrics(parser, typeScriptCompatSourceFlagsFor(source))
 
-	run("ts_empty_statement", func() normalizationPassCounters {
-		return normalizeCollapsedNamedLeafChildrenBySourceWithStats(root, source, lang, "empty_statement", ";")
-	})
 	recordTypeScriptCompatCandidateMetrics(parser, root, lang)
 	runVoid("ts_optional_chain_leaves", func() {
 		normalizeJavaScriptTypeScriptOptionalChainLeaves(root, source, lang)
@@ -57,11 +53,18 @@ func normalizeTypeScriptTreeCompatibilityWithParser(root *Node, source []byte, p
 		syntaxStats = normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedenceWithDetailedStats(root, source, lang)
 		haveSyntaxStats = true
 		parser.recordNormalizationMetric("ts_syntax_precedence_index", 1, syntaxStats.indexBuilds, syntaxStats.indexNodesVisited, 0)
+		parser.recordNormalizationMetric("ts_empty_statement_candidates", 1, 1, syntaxStats.emptyStatement.nodesVisited, syntaxStats.emptyStatement.nodesRewritten)
 		parser.recordNormalizationMetric("ts_statement_keyword_candidates", 1, 1, syntaxStats.statementKeyword.nodesVisited, syntaxStats.statementKeyword.nodesRewritten)
 		parser.recordNormalizationMetric("ts_call_precedence_candidates", 1, 1, syntaxStats.call.nodesVisited, syntaxStats.call.nodesRewritten)
 		parser.recordNormalizationMetric("ts_unary_precedence_candidates", 1, 1, syntaxStats.unary.nodesVisited, syntaxStats.unary.nodesRewritten)
 		parser.recordNormalizationMetric("ts_binary_precedence_candidates", 1, 1, syntaxStats.binary.nodesVisited, syntaxStats.binary.nodesRewritten)
 		return syntaxStats.statementKeyword
+	})
+	run("ts_empty_statement", func() normalizationPassCounters {
+		if haveSyntaxStats {
+			return syntaxStats.emptyStatement
+		}
+		return normalizeCollapsedNamedLeafChildrenBySourceWithStats(root, source, lang, "empty_statement", ";")
 	})
 	run("ts_call_precedence", func() normalizationPassCounters {
 		if haveSyntaxStats {
@@ -945,6 +948,7 @@ type javaScriptTypeScriptPrecedenceStats struct {
 }
 
 type javaScriptTypeScriptSyntaxNormalizationStats struct {
+	emptyStatement    normalizationPassCounters
 	statementKeyword  normalizationPassCounters
 	call              normalizationPassCounters
 	unary             normalizationPassCounters
@@ -986,6 +990,8 @@ func normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedenceWithDetailedStat
 	if !ok {
 		return stats
 	}
+	emptyStatementSym, hasEmptyStatement := symbolByName(lang, "empty_statement")
+	semicolonSym, semicolonNamed, hasSemicolon := symbolMeta(lang, ";")
 	ifStmtSym, hasIfStmt := symbolByName(lang, "if_statement")
 	whileStmtSym, hasWhileStmt := symbolByName(lang, "while_statement")
 	ifSym, ifNamed, hasIf := symbolMeta(lang, "if")
@@ -995,10 +1001,12 @@ func normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedenceWithDetailedStat
 	index := rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBinaryIndex(
 		root, source, lang,
 		callSym, unarySym, binarySym,
+		emptyStatementSym, hasEmptyStatement, semicolonSym, semicolonNamed, hasSemicolon,
 		ifStmtSym, hasIfStmt, ifSym, ifNamed, hasIf,
 		whileStmtSym, hasWhileStmt, whileSym, whileNamed, hasWhile,
 		closeBraceSym, hasCloseBrace,
 	)
+	stats.emptyStatement = index.emptyStatement
 	stats.statementKeyword = index.statementKeyword
 	stats.call = index.call
 	stats.indexBuilds += index.builds
@@ -1068,6 +1076,11 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 	source []byte,
 	lang *Language,
 	callSym, unarySym, binarySym Symbol,
+	emptyStatementSym Symbol,
+	hasEmptyStatement bool,
+	semicolonSym Symbol,
+	semicolonNamed bool,
+	hasSemicolon bool,
 	ifStmtSym Symbol,
 	hasIfStmt bool,
 	ifSym Symbol,
@@ -1092,6 +1105,12 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 			return
 		}
 		index.nodesVisited++
+		if hasEmptyStatement && hasSemicolon && n.symbol == emptyStatementSym {
+			index.emptyStatement.nodesVisited++
+			if normalizeJavaScriptTypeScriptEmptyStatementLeafWithSymbolChanged(n, source, semicolonSym, semicolonNamed) {
+				index.emptyStatement.nodesRewritten++
+			}
+		}
 		if hasIfStmt && hasIf && n.symbol == ifStmtSym {
 			index.statementKeyword.nodesVisited++
 			if normalizeJavaScriptTypeScriptStatementKeywordLeafWithSymbolChanged(n, source, "if", ifSym, ifNamed, closeBraceSym, hasCloseBrace) {
@@ -1144,6 +1163,21 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 	}
 	walk(root)
 	return index
+}
+
+func normalizeJavaScriptTypeScriptEmptyStatementLeafWithSymbolChanged(node *Node, source []byte, semicolonSym Symbol, semicolonNamed bool) bool {
+	if node == nil || resultChildCount(node) != 0 || len(source) == 0 {
+		return false
+	}
+	if node.startByte > node.endByte || int(node.endByte) > len(source) {
+		return false
+	}
+	if node.endByte-node.startByte != 1 || source[node.startByte] != ';' {
+		return false
+	}
+	leaf := newLeafNodeInArena(node.ownerArena, semicolonSym, semicolonNamed, node.startByte, node.endByte, node.startPoint, node.endPoint)
+	replaceNodeChildrenUnfielded(node, cloneNodeSliceInArena(node.ownerArena, []*Node{leaf}))
+	return true
 }
 
 func rewriteJavaScriptTypeScriptCallPrecedenceAndBuildUnaryBinaryIndex(root *Node, lang *Language, callSym, unarySym, binarySym Symbol) javaScriptTypeScriptUnaryBinaryPrecedenceIndex {
@@ -1490,6 +1524,7 @@ func normalizeJavaScriptTypeScriptUnaryBinaryPrecedenceWithDetailedStats(root *N
 }
 
 type javaScriptTypeScriptUnaryBinaryPrecedenceIndex struct {
+	emptyStatement   normalizationPassCounters
 	statementKeyword normalizationPassCounters
 	call             normalizationPassCounters
 	unaryCandidates  []javaScriptTypeScriptPrecedenceCandidate

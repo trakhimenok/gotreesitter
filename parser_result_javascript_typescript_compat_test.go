@@ -124,6 +124,39 @@ func TestNormalizeJavaScriptEmptyStatementRestoresSemicolonChild(t *testing.T) {
 	}
 }
 
+func TestNormalizeTypeScriptSyntaxPassRestoresEmptyStatementSemicolonChild(t *testing.T) {
+	lang := &Language{
+		Name:        "typescript",
+		SymbolNames: []string{"EOF", "program", "empty_statement", ";", "call_expression", "unary_expression", "binary_expression"},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF", Visible: false, Named: false},
+			{Name: "program", Visible: true, Named: true},
+			{Name: "empty_statement", Visible: true, Named: true},
+			{Name: ";", Visible: true, Named: false},
+			{Name: "call_expression", Visible: true, Named: true},
+			{Name: "unary_expression", Visible: true, Named: true},
+			{Name: "binary_expression", Visible: true, Named: true},
+		},
+	}
+
+	arena := newNodeArena(arenaClassFull)
+	stmt := newLeafNodeInArena(arena, 2, true, 0, 1, Point{}, Point{Column: 1})
+	root := newParentNodeInArena(arena, 1, true, []*Node{stmt}, nil, 0)
+
+	normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedence(root, []byte(";"), lang)
+
+	if got, want := resultChildCount(stmt), 1; got != want {
+		t.Fatalf("empty_statement child count = %d, want %d", got, want)
+	}
+	child := resultChildAt(stmt, 0)
+	if child == nil {
+		t.Fatal("empty_statement child is nil")
+	}
+	if got, want := child.Type(lang), ";"; got != want {
+		t.Fatalf("empty_statement child type = %q, want %q", got, want)
+	}
+}
+
 func TestNormalizeJavaScriptStatementKeywordRestoresWhileLeaf(t *testing.T) {
 	lang := &Language{
 		Name:        "javascript",
