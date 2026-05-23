@@ -65,6 +65,10 @@ type typeScriptNormalizationContext struct {
 	stringSym                  Symbol
 	stringFragmentSym          Symbol
 	greaterThanSym             Symbol
+	pipeSym                    Symbol
+	ampersandSym               Symbol
+	hasPipeSym                 bool
+	hasAmpersandSym            bool
 	parenthesizedExprSym       Symbol
 	lessThanSym                Symbol
 	identifierSym              Symbol
@@ -145,6 +149,9 @@ type typeScriptCompatibilityStats struct {
 	memberModifiers             normalizationPassCounters
 	enumBodies                  normalizationPassCounters
 	binaryChildren              normalizationPassCounters
+	binaryGenericChildren       normalizationPassCounters
+	binaryAsTypeChildren        normalizationPassCounters
+	binaryFastSkipped           normalizationPassCounters
 	callChildren                normalizationPassCounters
 	asChildren                  normalizationPassCounters
 	typeAssertionChildren       normalizationPassCounters
@@ -207,6 +214,21 @@ func normalizeTypeScriptCompatibilityWithStats(root *Node, source []byte, lang *
 				if bucket == nil {
 					break
 				}
+				binaryGenericCandidate := false
+				binaryAsTypeCandidate := false
+				if child != nil && child.symbol == ctx.binaryExpressionSym {
+					binaryGenericCandidate = ctx.canRewriteGenericCalls && typeScriptBinaryOperatorCouldBeGenericCall(child, &ctx)
+					binaryAsTypeCandidate = ctx.canRewriteAsExpressions && typeScriptBinaryOperatorCouldBeAsTypeChain(child, &ctx)
+					if binaryGenericCandidate {
+						stats.binaryGenericChildren.nodesVisited++
+					}
+					if binaryAsTypeCandidate {
+						stats.binaryAsTypeChildren.nodesVisited++
+					}
+					if !binaryGenericCandidate && !binaryAsTypeCandidate {
+						stats.binaryFastSkipped.nodesVisited++
+					}
+				}
 				bucket.nodesVisited++
 				rewritten := rewriteTypeScriptCompatibilityChild(child, &ctx)
 				if rewritten == nil {
@@ -217,6 +239,11 @@ func normalizeTypeScriptCompatibilityWithStats(root *Node, source []byte, lang *
 				rewritten.childIndex = int32(i)
 				if bucket != nil {
 					bucket.nodesRewritten++
+				}
+				if binaryGenericCandidate {
+					stats.binaryGenericChildren.nodesRewritten++
+				} else if binaryAsTypeCandidate {
+					stats.binaryAsTypeChildren.nodesRewritten++
 				}
 				stats.total.nodesRewritten++
 				child = rewritten
@@ -300,11 +327,13 @@ func rewriteTypeScriptCompatibilityChild(child *Node, ctx *typeScriptNormalizati
 	switch child.symbol {
 	case ctx.binaryExpressionSym:
 		if ctx.canRewriteGenericCalls {
-			if rewritten := rewriteTypeScriptPredefinedGenericCall(child, ctx); rewritten != nil {
-				return rewritten
+			if typeScriptBinaryOperatorCouldBeGenericCall(child, ctx) {
+				if rewritten := rewriteTypeScriptPredefinedGenericCall(child, ctx); rewritten != nil {
+					return rewritten
+				}
 			}
 		}
-		if ctx.canRewriteAsExpressions {
+		if ctx.canRewriteAsExpressions && typeScriptBinaryOperatorCouldBeAsTypeChain(child, ctx) {
 			return rewriteTypeScriptAsTypeChain(child, ctx)
 		}
 	case ctx.callSym:
@@ -325,6 +354,30 @@ func rewriteTypeScriptCompatibilityChild(child *Node, ctx *typeScriptNormalizati
 		}
 	}
 	return nil
+}
+
+func typeScriptBinaryOperatorCouldBeGenericCall(node *Node, ctx *typeScriptNormalizationContext) bool {
+	op, ok := typeScriptBinaryExpressionOperator(node, ctx)
+	return ok && op.symbol == ctx.greaterThanSym
+}
+
+func typeScriptBinaryOperatorCouldBeAsTypeChain(node *Node, ctx *typeScriptNormalizationContext) bool {
+	if !ctx.hasPipeSym || !ctx.hasAmpersandSym {
+		return true
+	}
+	op, ok := typeScriptBinaryExpressionOperator(node, ctx)
+	return ok && (op.symbol == ctx.pipeSym || op.symbol == ctx.ampersandSym)
+}
+
+func typeScriptBinaryExpressionOperator(node *Node, ctx *typeScriptNormalizationContext) (*Node, bool) {
+	if node == nil || ctx == nil || node.symbol != ctx.binaryExpressionSym || len(node.children) != 3 {
+		return nil, false
+	}
+	op := node.children[1]
+	if op == nil {
+		return nil, false
+	}
+	return op, true
 }
 
 func normalizeTypeScriptIdentifierKeywordAliases(node *Node, ctx *typeScriptNormalizationContext) {
@@ -655,6 +708,8 @@ func newTypeScriptNormalizationContext(source []byte, lang *Language) (typeScrip
 		ctx.unionTypeNamed = symbolIsNamed(lang, ctx.unionTypeSym)
 		ctx.intersectionTypeSym = syms[4]
 		ctx.intersectionTypeNamed = symbolIsNamed(lang, ctx.intersectionTypeSym)
+		ctx.pipeSym, ctx.hasPipeSym = lang.SymbolByName("|")
+		ctx.ampersandSym, ctx.hasAmpersandSym = lang.SymbolByName("&")
 		if syms, ok := languageSymbols(lang,
 			"object_type",
 			"property_signature",

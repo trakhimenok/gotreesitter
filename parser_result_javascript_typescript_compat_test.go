@@ -190,6 +190,45 @@ func TestNormalizeTypeScriptSyntaxPassRestoresExistentialTypeStarChild(t *testin
 	}
 }
 
+func TestTypeScriptBinaryOperatorCompatibilityGate(t *testing.T) {
+	ctx := typeScriptNormalizationContext{
+		binaryExpressionSym: 1,
+		greaterThanSym:      2,
+		pipeSym:             3,
+		ampersandSym:        4,
+		hasPipeSym:          true,
+		hasAmpersandSym:     true,
+	}
+	arena := newNodeArena(arenaClassFull)
+	left := newLeafNodeInArena(arena, 6, true, 0, 1, Point{}, Point{Column: 1})
+	op := newLeafNodeInArena(arena, 5, false, 1, 2, Point{Column: 1}, Point{Column: 2})
+	right := newLeafNodeInArena(arena, 6, true, 2, 3, Point{Column: 2}, Point{Column: 3})
+	binary := newParentNodeInArena(arena, ctx.binaryExpressionSym, true, []*Node{left, op, right}, nil, 0)
+
+	if typeScriptBinaryOperatorCouldBeGenericCall(binary, &ctx) {
+		t.Fatal("plus operator should not be a generic-call candidate")
+	}
+	if typeScriptBinaryOperatorCouldBeAsTypeChain(binary, &ctx) {
+		t.Fatal("plus operator should not be an as-type-chain candidate")
+	}
+
+	op.symbol = ctx.greaterThanSym
+	if !typeScriptBinaryOperatorCouldBeGenericCall(binary, &ctx) {
+		t.Fatal("greater-than operator should be a generic-call candidate")
+	}
+	if typeScriptBinaryOperatorCouldBeAsTypeChain(binary, &ctx) {
+		t.Fatal("greater-than operator should not be an as-type-chain candidate")
+	}
+
+	op.symbol = ctx.pipeSym
+	if typeScriptBinaryOperatorCouldBeGenericCall(binary, &ctx) {
+		t.Fatal("pipe operator should not be a generic-call candidate")
+	}
+	if !typeScriptBinaryOperatorCouldBeAsTypeChain(binary, &ctx) {
+		t.Fatal("pipe operator should be an as-type-chain candidate")
+	}
+}
+
 func TestNormalizeJavaScriptStatementKeywordRestoresWhileLeaf(t *testing.T) {
 	lang := &Language{
 		Name:        "javascript",
