@@ -16,6 +16,13 @@ type runtimeAuditNodeInfo struct {
 
 type runtimeAuditEquivStateInfo struct {
 	state                          StateID
+	stackEquivCalls                uint64
+	stackEquivTrue                 uint64
+	stackEquivDepthMismatch        uint64
+	stackEquivHashMismatch         uint64
+	stackEquivStateMismatch        uint64
+	stackEquivPayloadMismatch      uint64
+	stackEquivEntryCompares        uint64
 	equivCacheLookups              uint64
 	equivCacheHits                 uint64
 	equivCacheStores               uint64
@@ -101,6 +108,13 @@ type runtimeAudit struct {
 	globalCullStacksIn  uint64
 	globalCullStacksOut uint64
 
+	stackEquivCalls                uint64
+	stackEquivTrue                 uint64
+	stackEquivDepthMismatch        uint64
+	stackEquivHashMismatch         uint64
+	stackEquivStateMismatch        uint64
+	stackEquivPayloadMismatch      uint64
+	stackEquivEntryCompares        uint64
 	equivCacheLookups              uint64
 	equivCacheHits                 uint64
 	equivCacheStores               uint64
@@ -197,6 +211,13 @@ func (a *runtimeAudit) beginParse() {
 	a.mergeSlotsUsed = 0
 	a.globalCullStacksIn = 0
 	a.globalCullStacksOut = 0
+	a.stackEquivCalls = 0
+	a.stackEquivTrue = 0
+	a.stackEquivDepthMismatch = 0
+	a.stackEquivHashMismatch = 0
+	a.stackEquivStateMismatch = 0
+	a.stackEquivPayloadMismatch = 0
+	a.stackEquivEntryCompares = 0
 	a.equivCacheLookups = 0
 	a.equivCacheHits = 0
 	a.equivCacheStores = 0
@@ -476,6 +497,76 @@ func (a *runtimeAudit) recordGlobalCull(in, out int) {
 	}
 	a.globalCullStacksIn += uint64(in)
 	a.globalCullStacksOut += uint64(out)
+}
+
+func (a *runtimeAudit) recordStackEquivCall() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.stackEquivCalls++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.stackEquivCalls++
+	}
+}
+
+func (a *runtimeAudit) recordStackEquivTrue() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.stackEquivTrue++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.stackEquivTrue++
+	}
+}
+
+func (a *runtimeAudit) recordStackEquivDepthMismatch() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.stackEquivDepthMismatch++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.stackEquivDepthMismatch++
+	}
+}
+
+func (a *runtimeAudit) recordStackEquivHashMismatch() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.stackEquivHashMismatch++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.stackEquivHashMismatch++
+	}
+}
+
+func (a *runtimeAudit) recordStackEquivStateMismatch() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.stackEquivStateMismatch++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.stackEquivStateMismatch++
+	}
+}
+
+func (a *runtimeAudit) recordStackEquivPayloadMismatch() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.stackEquivPayloadMismatch++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.stackEquivPayloadMismatch++
+	}
+}
+
+func (a *runtimeAudit) recordStackEquivEntryCompare() {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	a.stackEquivEntryCompares++
+	if state := a.currentEquivStateInfo(); state != nil {
+		state.stackEquivEntryCompares++
+	}
 }
 
 func (a *runtimeAudit) recordEquivCacheLookup() {
@@ -770,6 +861,13 @@ func (a *runtimeAudit) equivStateStats() []ParseEquivStateRuntime {
 	for _, info := range a.equivState {
 		out = append(out, ParseEquivStateRuntime{
 			State:                          info.state,
+			StackEquivCalls:                info.stackEquivCalls,
+			StackEquivTrue:                 info.stackEquivTrue,
+			StackEquivDepthMismatch:        info.stackEquivDepthMismatch,
+			StackEquivHashMismatch:         info.stackEquivHashMismatch,
+			StackEquivStateMismatch:        info.stackEquivStateMismatch,
+			StackEquivPayloadMismatch:      info.stackEquivPayloadMismatch,
+			StackEquivEntryCompares:        info.stackEquivEntryCompares,
 			EquivCacheLookups:              info.equivCacheLookups,
 			EquivCacheHits:                 info.equivCacheHits,
 			EquivCacheStores:               info.equivCacheStores,

@@ -574,6 +574,13 @@ type PendingParentFieldRejectPayloadStats struct {
 
 type ParseEquivStateRuntime struct {
 	State                          StateID
+	StackEquivCalls                uint64
+	StackEquivTrue                 uint64
+	StackEquivDepthMismatch        uint64
+	StackEquivHashMismatch         uint64
+	StackEquivStateMismatch        uint64
+	StackEquivPayloadMismatch      uint64
+	StackEquivEntryCompares        uint64
 	EquivCacheLookups              uint64
 	EquivCacheHits                 uint64
 	EquivCacheStores               uint64
@@ -681,6 +688,13 @@ type ParseRuntime struct {
 	MergeSlotsUsed                               uint64
 	GlobalCullStacksIn                           uint64
 	GlobalCullStacksOut                          uint64
+	StackEquivCalls                              uint64
+	StackEquivTrue                               uint64
+	StackEquivDepthMismatch                      uint64
+	StackEquivHashMismatch                       uint64
+	StackEquivStateMismatch                      uint64
+	StackEquivPayloadMismatch                    uint64
+	StackEquivEntryCompares                      uint64
 	EquivCacheLookups                            uint64
 	EquivCacheHits                               uint64
 	EquivCacheStores                             uint64

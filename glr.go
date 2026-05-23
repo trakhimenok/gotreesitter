@@ -558,10 +558,26 @@ func nodeEquivCacheIndex(a, b *Node, depth int) int {
 
 func stackEntriesEqualForLanguageWithScratch(scratch *glrMergeScratch, lang *Language, a, b []stackEntry) bool {
 	if len(a) != len(b) {
+		if audit := activeEquivAudit(scratch); audit != nil {
+			audit.recordStackEquivDepthMismatch()
+		}
 		return false
 	}
-	for i := range a {
-		if a[i].state != b[i].state || !stackEntryPayloadsEquivalentForLanguageWithScratch(scratch, lang, a[i], b[i]) {
+	audit := activeEquivAudit(scratch)
+	for i := len(a) - 1; i >= 0; i-- {
+		if audit != nil {
+			audit.recordStackEquivEntryCompare()
+		}
+		if a[i].state != b[i].state {
+			if audit != nil {
+				audit.recordStackEquivStateMismatch()
+			}
+			return false
+		}
+		if !stackEntryPayloadsEquivalentForLanguageWithScratch(scratch, lang, a[i], b[i]) {
+			if audit != nil {
+				audit.recordStackEquivPayloadMismatch()
+			}
 			return false
 		}
 	}
@@ -584,16 +600,35 @@ func gssStacksEqualForLanguageWithScratch(scratch *glrMergeScratch, lang *Langua
 		return false
 	}
 	if a.head.depth != b.head.depth {
+		if audit := activeEquivAudit(scratch); audit != nil {
+			audit.recordStackEquivDepthMismatch()
+		}
 		return false
 	}
 	if gssNodeHash(a.head) != gssNodeHash(b.head) {
+		if audit := activeEquivAudit(scratch); audit != nil {
+			audit.recordStackEquivHashMismatch()
+		}
 		return false
 	}
+	audit := activeEquivAudit(scratch)
 	for an, bn := a.head, b.head; an != nil && bn != nil; an, bn = an.prev, bn.prev {
 		if an == bn {
 			return true
 		}
-		if an.entry.state != bn.entry.state || !stackEntryPayloadsEquivalentForLanguageWithScratch(scratch, lang, an.entry, bn.entry) {
+		if audit != nil {
+			audit.recordStackEquivEntryCompare()
+		}
+		if an.entry.state != bn.entry.state {
+			if audit != nil {
+				audit.recordStackEquivStateMismatch()
+			}
+			return false
+		}
+		if !stackEntryPayloadsEquivalentForLanguageWithScratch(scratch, lang, an.entry, bn.entry) {
+			if audit != nil {
+				audit.recordStackEquivPayloadMismatch()
+			}
 			return false
 		}
 	}
@@ -612,13 +647,23 @@ func stackEquivalentForLanguageWithScratch(scratch *glrMergeScratch, lang *Langu
 	if perfCountersEnabled {
 		perfRecordStackEquivalentCall()
 	}
+	audit := activeEquivAudit(scratch)
+	if audit != nil {
+		audit.recordStackEquivCall()
+	}
 	if a.depth() != b.depth() {
+		if audit != nil {
+			audit.recordStackEquivDepthMismatch()
+		}
 		return false
 	}
 	if a.gss.head != nil && b.gss.head != nil {
 		eq := gssStacksEqualForLanguageWithScratch(scratch, lang, a.gss, b.gss)
 		if eq && perfCountersEnabled {
 			perfRecordStackEquivalentTrue()
+		}
+		if eq && audit != nil {
+			audit.recordStackEquivTrue()
 		}
 		return eq
 	}
@@ -627,6 +672,9 @@ func stackEquivalentForLanguageWithScratch(scratch *glrMergeScratch, lang *Langu
 		if eq && perfCountersEnabled {
 			perfRecordStackEquivalentTrue()
 		}
+		if eq && audit != nil {
+			audit.recordStackEquivTrue()
+		}
 		return eq
 	}
 	if b.gss.head != nil {
@@ -634,11 +682,17 @@ func stackEquivalentForLanguageWithScratch(scratch *glrMergeScratch, lang *Langu
 		if eq && perfCountersEnabled {
 			perfRecordStackEquivalentTrue()
 		}
+		if eq && audit != nil {
+			audit.recordStackEquivTrue()
+		}
 		return eq
 	}
 	eq := stackEntriesEqualForLanguageWithScratch(scratch, lang, a.entries, b.entries)
 	if eq && perfCountersEnabled {
 		perfRecordStackEquivalentTrue()
+	}
+	if eq && audit != nil {
+		audit.recordStackEquivTrue()
 	}
 	return eq
 }
@@ -648,15 +702,31 @@ func gssStackEntriesEqualForLanguageWithScratch(scratch *glrMergeScratch, lang *
 		return len(entries) == 0
 	}
 	if len(entries) != gss.len() {
+		if audit := activeEquivAudit(scratch); audit != nil {
+			audit.recordStackEquivDepthMismatch()
+		}
 		return false
 	}
+	audit := activeEquivAudit(scratch)
 	i := len(entries) - 1
 	for n := gss.head; n != nil; n = n.prev {
 		if i < 0 {
 			return false
 		}
 		e := entries[i]
-		if n.entry.state != e.state || !stackEntryPayloadsEquivalentForLanguageWithScratch(scratch, lang, n.entry, e) {
+		if audit != nil {
+			audit.recordStackEquivEntryCompare()
+		}
+		if n.entry.state != e.state {
+			if audit != nil {
+				audit.recordStackEquivStateMismatch()
+			}
+			return false
+		}
+		if !stackEntryPayloadsEquivalentForLanguageWithScratch(scratch, lang, n.entry, e) {
+			if audit != nil {
+				audit.recordStackEquivPayloadMismatch()
+			}
 			return false
 		}
 		i--

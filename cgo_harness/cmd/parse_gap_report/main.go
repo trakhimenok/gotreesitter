@@ -198,6 +198,11 @@ type runtimeStats struct {
 	MergeReplacements               uint64        `json:"merge_replacements,omitempty"`
 	StackEquivalentCalls            uint64        `json:"stack_equivalent_calls,omitempty"`
 	StackEquivalentTrue             uint64        `json:"stack_equivalent_true,omitempty"`
+	StackEquivDepthMismatch         uint64        `json:"stack_equiv_depth_mismatch,omitempty"`
+	StackEquivHashMismatch          uint64        `json:"stack_equiv_hash_mismatch,omitempty"`
+	StackEquivStateMismatch         uint64        `json:"stack_equiv_state_mismatch,omitempty"`
+	StackEquivPayloadMismatch       uint64        `json:"stack_equiv_payload_mismatch,omitempty"`
+	StackEquivEntryCompares         uint64        `json:"stack_equiv_entry_compares,omitempty"`
 	EquivCacheLookups               uint64        `json:"equiv_cache_lookups,omitempty"`
 	EquivCacheHits                  uint64        `json:"equiv_cache_hits,omitempty"`
 	EquivCacheStores                uint64        `json:"equiv_cache_stores,omitempty"`
@@ -320,6 +325,13 @@ type hotGLRState struct {
 	EquivCacheKeyMisses            uint64         `json:"equiv_cache_key_misses,omitempty"`
 	EquivCacheEpochMisses          uint64         `json:"equiv_cache_epoch_misses,omitempty"`
 	EquivCacheVersionMisses        uint64         `json:"equiv_cache_version_misses,omitempty"`
+	StackEquivCalls                uint64         `json:"stack_equiv_calls,omitempty"`
+	StackEquivTrue                 uint64         `json:"stack_equiv_true,omitempty"`
+	StackEquivDepthMismatch        uint64         `json:"stack_equiv_depth_mismatch,omitempty"`
+	StackEquivHashMismatch         uint64         `json:"stack_equiv_hash_mismatch,omitempty"`
+	StackEquivStateMismatch        uint64         `json:"stack_equiv_state_mismatch,omitempty"`
+	StackEquivPayloadMismatch      uint64         `json:"stack_equiv_payload_mismatch,omitempty"`
+	StackEquivEntryCompares        uint64         `json:"stack_equiv_entry_compares,omitempty"`
 	EquivSkipError                 uint64         `json:"equiv_skip_error,omitempty"`
 	EquivSkipLeaf                  uint64         `json:"equiv_skip_leaf,omitempty"`
 	EquivSkipFieldMismatch         uint64         `json:"equiv_skip_field_mismatch,omitempty"`
@@ -1160,8 +1172,8 @@ func hotEquivStatesFromRuntime(stats []gotreesitter.ParseEquivStateRuntime, limi
 		return nil
 	}
 	sort.Slice(stats, func(i, j int) bool {
-		di := stats[i].EquivCacheLookups + stats[i].EquivExactCalls + stats[i].EquivFrontierCalls
-		dj := stats[j].EquivCacheLookups + stats[j].EquivExactCalls + stats[j].EquivFrontierCalls
+		di := stats[i].StackEquivCalls + stats[i].StackEquivEntryCompares + stats[i].EquivCacheLookups + stats[i].EquivExactCalls + stats[i].EquivFrontierCalls
+		dj := stats[j].StackEquivCalls + stats[j].StackEquivEntryCompares + stats[j].EquivCacheLookups + stats[j].EquivExactCalls + stats[j].EquivFrontierCalls
 		if di == dj {
 			return stats[i].State < stats[j].State
 		}
@@ -1174,6 +1186,13 @@ func hotEquivStatesFromRuntime(stats []gotreesitter.ParseEquivStateRuntime, limi
 	for _, stat := range stats {
 		out = append(out, hotGLRState{
 			State:                          uint32(stat.State),
+			StackEquivCalls:                stat.StackEquivCalls,
+			StackEquivTrue:                 stat.StackEquivTrue,
+			StackEquivDepthMismatch:        stat.StackEquivDepthMismatch,
+			StackEquivHashMismatch:         stat.StackEquivHashMismatch,
+			StackEquivStateMismatch:        stat.StackEquivStateMismatch,
+			StackEquivPayloadMismatch:      stat.StackEquivPayloadMismatch,
+			StackEquivEntryCompares:        stat.StackEquivEntryCompares,
 			EquivCacheLookups:              stat.EquivCacheLookups,
 			EquivCacheHits:                 stat.EquivCacheHits,
 			EquivCacheStores:               stat.EquivCacheStores,
@@ -1253,6 +1272,11 @@ func statsFromRuntime(rt gotreesitter.ParseRuntime) runtimeStats {
 		ActionLookupNS:                 rt.ActionLookupNanos,
 		GLRMergeNS:                     rt.GLRMergeNanos,
 		GLRCullNS:                      rt.GLRCullNanos,
+		StackEquivDepthMismatch:        rt.StackEquivDepthMismatch,
+		StackEquivHashMismatch:         rt.StackEquivHashMismatch,
+		StackEquivStateMismatch:        rt.StackEquivStateMismatch,
+		StackEquivPayloadMismatch:      rt.StackEquivPayloadMismatch,
+		StackEquivEntryCompares:        rt.StackEquivEntryCompares,
 		EquivCacheLookups:              rt.EquivCacheLookups,
 		EquivCacheHits:                 rt.EquivCacheHits,
 		EquivCacheStores:               rt.EquivCacheStores,
