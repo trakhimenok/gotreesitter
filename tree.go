@@ -1830,6 +1830,25 @@ func (t *Tree) ensureExternalScannerCheckpoints() {
 	rebuildExternalScannerCheckpoints(t.root, t.language)
 }
 
+func (t *Tree) deferResultCompatibility() {
+	if t == nil || t.root == nil || t.language == nil {
+		return
+	}
+	t.resultCompatibilityPending = true
+}
+
+func (t *Tree) ensureResultCompatibility() {
+	if t == nil || !t.resultCompatibilityPending {
+		return
+	}
+	t.resultCompatibilityOnce.Do(func() {
+		if t.root == nil || t.language == nil {
+			return
+		}
+		normalizeResultCompatibility(t.root, t.source, &Parser{language: t.language})
+	})
+}
+
 func newParentNode(arena *nodeArena, sym Symbol, named bool, children []*Node, fieldIDs []FieldID, productionID uint16) *Node {
 	var n *Node
 	if arena == nil {
@@ -2142,6 +2161,8 @@ type Tree struct {
 	parseRuntime                       ParseRuntime
 	arenaBreakdown                     *ArenaBreakdown
 	externalScannerCheckpointsDeferred bool
+	resultCompatibilityPending         bool
+	resultCompatibilityOnce            sync.Once
 	released                           bool
 }
 
@@ -2257,7 +2278,10 @@ func (t *Tree) Release() {
 }
 
 // RootNode returns the tree's root node.
-func (t *Tree) RootNode() *Node { return t.root }
+func (t *Tree) RootNode() *Node {
+	t.ensureResultCompatibility()
+	return t.root
+}
 
 // RootNodeWithOffset returns a copy of the root node with all spans shifted by
 // the provided byte and point offsets.
@@ -2268,6 +2292,7 @@ func (t *Tree) RootNodeWithOffset(offsetBytes uint32, offsetExtent Point) *Node 
 	if t == nil || t.root == nil {
 		return nil
 	}
+	t.ensureResultCompatibility()
 	if offsetBytes == 0 && offsetExtent == (Point{}) {
 		return t.root
 	}
@@ -2402,6 +2427,7 @@ func (t *Tree) WriteDOT(w io.Writer, lang *Language) error {
 		_, err := io.WriteString(w, "digraph gotreesitter {\n}\n")
 		return err
 	}
+	t.ensureResultCompatibility()
 
 	type dotItem struct {
 		node *Node
@@ -2463,6 +2489,7 @@ func (t *Tree) Copy() *Tree {
 	if t == nil {
 		return nil
 	}
+	t.ensureResultCompatibility()
 
 	out := &Tree{
 		source:         t.source,
@@ -3084,6 +3111,7 @@ func inputEditIsNoop(edit InputEdit) bool {
 // and marks overlapping nodes as dirty so the incremental parser knows
 // what to re-parse.
 func (t *Tree) Edit(edit InputEdit) {
+	t.ensureResultCompatibility()
 	if perfCountersEnabled {
 		perfRecordNodeEditCall()
 		if inputEditIsNoop(edit) {
