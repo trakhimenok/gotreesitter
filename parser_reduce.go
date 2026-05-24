@@ -3424,14 +3424,9 @@ func (p *Parser) buildReduceChildrenWithPath(entries []stackEntry, start, end, c
 	aliasSeq := p.reduceAliasSequence(productionID)
 	productionHasFields := p.reduceProductionHasEffectiveFields(childCount, productionID, arena)
 	if len(aliasSeq) == 0 && !productionHasFields {
-		if children, _, _, ok := p.buildReduceChildrenAllVisible(entries, start, end, childCount, nil, nil, nil, symbolMeta, arena); ok {
-			return children, nil, nil, reduceChildPathForLen(len(children), reduceChildPathAllVisible)
+		if children, fieldIDs, fieldSources, path, ok := p.buildReduceChildrenNoAliasNoFieldsPlanned(entries, start, end, parentSymbol, symbolMeta, arena); ok {
+			return children, fieldIDs, fieldSources, path
 		}
-	}
-	parentVisible := symbolVisibleForPending(parentSymbol, symbolMeta)
-	preserveHiddenFields := parentVisible && reduceEntriesContainHiddenFieldIDs(entries, start, end, symbolMeta)
-	if len(aliasSeq) == 0 && !productionHasFields && !preserveHiddenFields {
-		return p.buildReduceChildrenNoAliasNoFieldsStreaming(entries, start, end, parentSymbol, symbolMeta, arena)
 	}
 
 	rawFieldIDs, rawInherited := p.buildFieldIDs(childCount, productionID, arena)
@@ -3479,6 +3474,95 @@ func reduceEntriesContainHiddenFieldIDs(entries []stackEntry, start, end int, sy
 		}
 	}
 	return false
+}
+
+func (p *Parser) buildReduceChildrenNoAliasNoFieldsPlanned(entries []stackEntry, start, end int, parentSymbol Symbol, symbolMeta []SymbolMetadata, arena *nodeArena) ([]*Node, []FieldID, []uint8, reduceChildPath, bool) {
+	visibleCount := 0
+	allVisible := true
+	preserveHiddenFields := false
+	parentVisible := symbolVisibleForPending(parentSymbol, symbolMeta)
+	for i := start; i < end; i++ {
+		n := stackEntryNode(entries[i])
+		if n == nil {
+			continue
+		}
+		visible := true
+		if idx := int(n.symbol); idx < len(symbolMeta) {
+			visible = symbolMeta[n.symbol].Visible
+		}
+		if visible {
+			visibleCount++
+			continue
+		}
+		allVisible = false
+		if parentVisible && hiddenTreeHasFieldIDs(n) {
+			preserveHiddenFields = true
+		}
+	}
+	if allVisible {
+		if visibleCount == 0 {
+			return nil, nil, nil, reduceChildPathNone, true
+		}
+		children := p.allocAllVisibleReduceChildren(arena, visibleCount, nil, nil, nil)
+		arena.recordReduceChildSliceAllVisible(visibleCount)
+		if perfCountersEnabled {
+			perfRecordReduceChildrenAllVisible(visibleCount)
+		}
+		out := 0
+		for i := start; i < end; i++ {
+			n := stackEntryNode(entries[i])
+			if n == nil {
+				continue
+			}
+			children[out] = n
+			out++
+		}
+		return children, nil, nil, reduceChildPathAllVisible, true
+	}
+	if preserveHiddenFields {
+		return nil, nil, nil, reduceChildPathNone, false
+	}
+
+	var scratch *reduceBuildScratch
+	if p != nil && p.reduceScratch != nil {
+		scratch = p.reduceScratch
+	} else {
+		scratch = &reduceBuildScratch{}
+	}
+	scratch.reset()
+
+	for i := start; i < end; i++ {
+		n := stackEntryNode(entries[i])
+		if n == nil {
+			continue
+		}
+		visible := true
+		if idx := int(n.symbol); idx < len(symbolMeta) {
+			visible = symbolMeta[n.symbol].Visible
+		}
+		if visible {
+			scratch.appendNode(n)
+			continue
+		}
+		if parentVisible {
+			appendFlattenedHiddenChildrenToScratch(scratch, n, symbolMeta)
+			continue
+		}
+		if len(n.children) == 0 {
+			continue
+		}
+		scratch.appendNode(n)
+	}
+	if perfCountersEnabled {
+		perfRecordReduceScratchNoAlias(len(scratch.nodes))
+	}
+	arena.recordReduceChildSliceScratchNoAlias(len(scratch.nodes))
+	children := p.materializeNoFieldReduceChildrenFromScratch(scratch, arena)
+	path := reduceChildPathNone
+	if len(children) > 0 {
+		path = reduceChildPathScratchNoAlias
+	}
+	return children, nil, nil, path, true
 }
 
 func (p *Parser) newReduceBuildScratch(rawFieldIDs []FieldID) *reduceBuildScratch {
@@ -3630,91 +3714,6 @@ func shouldSkipInheritedParentFieldForFlattenedSpan(scratch *reduceBuildScratch,
 	}
 	child := scratch.nodes[spanStart]
 	return child == nil || !nodeHasDirectFieldID(child, fid)
-}
-
-func (p *Parser) buildReduceChildrenNoAliasNoFieldsStreaming(entries []stackEntry, start, end int, parentSymbol Symbol, symbolMeta []SymbolMetadata, arena *nodeArena) ([]*Node, []FieldID, []uint8, reduceChildPath) {
-	visibleCount := 0
-	allVisible := true
-	for i := start; i < end; i++ {
-		n := stackEntryNode(entries[i])
-		if n == nil {
-			continue
-		}
-		visible := true
-		if idx := int(n.symbol); idx < len(symbolMeta) {
-			visible = symbolMeta[n.symbol].Visible
-		}
-		if !visible {
-			allVisible = false
-			break
-		}
-		visibleCount++
-	}
-	if allVisible {
-		if visibleCount == 0 {
-			return nil, nil, nil, reduceChildPathNone
-		}
-		children := arena.allocNodeSliceNoClear(visibleCount)
-		arena.recordReduceChildSliceNoAlias(visibleCount)
-		if perfCountersEnabled {
-			perfRecordReduceChildrenNoAlias(visibleCount)
-		}
-		out := 0
-		for i := start; i < end; i++ {
-			n := stackEntryNode(entries[i])
-			if n == nil {
-				continue
-			}
-			children[out] = n
-			out++
-		}
-		return children, nil, nil, reduceChildPathNoAlias
-	}
-
-	var scratch *reduceBuildScratch
-	if p != nil && p.reduceScratch != nil {
-		scratch = p.reduceScratch
-	} else {
-		scratch = &reduceBuildScratch{}
-	}
-	scratch.reset()
-
-	parentVisible := true
-	if idx := int(parentSymbol); idx < len(symbolMeta) {
-		parentVisible = symbolMeta[parentSymbol].Visible
-	}
-	for i := start; i < end; i++ {
-		n := stackEntryNode(entries[i])
-		if n == nil {
-			continue
-		}
-		visible := true
-		if idx := int(n.symbol); idx < len(symbolMeta) {
-			visible = symbolMeta[n.symbol].Visible
-		}
-		if visible {
-			scratch.appendNode(n)
-			continue
-		}
-		if parentVisible {
-			appendFlattenedHiddenChildrenToScratch(scratch, n, symbolMeta)
-			continue
-		}
-		if len(n.children) == 0 {
-			continue
-		}
-		scratch.appendNode(n)
-	}
-	if perfCountersEnabled {
-		perfRecordReduceScratchNoAlias(len(scratch.nodes))
-	}
-	arena.recordReduceChildSliceScratchNoAlias(len(scratch.nodes))
-	children := p.materializeNoFieldReduceChildrenFromScratch(scratch, arena)
-	path := reduceChildPathNone
-	if len(children) > 0 {
-		path = reduceChildPathScratchNoAlias
-	}
-	return children, nil, nil, path
 }
 
 func (p *Parser) shouldSuppressVisibleDirectField(n *Node, fid FieldID) bool {
