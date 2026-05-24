@@ -4,6 +4,7 @@ import "sort"
 
 const smallTokenDenseThreshold = 8
 const cobolSmallTokenDenseThreshold = 12
+const typeScriptSmallTokenDenseThreshold = 4
 
 func buildSmallLookup(lang *Language, smallTokenLookup [][]uint16) [][]smallActionPair {
 	out := make([][]smallActionPair, len(lang.SmallParseTableMap))
@@ -76,7 +77,11 @@ func buildSmallTokenLookup(lang *Language) [][]uint16 {
 		return nil
 	}
 	if !compactSmallTokenRows(lang) {
-		return buildSmallTokenLookupFullRows(lang, smallTokenDenseThreshold)
+		threshold := smallTokenDenseThreshold
+		if lang.Name == "typescript" {
+			threshold = typeScriptSmallTokenDenseThreshold
+		}
+		return buildSmallTokenLookupFullRows(lang, threshold)
 	}
 	out := make([][]uint16, len(lang.SmallParseTableMap))
 	table := lang.SmallParseTable
