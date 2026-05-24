@@ -273,6 +273,12 @@ type runtimeStats struct {
 	ReduceChainHintDead                   uint64        `json:"reduce_chain_hint_dead,omitempty"`
 	ReduceChainHintUnexpected             uint64        `json:"reduce_chain_hint_unexpected_action,omitempty"`
 	ParentChildPointers                   uint64        `json:"parent_child_pointers,omitempty"`
+	ReduceChildrenFastGSS                 uint64        `json:"reduce_children_fast_gss,omitempty"`
+	ReduceChildrenAllVisible              uint64        `json:"reduce_children_all_visible,omitempty"`
+	ReduceChildrenNoAlias                 uint64        `json:"reduce_children_no_alias,omitempty"`
+	ReduceChildrenScratch                 uint64        `json:"reduce_children_scratch,omitempty"`
+	ReduceScratchNoAlias                  uint64        `json:"reduce_scratch_no_alias,omitempty"`
+	ReduceScratchGeneral                  uint64        `json:"reduce_scratch_general,omitempty"`
 	NoTreeReduceNodes                     uint64        `json:"notree_reduce_nodes,omitempty"`
 	NoTreeLeafNodes                       uint64        `json:"notree_leaf_nodes,omitempty"`
 	CloneTreePublicNodes                  uint64        `json:"clone_tree_public_nodes,omitempty"`
@@ -1067,6 +1073,12 @@ func statsFromGoTree(r *runner, tree *gotreesitter.Tree, queryCaptures, cursorNo
 	stats.ReduceChainHintDead = perf.ReduceChainHintDead
 	stats.ReduceChainHintUnexpected = perf.ReduceChainHintUnexpected
 	stats.ParentChildPointers = perf.ParentChildPointers
+	stats.ReduceChildrenFastGSS = perf.ReduceChildrenFastGSS
+	stats.ReduceChildrenAllVisible = perf.ReduceChildrenAllVis
+	stats.ReduceChildrenNoAlias = perf.ReduceChildrenNoAlias
+	stats.ReduceChildrenScratch = perf.ReduceChildrenScratch
+	stats.ReduceScratchNoAlias = perf.ReduceScratchNoAlias
+	stats.ReduceScratchGeneral = perf.ReduceScratchGeneral
 	if r != nil && r.profile != nil && r.hotShapeLimit > 0 {
 		chainTotals := r.profile.SnapshotReduceChainTotals()
 		stats.ReduceChainClassHits = chainTotals.ReduceChainClassHits
