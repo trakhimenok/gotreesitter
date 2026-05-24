@@ -3738,6 +3738,9 @@ func (p *Parser) suppressReducedChildFields(children []*Node, fieldIDs []FieldID
 	if p == nil || len(children) == 0 || len(fieldIDs) == 0 {
 		return
 	}
+	if p.language == nil || p.language.Name != "dart" {
+		return
+	}
 	limit := len(children)
 	if len(fieldIDs) < limit {
 		limit = len(fieldIDs)
