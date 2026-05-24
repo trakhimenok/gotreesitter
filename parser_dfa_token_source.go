@@ -30,6 +30,7 @@ type dfaTokenSource struct {
 	lastExternalTokenStartByte uint32
 	lastExternalTokenEndByte   uint32
 	lastExternalTokenValid     bool
+	singleState                [1]StateID
 	glrStates                  []StateID // all active GLR stack states
 	hasExternalScanner         bool
 	hasExternalSymbols         bool
@@ -1650,9 +1651,8 @@ func (d *dfaTokenSource) nextExternalToken() (Token, bool) {
 	anyValid := false
 	states := d.glrStates
 	if len(states) == 0 {
-		var single [1]StateID
-		single[0] = d.state
-		states = single[:]
+		d.singleState[0] = d.state
+		states = d.singleState[:]
 	}
 	if tok, ok := d.nextGLRScoredExternalToken(states); ok {
 		return tok, true
