@@ -2490,6 +2490,10 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 						if next, ok := typescriptRepetitionShiftConflictChoice(p.language, tok, currentState, actions); ok {
 							chosen, choice = next, true
 						}
+					case "tsx":
+						if next, ok := tsxRepetitionReduceConflictChoice(p.language, tok, currentState, actions); ok {
+							chosen, choice = next, true
+						}
 					}
 				}
 				if !choice && deterministicExternalConflicts && p.language != nil && p.language.Name == "yaml" && p.language.ExternalScanner != nil {
@@ -3477,6 +3481,75 @@ func typescriptRepetitionShiftConflictChoice(lang *Language, tok Token, state St
 		return ParseAction{}, false
 	}
 	return repetitionShiftConflictChoice(actions)
+}
+
+func singleReduceAgainstRepetitionShiftConflictChoice(actions []ParseAction) (ParseAction, bool) {
+	if len(actions) < 2 {
+		return ParseAction{}, false
+	}
+	var reduce ParseAction
+	reduceFound := false
+	shiftFound := false
+	for _, act := range actions {
+		switch act.Type {
+		case ParseActionReduce:
+			if reduceFound {
+				return ParseAction{}, false
+			}
+			reduce = act
+			reduceFound = true
+		case ParseActionShift:
+			if !act.Repetition || shiftFound {
+				return ParseAction{}, false
+			}
+			shiftFound = true
+		default:
+			return ParseAction{}, false
+		}
+	}
+	if !reduceFound || !shiftFound {
+		return ParseAction{}, false
+	}
+	return reduce, true
+}
+
+func tsxRepetitionReduceConflictChoice(lang *Language, tok Token, state StateID, actions []ParseAction) (ParseAction, bool) {
+	if lang == nil {
+		return ParseAction{}, false
+	}
+	reduceSymbol := ""
+	switch state {
+	case 9:
+		switch {
+		case symbolHasName(lang, tok.Symbol, "function"):
+		case symbolHasName(lang, tok.Symbol, "identifier"):
+		case symbolHasName(lang, tok.Symbol, "const"):
+		case symbolHasName(lang, tok.Symbol, "return"):
+		case symbolHasName(lang, tok.Symbol, "if"):
+		case symbolHasName(lang, tok.Symbol, "export"):
+		case symbolHasName(lang, tok.Symbol, "let"):
+		default:
+			return ParseAction{}, false
+		}
+		reduceSymbol = "program_repeat1"
+	case 3468:
+		if !symbolHasName(lang, tok.Symbol, "identifier") {
+			return ParseAction{}, false
+		}
+		reduceSymbol = "_jsx_start_opening_element_repeat1"
+	case 3885:
+		if !symbolHasName(lang, tok.Symbol, ";") {
+			return ParseAction{}, false
+		}
+		reduceSymbol = "object_type_repeat1"
+	default:
+		return ParseAction{}, false
+	}
+	reduce, ok := singleReduceAgainstRepetitionShiftConflictChoice(actions)
+	if !ok || !symbolHasName(lang, reduce.Symbol, reduceSymbol) {
+		return ParseAction{}, false
+	}
+	return reduce, true
 }
 
 func (p *Parser) tryTypeScriptContextualPropertyKeyword(tok Token, state StateID, source []byte) (Token, bool) {
