@@ -279,6 +279,11 @@ type runtimeStats struct {
 	ReduceChildrenScratch                 uint64        `json:"reduce_children_scratch,omitempty"`
 	ReduceScratchNoAlias                  uint64        `json:"reduce_scratch_no_alias,omitempty"`
 	ReduceScratchGeneral                  uint64        `json:"reduce_scratch_general,omitempty"`
+	ReduceChildFastGSS                    *pathStats    `json:"reduce_child_fast_gss,omitempty"`
+	ReduceChildAllVisible                 *pathStats    `json:"reduce_child_all_visible,omitempty"`
+	ReduceChildNoAlias                    *pathStats    `json:"reduce_child_no_alias,omitempty"`
+	ReduceChildScratchGeneral             *pathStats    `json:"reduce_child_scratch_general,omitempty"`
+	ReduceChildScratchNoAlias             *pathStats    `json:"reduce_child_scratch_no_alias,omitempty"`
 	NoTreeReduceNodes                     uint64        `json:"notree_reduce_nodes,omitempty"`
 	NoTreeLeafNodes                       uint64        `json:"notree_leaf_nodes,omitempty"`
 	CloneTreePublicNodes                  uint64        `json:"clone_tree_public_nodes,omitempty"`
@@ -291,6 +296,15 @@ type runtimeStats struct {
 	HotReduceChainRuns                    []hotGLRState `json:"hot_reduce_chain_runs,omitempty"`
 	HotMergeStates                        []hotGLRState `json:"hot_merge_states,omitempty"`
 	HotEquivStates                        []hotGLRState `json:"hot_equiv_states,omitempty"`
+}
+
+type pathStats struct {
+	SlicesAllocated   uint64 `json:"slices_allocated,omitempty"`
+	SlicesRetained    uint64 `json:"slices_retained,omitempty"`
+	SlicesDropped     uint64 `json:"slices_dropped,omitempty"`
+	PointersAllocated uint64 `json:"pointers_allocated,omitempty"`
+	PointersRetained  uint64 `json:"pointers_retained,omitempty"`
+	PointersDropped   uint64 `json:"pointers_dropped,omitempty"`
 }
 
 type hotGLRState struct {
@@ -453,6 +467,7 @@ type metadata struct {
 	GateOnly            bool              `json:"gate_only"`
 	HotShapeLimit       int               `json:"hot_shape_limit,omitempty"`
 	EquivCounters       bool              `json:"equiv_counters,omitempty"`
+	RuntimeAudit        bool              `json:"runtime_audit,omitempty"`
 	ReduceTiming        bool              `json:"reduce_timing,omitempty"`
 	ActionTiming        bool              `json:"action_timing,omitempty"`
 	CorpusManifest      string            `json:"corpus_manifest,omitempty"`
@@ -490,6 +505,7 @@ func main() {
 		phaseTiming       bool
 		hotShapeLimit     int
 		equivCounters     bool
+		runtimeAudit      bool
 		reduceTiming      bool
 		actionTiming      bool
 	)
@@ -509,6 +525,7 @@ func main() {
 	flag.BoolVar(&phaseTiming, "phase-timing", false, "enable gotreesitter parser phase timing while measuring")
 	flag.IntVar(&hotShapeLimit, "hot-shapes", 0, "include top-N GLR fork/reduce/merge hot-shape rows in runtime JSON")
 	flag.BoolVar(&equivCounters, "equiv-counters", false, "enable lightweight GLR equivalence attribution counters")
+	flag.BoolVar(&runtimeAudit, "runtime-audit", false, "enable heavyweight survivor/runtime audit counters while measuring")
 	flag.BoolVar(&reduceTiming, "reduce-timing", false, "enable reduce subphase timing while measuring; implies --phase-timing")
 	flag.BoolVar(&actionTiming, "action-timing", false, "enable action-dispatch subphase timing while measuring; implies --phase-timing")
 	flag.Parse()
@@ -578,6 +595,8 @@ func main() {
 
 	gotreesitter.EnableArenaBreakdown(arenaBreakdown)
 	defer gotreesitter.EnableArenaBreakdown(false)
+	gotreesitter.EnableRuntimeAudit(runtimeAudit)
+	defer gotreesitter.EnableRuntimeAudit(false)
 	gotreesitter.EnableGLREquivAudit(equivCounters)
 	defer gotreesitter.EnableGLREquivAudit(false)
 	if reduceTiming || actionTiming {
@@ -691,6 +710,7 @@ func main() {
 		GateOnly:            gateOnly,
 		HotShapeLimit:       hotShapeLimit,
 		EquivCounters:       equivCounters,
+		RuntimeAudit:        runtimeAudit,
 		ReduceTiming:        reduceTiming,
 		ActionTiming:        actionTiming,
 		CorpusManifest:      relOrAbs(repoRoot, corpusPath),
@@ -1410,6 +1430,11 @@ func statsFromRuntime(rt gotreesitter.ParseRuntime) runtimeStats {
 		EquivFrontierCandidateCompares:        rt.EquivFrontierCandidateCompares,
 		NoTreeReduceNodes:                     rt.NoTreeReduceNodesConstructed,
 		NoTreeLeafNodes:                       rt.NoTreeLeafNodesConstructed,
+		ReduceChildFastGSS:                    pathStatsFromRuntime(rt.ReduceChildFastGSS),
+		ReduceChildAllVisible:                 pathStatsFromRuntime(rt.ReduceChildAllVisible),
+		ReduceChildNoAlias:                    pathStatsFromRuntime(rt.ReduceChildNoAlias),
+		ReduceChildScratchGeneral:             pathStatsFromRuntime(rt.ReduceChildScratchGeneral),
+		ReduceChildScratchNoAlias:             pathStatsFromRuntime(rt.ReduceChildScratchNoAlias),
 	}
 	if reduceTiming := rt.ReduceTiming; reduceTiming != nil {
 		stats.ReduceRangeNS = reduceTiming.RangeNanos
@@ -1450,6 +1475,25 @@ func statsFromRuntime(rt gotreesitter.ParseRuntime) runtimeStats {
 		stats.NormalizationPasses = &passes
 	}
 	return stats
+}
+
+func pathStatsFromRuntime(rt gotreesitter.ReduceChildPathRuntime) *pathStats {
+	if rt.SlicesAllocated == 0 &&
+		rt.SlicesRetained == 0 &&
+		rt.SlicesDropped == 0 &&
+		rt.PointersAllocated == 0 &&
+		rt.PointersRetained == 0 &&
+		rt.PointersDropped == 0 {
+		return nil
+	}
+	return &pathStats{
+		SlicesAllocated:   rt.SlicesAllocated,
+		SlicesRetained:    rt.SlicesRetained,
+		SlicesDropped:     rt.SlicesDropped,
+		PointersAllocated: rt.PointersAllocated,
+		PointersRetained:  rt.PointersRetained,
+		PointersDropped:   rt.PointersDropped,
+	}
 }
 
 func runGoEdit(r *runner, source []byte, noop bool) (runtimeStats, error) {

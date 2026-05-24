@@ -27,6 +27,7 @@ BUILD_IMAGE=1
 PHASE_TIMING=0
 HOT_SHAPES=0
 EQUIV_COUNTERS=0
+RUNTIME_AUDIT=0
 REDUCE_TIMING=0
 ACTION_TIMING=0
 
@@ -60,6 +61,7 @@ Options:
   --phase-timing            Enable parser phase/subphase timing in report rows
   --hot-shapes <n>          Include top-N GLR fork/reduce/merge hot-shape rows in runtime JSON
   --equiv-counters          Enable lightweight GLR equivalence attribution counters
+  --runtime-audit           Enable heavyweight survivor/runtime audit counters
   --reduce-timing           Enable reduce subphase timing in report rows
   --action-timing           Enable action-dispatch subphase timing in report rows
   --no-build                Skip Docker image build in underlying runner
@@ -96,6 +98,7 @@ while [[ $# -gt 0 ]]; do
     --phase-timing) PHASE_TIMING=1; shift ;;
     --hot-shapes) HOT_SHAPES="$2"; shift 2 ;;
     --equiv-counters) EQUIV_COUNTERS=1; shift ;;
+    --runtime-audit) RUNTIME_AUDIT=1; shift ;;
     --reduce-timing) REDUCE_TIMING=1; PHASE_TIMING=1; shift ;;
     --action-timing) ACTION_TIMING=1; PHASE_TIMING=1; shift ;;
     --no-build) BUILD_IMAGE=0; shift ;;
@@ -182,6 +185,7 @@ PARSE_NODE_LIMIT_SCALE="${GOT_PARSE_NODE_LIMIT_SCALE-}"
   echo "phase_timing=$PHASE_TIMING"
   echo "hot_shapes=$HOT_SHAPES"
   echo "equiv_counters=$EQUIV_COUNTERS"
+  echo "runtime_audit=$RUNTIME_AUDIT"
   echo "reduce_timing=$REDUCE_TIMING"
   echo "action_timing=$ACTION_TIMING"
   echo "got_glr_reduce_chain_hints=$REDUCE_CHAIN_HINTS"
@@ -219,6 +223,10 @@ fi
 equiv_counters_arg_text=""
 if [[ "$EQUIV_COUNTERS" == "1" ]]; then
   equiv_counters_arg_text="--equiv-counters"
+fi
+runtime_audit_arg_text=""
+if [[ "$RUNTIME_AUDIT" == "1" ]]; then
+  runtime_audit_arg_text="--runtime-audit"
 fi
 reduce_timing_arg_text=""
 reduce_timing_env_text="GOT_PARSE_REDUCE_TIMING='0'"
@@ -278,6 +286,7 @@ env \
     $phase_timing_arg_text \
     $hot_shapes_arg_text \
     $equiv_counters_arg_text \
+    $runtime_audit_arg_text \
     $reduce_timing_arg_text \
     $action_timing_arg_text
 EOF
