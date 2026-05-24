@@ -38,6 +38,11 @@ type Parser struct {
 	hasRecoverSymbol                    []bool
 	recoverByState                      [][]recoverSymbolAction
 	hasKeywordState                     []bool
+	typeScriptPropertyIdentifierSymbol  Symbol
+	typeScriptIdentifierSymbol          Symbol
+	typeScriptHasPropertyIdentifier     bool
+	typeScriptHasIdentifier             bool
+	typeScriptContextualPropertyKeyword map[string]Symbol
 	forceRawSpanAll                     bool
 	forceRawSpanTable                   []bool
 	included                            []Range
@@ -353,6 +358,7 @@ func NewParser(lang *Language) *Parser {
 		p.reduceHasFields = buildReduceFieldPresence(lang)
 		p.recoverByState, p.hasRecoverState, p.hasRecoverSymbol = buildRecoverActionsByState(lang)
 		p.hasKeywordState = buildKeywordStates(lang)
+		p.initTypeScriptContextualKeywordSymbols(lang)
 		p.rootSymbol, p.hasRootSymbol = p.inferRootSymbol()
 		p.maxConflictWidth = computeMaxConflictWidth(lang)
 	}
@@ -2289,9 +2295,9 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			if phaseTiming {
 				actionLookupNanos += time.Since(actionStart).Nanoseconds()
 			}
-			if parseStacksShareState(stacks[:numStacks], currentState) {
-				if reTok, ok := p.tryTypeScriptContextualPropertyKeyword(tok, currentState, source); ok {
-					tok = reTok
+			if keywordSym, ok := p.typeScriptContextualPropertyKeywordSymbol(tok, source); ok && parseStacksShareState(stacks[:numStacks], currentState) {
+				if p.typeScriptContextualPropertyKeywordHasAction(keywordSym, currentState) {
+					tok.Symbol = keywordSym
 					needToken = false
 					goto retryAction
 				}
@@ -3556,46 +3562,63 @@ func tsxRepetitionReduceConflictChoice(lang *Language, tok Token, state StateID,
 	return reduce, true
 }
 
-func (p *Parser) tryTypeScriptContextualPropertyKeyword(tok Token, state StateID, source []byte) (Token, bool) {
-	if p == nil || p.language == nil {
-		return Token{}, false
+func (p *Parser) initTypeScriptContextualKeywordSymbols(lang *Language) {
+	if p == nil || lang == nil {
+		return
 	}
-	switch p.language.Name {
+	switch lang.Name {
 	case "typescript", "tsx":
 	default:
-		return Token{}, false
+		return
 	}
-	if !symbolHasName(p.language, tok.Symbol, "property_identifier") && !(tok.Text == "readonly" && symbolHasName(p.language, tok.Symbol, "identifier")) {
-		return Token{}, false
+	p.typeScriptPropertyIdentifierSymbol, p.typeScriptHasPropertyIdentifier = lang.SymbolByName("property_identifier")
+	p.typeScriptIdentifierSymbol, p.typeScriptHasIdentifier = lang.SymbolByName("identifier")
+	keywords := make(map[string]Symbol, len(typeScriptContextualPropertyKeywordNames))
+	for _, name := range typeScriptContextualPropertyKeywordNames {
+		if sym, ok := lang.SymbolByName(name); ok {
+			keywords[name] = sym
+		}
 	}
-	if tok.Text == "" {
-		return Token{}, false
+	if len(keywords) != 0 {
+		p.typeScriptContextualPropertyKeyword = keywords
 	}
-	if !isTypeScriptContextualPropertyKeyword(tok.Text) {
-		return Token{}, false
+}
+
+func (p *Parser) typeScriptContextualPropertyKeywordSymbol(tok Token, source []byte) (Symbol, bool) {
+	if p == nil || len(p.typeScriptContextualPropertyKeyword) == 0 || tok.Text == "" {
+		return 0, false
+	}
+	if !(p.typeScriptHasPropertyIdentifier && tok.Symbol == p.typeScriptPropertyIdentifierSymbol) &&
+		!(tok.Text == "readonly" && p.typeScriptHasIdentifier && tok.Symbol == p.typeScriptIdentifierSymbol) {
+		return 0, false
+	}
+	keywordSym, ok := p.typeScriptContextualPropertyKeyword[tok.Text]
+	if !ok || keywordSym == tok.Symbol {
+		return 0, false
 	}
 	if !typeScriptContextualKeywordHasFollowingOperand(tok, source) {
-		return Token{}, false
+		return 0, false
 	}
-	keywordSym, ok := p.language.SymbolByName(tok.Text)
-	if !ok || keywordSym == tok.Symbol {
-		return Token{}, false
+	return keywordSym, true
+}
+
+func (p *Parser) typeScriptContextualPropertyKeywordHasAction(keywordSym Symbol, state StateID) bool {
+	if p == nil || p.language == nil {
+		return false
 	}
 	actionIdx := p.lookupActionIndex(state, keywordSym)
 	if actionIdx == 0 || int(actionIdx) >= len(p.language.ParseActions) || len(p.language.ParseActions[actionIdx].Actions) == 0 {
-		return Token{}, false
-	}
-	tok.Symbol = keywordSym
-	return tok, true
-}
-
-func isTypeScriptContextualPropertyKeyword(text string) bool {
-	switch text {
-	case "abstract", "accessor", "any", "as", "bigint", "boolean", "class", "const", "declare", "enum", "export", "extends", "function", "import", "in", "infer", "interface", "keyof", "let", "module", "namespace", "never", "new", "number", "object", "override", "private", "protected", "public", "readonly", "static", "string", "symbol", "type", "typeof", "undefined", "unknown", "void":
-		return true
-	default:
 		return false
 	}
+	return true
+}
+
+var typeScriptContextualPropertyKeywordNames = [...]string{
+	"abstract", "accessor", "any", "as", "bigint", "boolean", "class", "const",
+	"declare", "enum", "export", "extends", "function", "import", "in", "infer",
+	"interface", "keyof", "let", "module", "namespace", "never", "new", "number",
+	"object", "override", "private", "protected", "public", "readonly", "static",
+	"string", "symbol", "type", "typeof", "undefined", "unknown", "void",
 }
 
 func typeScriptContextualKeywordHasFollowingOperand(tok Token, source []byte) bool {
