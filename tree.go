@@ -1911,7 +1911,10 @@ func newParentNodeInArenaWithFieldSources(arena *nodeArena, sym Symbol, named bo
 	}
 	n.productionID = productionID
 	n.childIndex = -1
-	arena.recordParentNodeConstructed(len(children), fieldIDs, n.fieldSources, fieldSources != nil, false, false)
+	arena.parentNodesConstructed++
+	if arena.breakdownEnabled {
+		arena.recordParentNodeConstructedBreakdown(len(children), fieldIDs, n.fieldSources, fieldSources != nil, false, false)
+	}
 	populateParentNode(n, children)
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {
@@ -1940,7 +1943,10 @@ func newParentNodeInArenaNoLinksWithFieldSources(arena *nodeArena, sym Symbol, n
 	}
 	n.productionID = productionID
 	n.childIndex = -1
-	arena.recordParentNodeConstructed(len(children), fieldIDs, n.fieldSources, fieldSources != nil, true, trackChildErrors)
+	arena.parentNodesConstructed++
+	if arena.breakdownEnabled {
+		arena.recordParentNodeConstructedBreakdown(len(children), fieldIDs, n.fieldSources, fieldSources != nil, true, trackChildErrors)
+	}
 	populateParentNodeNoLinks(n, children, trackChildErrors)
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {
@@ -1963,7 +1969,10 @@ func newParentNodeInArenaWithFinalChildRefs(arena *nodeArena, sym Symbol, named 
 	n.setNamed(named)
 	n.productionID = productionID
 	n.childIndex = -1
-	arena.recordParentNodeConstructed(childCount, nil, nil, false, true, trackChildErrors)
+	arena.parentNodesConstructed++
+	if arena.breakdownEnabled {
+		arena.recordParentNodeConstructedBreakdown(childCount, nil, nil, false, true, trackChildErrors)
+	}
 	arena.attachFinalChildRefs(n, childRange)
 	nodeInitEquivVersion(n)
 	if arena.audit != nil {
@@ -1980,6 +1989,10 @@ func (a *nodeArena) recordParentNodeConstructed(childCount int, fieldIDs []Field
 	if !a.breakdownEnabled {
 		return
 	}
+	a.recordParentNodeConstructedBreakdown(childCount, fieldIDs, fieldSources, fieldSourcesProvided, noLinks, trackChildErrors)
+}
+
+func (a *nodeArena) recordParentNodeConstructedBreakdown(childCount int, fieldIDs []FieldID, fieldSources []uint8, fieldSourcesProvided bool, noLinks bool, trackChildErrors bool) {
 	switch childCount {
 	case 0:
 		a.parentConstructedChildLen0++
