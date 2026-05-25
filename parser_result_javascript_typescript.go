@@ -4,12 +4,11 @@ import "bytes"
 
 func normalizeJavaScriptCompatibility(root *Node, source []byte, lang *Language) {
 	normalizeJavaScriptProgramStart(root, lang)
-	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "empty_statement", ";")
-	normalizeJavaScriptTypeScriptStatementKeywordLeaves(root, source, lang)
+	// Fused walk handles empty_statement, statement keywords (if/while),
+	// call_expression precedence, and builds unary/binary candidate indexes.
+	// Replaces 5 separate full-tree walks with 1 walk + indexed rewrites.
+	normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedence(root, source, lang)
 	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, source, lang)
-	normalizeJavaScriptTypeScriptCallPrecedence(root, lang)
-	normalizeJavaScriptTypeScriptUnaryPrecedence(root, lang)
-	normalizeJavaScriptTypeScriptBinaryPrecedence(root, lang)
 	normalizeJavaScriptTrailingContinueComments(root, source, lang)
 	normalizeJavaScriptTopLevelExpressionStatementBounds(root, lang)
 	normalizeJavaScriptTopLevelDeclarationBounds(root, lang)
@@ -994,7 +993,7 @@ func normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedenceWithDetailedStat
 		return stats
 	}
 	switch lang.Name {
-	case "typescript", "tsx":
+	case "javascript", "typescript", "tsx":
 	default:
 		stats.statementKeyword = normalizeJavaScriptTypeScriptStatementKeywordLeavesWithStats(root, source, lang)
 		precedence := normalizeJavaScriptTypeScriptPrecedenceWithDetailedStats(root, lang)
@@ -1005,18 +1004,9 @@ func normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedenceWithDetailedStat
 		stats.indexNodesVisited = precedence.indexNodesVisited
 		return stats
 	}
-	callSym, ok := symbolByName(lang, "call_expression")
-	if !ok {
-		return stats
-	}
-	unarySym, ok := symbolByName(lang, "unary_expression")
-	if !ok {
-		return stats
-	}
-	binarySym, ok := symbolByName(lang, "binary_expression")
-	if !ok {
-		return stats
-	}
+	callSym, hasCallSym := symbolByName(lang, "call_expression")
+	unarySym, hasUnarySym := symbolByName(lang, "unary_expression")
+	binarySym, hasBinarySym := symbolByName(lang, "binary_expression")
 	emptyStatementSym, hasEmptyStatement := symbolByName(lang, "empty_statement")
 	semicolonSym, semicolonNamed, hasSemicolon := symbolMeta(lang, ";")
 	existentialTypeSym, hasExistentialType := symbolByName(lang, "existential_type")
@@ -1029,7 +1019,7 @@ func normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedenceWithDetailedStat
 
 	index := rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBinaryIndex(
 		root, source, lang,
-		callSym, unarySym, binarySym,
+		callSym, hasCallSym, unarySym, hasUnarySym, binarySym, hasBinarySym,
 		emptyStatementSym, hasEmptyStatement, semicolonSym, semicolonNamed, hasSemicolon,
 		existentialTypeSym, hasExistentialType, starSym, starNamed, hasStar,
 		ifStmtSym, hasIfStmt, ifSym, ifNamed, hasIf,
@@ -1042,18 +1032,22 @@ func normalizeJavaScriptTypeScriptStatementKeywordsAndPrecedenceWithDetailedStat
 	stats.call = index.call
 	stats.indexBuilds += index.builds
 	stats.indexNodesVisited += index.nodesVisited
-	stats.unary = rewriteJavaScriptTypeScriptPrecedenceCandidates(index.unaryCandidates, func(n *Node) *Node {
-		return rewriteJavaScriptTypeScriptUnaryPrecedenceWithSymbol(n, lang, unarySym)
-	})
-	if stats.unary.nodesRewritten != 0 {
-		rebuild := buildJavaScriptTypeScriptUnaryBinaryPrecedenceIndex(root, unarySym, binarySym)
-		stats.indexBuilds += rebuild.builds
-		stats.indexNodesVisited += rebuild.nodesVisited
-		index.binaryCandidates = rebuild.binaryCandidates
+	if hasUnarySym {
+		stats.unary = rewriteJavaScriptTypeScriptPrecedenceCandidates(index.unaryCandidates, func(n *Node) *Node {
+			return rewriteJavaScriptTypeScriptUnaryPrecedenceWithSymbol(n, lang, unarySym)
+		})
+		if stats.unary.nodesRewritten != 0 && hasBinarySym {
+			rebuild := buildJavaScriptTypeScriptUnaryBinaryPrecedenceIndex(root, unarySym, binarySym)
+			stats.indexBuilds += rebuild.builds
+			stats.indexNodesVisited += rebuild.nodesVisited
+			index.binaryCandidates = rebuild.binaryCandidates
+		}
 	}
-	stats.binary = rewriteJavaScriptTypeScriptPrecedenceCandidates(index.binaryCandidates, func(n *Node) *Node {
-		return rewriteJavaScriptTypeScriptBinaryPrecedenceWithSymbol(n, lang, binarySym)
-	})
+	if hasBinarySym {
+		stats.binary = rewriteJavaScriptTypeScriptPrecedenceCandidates(index.binaryCandidates, func(n *Node) *Node {
+			return rewriteJavaScriptTypeScriptBinaryPrecedenceWithSymbol(n, lang, binarySym)
+		})
+	}
 	return stats
 }
 
@@ -1106,7 +1100,12 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 	root *Node,
 	source []byte,
 	lang *Language,
-	callSym, unarySym, binarySym Symbol,
+	callSym Symbol,
+	hasCallSym bool,
+	unarySym Symbol,
+	hasUnarySym bool,
+	binarySym Symbol,
+	hasBinarySym bool,
 	emptyStatementSym Symbol,
 	hasEmptyStatement bool,
 	semicolonSym Symbol,
@@ -1132,6 +1131,15 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 ) javaScriptTypeScriptUnaryBinaryPrecedenceIndex {
 	var index javaScriptTypeScriptUnaryBinaryPrecedenceIndex
 	if root == nil {
+		return index
+	}
+	// If none of the symbols this walk targets exists in the language, there
+	// is nothing to do; returning early avoids materializing final-ref
+	// children for callers (e.g. mock-lang unit tests) that exercise only
+	// other compat passes.
+	if !hasCallSym && !hasUnarySym && !hasBinarySym &&
+		!hasEmptyStatement && !hasExistentialType &&
+		!hasIfStmt && !hasWhileStmt {
 		return index
 	}
 	index.builds = 1
@@ -1172,7 +1180,7 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 				if child == nil {
 					continue
 				}
-				if child.symbol == callSym {
+				if hasCallSym && child.symbol == callSym {
 					index.call.nodesVisited++
 					if rewritten := rewriteJavaScriptTypeScriptCallPrecedenceWithSymbol(child, lang, callSym); rewritten != nil {
 						if replaceJavaScriptTypeScriptPrecedenceCandidate(javaScriptTypeScriptPrecedenceCandidate{parent: n, childIndex: i}, rewritten) {
@@ -1182,13 +1190,12 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 					}
 				}
 				walk(child)
-				switch child.symbol {
-				case unarySym:
+				if hasUnarySym && child.symbol == unarySym {
 					index.unaryCandidates = append(index.unaryCandidates, javaScriptTypeScriptPrecedenceCandidate{
 						parent:     n,
 						childIndex: i,
 					})
-				case binarySym:
+				} else if hasBinarySym && child.symbol == binarySym {
 					index.binaryCandidates = append(index.binaryCandidates, javaScriptTypeScriptPrecedenceCandidate{
 						parent:     n,
 						childIndex: i,
@@ -1199,18 +1206,20 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 		}
 
 		children := n.children
-		for i, child := range children {
-			if child == nil || child.symbol != callSym {
-				continue
+		if hasCallSym {
+			for i, child := range children {
+				if child == nil || child.symbol != callSym {
+					continue
+				}
+				index.call.nodesVisited++
+				rewritten := rewriteJavaScriptTypeScriptCallPrecedenceWithSymbol(child, lang, callSym)
+				if rewritten == nil {
+					continue
+				}
+				children[i] = rewritten
+				setNodeParentLink(rewritten, n, i)
+				index.call.nodesRewritten++
 			}
-			index.call.nodesVisited++
-			rewritten := rewriteJavaScriptTypeScriptCallPrecedenceWithSymbol(child, lang, callSym)
-			if rewritten == nil {
-				continue
-			}
-			children[i] = rewritten
-			setNodeParentLink(rewritten, n, i)
-			index.call.nodesRewritten++
 		}
 		for _, child := range children {
 			walk(child)
@@ -1219,13 +1228,12 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 			if child == nil {
 				continue
 			}
-			switch child.symbol {
-			case unarySym:
+			if hasUnarySym && child.symbol == unarySym {
 				index.unaryCandidates = append(index.unaryCandidates, javaScriptTypeScriptPrecedenceCandidate{
 					parent:     n,
 					childIndex: i,
 				})
-			case binarySym:
+			} else if hasBinarySym && child.symbol == binarySym {
 				index.binaryCandidates = append(index.binaryCandidates, javaScriptTypeScriptPrecedenceCandidate{
 					parent:     n,
 					childIndex: i,
