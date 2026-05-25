@@ -708,8 +708,8 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "javascript"}, maxStacksPerMergeKey, false); got != 4 {
 		t.Fatalf("effectiveParseMergePerKeyCap(javascript, default, full) = %d, want 4", got)
 	}
-	if got := effectiveParseMergePerKeyCap(&Language{Name: "go"}, maxStacksPerMergeKey, false); got != 5 {
-		t.Fatalf("effectiveParseMergePerKeyCap(go, default, full) = %d, want 5", got)
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "go"}, maxStacksPerMergeKey, false); got != 3 {
+		t.Fatalf("effectiveParseMergePerKeyCap(go, default, full) = %d, want 3", got)
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "starlark"}, maxStacksPerMergeKey, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(starlark, default, full) = %d, want 1", got)

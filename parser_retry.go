@@ -333,12 +333,11 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 	}
 	switch lang.Name {
 	case "go":
-		// Go keeps a few semantically distinct alternatives alive on real
-		// corpus files, but the sixth per-key survivor only added merge churn
-		// in the Aspect-shaped workload. Keep this conservative so fallthrough
-		// and type-conversion parity cases are not pruned.
-		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 5 {
-			return 5
+		// Go's full-tree path is false-equivalence heavy around expression/type
+		// ambiguity. Three same-key survivors preserve the current parse,
+		// highlight, and query gates, while cap=2 prunes a required branch.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 3 {
+			return 3
 		}
 	case "c":
 		// C's declaration/expression recovery can keep many redundant
