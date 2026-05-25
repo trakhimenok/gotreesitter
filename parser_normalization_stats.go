@@ -78,6 +78,7 @@ func (p *Parser) runNamedNormalizationPass(name string, enabled func() bool, fn 
 	counters := fn()
 	elapsed := time.Since(start).Nanoseconds()
 
+	pass = p.normalizationStats.namedPass(name)
 	p.normalizationStats.nodesVisited += counters.nodesVisited
 	p.normalizationStats.nodesRewritten += counters.nodesRewritten
 	p.normalizationStats.nanos += elapsed
