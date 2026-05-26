@@ -594,7 +594,7 @@ func MarkdownGrammar() *Grammar {
 			Sym("_indented_chunk_start"),
 			Repeat(Choice(
 				Sym("_line"),
-				Sym("_newline"))),
+				Sym("_indented_chunk_newline"))),
 			Sym("_block_close"),
 			Choice(
 				Sym("block_continuation"),
@@ -743,7 +743,7 @@ func MarkdownGrammar() *Grammar {
 			Sym("_html_block_1_start"),
 			Repeat(Choice(
 				Sym("_line"),
-				Sym("_newline"),
+				Sym("_html_block_newline"),
 				Seq(
 					Sym("_html_block_1_end"),
 					Sym("_close_block")))),
@@ -758,7 +758,7 @@ func MarkdownGrammar() *Grammar {
 			Sym("_html_block_2_start"),
 			Repeat(Choice(
 				Sym("_line"),
-				Sym("_newline"),
+				Sym("_html_block_newline"),
 				Seq(
 					Str("-->"),
 					Sym("_close_block")))),
@@ -773,7 +773,7 @@ func MarkdownGrammar() *Grammar {
 			Sym("_html_block_3_start"),
 			Repeat(Choice(
 				Sym("_line"),
-				Sym("_newline"),
+				Sym("_html_block_newline"),
 				Seq(
 					Str("?>"),
 					Sym("_close_block")))),
@@ -788,7 +788,7 @@ func MarkdownGrammar() *Grammar {
 			Sym("_html_block_4_start"),
 			Repeat(Choice(
 				Sym("_line"),
-				Sym("_newline"),
+				Sym("_html_block_newline"),
 				Seq(
 					Str(">"),
 					Sym("_close_block")))),
@@ -803,7 +803,7 @@ func MarkdownGrammar() *Grammar {
 			Sym("_html_block_5_start"),
 			Repeat(Choice(
 				Sym("_line"),
-				Sym("_newline"),
+				Sym("_html_block_newline"),
 				Seq(
 					Str("]]>"),
 					Sym("_close_block")))),
@@ -818,10 +818,10 @@ func MarkdownGrammar() *Grammar {
 			Sym("_html_block_6_start"),
 			Repeat(Choice(
 				Sym("_line"),
-				Sym("_newline"),
+				Sym("_html_block_newline"),
 				Seq(
 					Seq(
-						Sym("_newline"),
+						Sym("_html_block_newline"),
 						Sym("_blank_line")),
 					Sym("_close_block")))),
 			Sym("_block_close"),
@@ -835,10 +835,10 @@ func MarkdownGrammar() *Grammar {
 			Sym("_html_block_7_start"),
 			Repeat(Choice(
 				Sym("_line"),
-				Sym("_newline"),
+				Sym("_html_block_newline"),
 				Seq(
 					Seq(
-						Sym("_newline"),
+						Sym("_html_block_newline"),
 						Sym("_blank_line")),
 					Sym("_close_block")))),
 			Sym("_block_close"),
@@ -940,7 +940,7 @@ func MarkdownGrammar() *Grammar {
 	g.Define("paragraph",
 		Seq(
 			Alias(Repeat1(Choice(
-				Sym("_line"),
+				Sym("_paragraph_line"),
 				Sym("_soft_line_break"))), "inline", true),
 			Choice(
 				Sym("_newline"),
@@ -1126,8 +1126,77 @@ func MarkdownGrammar() *Grammar {
 				Sym("block_continuation"),
 				Blank())))
 
+	// newline inside an indented code chunk — structurally identical to
+	// _newline but with a distinct rule name so its LR items remain separate
+	// from paragraph's _soft_line_break states in the LALR automaton.
+	g.Define("_indented_chunk_newline",
+		Seq(
+			Sym("_line_ending"),
+			Choice(
+				Sym("block_continuation"),
+				Blank())))
+
+	// newline between the pipe_table header row and the delimiter row.
+	// newline inside HTML block body — distinct name prevents LALR merging
+	// with block-dispatch states that have _html_block_*_start valid, which
+	// would otherwise leak those tokens into paragraph-continuation states.
+	g.Define("_html_block_newline",
+		Seq(
+			Sym("_line_ending"),
+			Choice(
+				Sym("block_continuation"),
+				Blank())))
+
 	// a single line of text (paragraph continuation)
 	g.Define("_line",
+		PrecRight(0, Repeat1(Choice(
+			Sym("_word"),
+			Sym("_whitespace"),
+			Seq(
+				Choice(
+					Str("!"),
+					Str("\""),
+					Str("#"),
+					Str("$"),
+					Str("%"),
+					Str("&"),
+					Str("'"),
+					Str("("),
+					Str(")"),
+					Str("*"),
+					Str("+"),
+					Str(","),
+					Str("-"),
+					Str("."),
+					Str("/"),
+					Str(":"),
+					Str(";"),
+					Str("<"),
+					Str("="),
+					Str(">"),
+					Str("?"),
+					Str("@"),
+					Str("["),
+					Str("\\"),
+					Str("]"),
+					Str("^"),
+					Str("_"),
+					Str("`"),
+					Str("{"),
+					Str("|"),
+					Str("}"),
+					Str("~")),
+				Choice(
+					Sym("_last_token_punctuation"),
+					Blank()))))))
+
+	// A structurally-identical copy of _line for use inside paragraph.
+	// Using a distinct rule name prevents LALR state merging between paragraph
+	// (which allows _soft_line_ending after each line) and other block contexts
+	// (_indented_chunk, html_block, code_fence_content) that must NOT allow it.
+	// _line is used in all non-paragraph contexts; _paragraph_line is used only
+	// in paragraph, so _soft_line_ending stays out of _line_repeat1's FOLLOW set.
+	g.Define("_paragraph_line",
 		PrecRight(0, Repeat1(Choice(
 			Sym("_word"),
 			Sym("_whitespace"),
@@ -1190,11 +1259,19 @@ func MarkdownGrammar() *Grammar {
 		Prec(1, Pat(`\[[ \t]\]`)))
 
 	// GFM pipe table (header + delimiter row + data rows)
-	g.Define("pipe_table",
-		PrecRight(0, Seq(
+	// Structure matches the reference grammar exactly:
+	//   _pipe_table_start alias(pipe_table_row,"pipe_table_header") _newline
+	//   pipe_table_delimiter_row Repeat(Seq(_pipe_table_newline, Choice(row,Blank)))
+	//   Choice(_newline, _eof)
+	g.Define("_pipe_table_header_block",
+		Seq(
 			Sym("_pipe_table_start"),
 			Alias(Sym("pipe_table_row"), "pipe_table_header", true),
-			Sym("_newline"),
+			Sym("_newline")))
+
+	g.Define("pipe_table",
+		PrecRight(0, Seq(
+			Sym("_pipe_table_header_block"),
 			Sym("pipe_table_delimiter_row"),
 			Repeat(Seq(
 				Sym("_pipe_table_newline"),
@@ -1434,9 +1511,15 @@ func MarkdownGrammar() *Grammar {
 	// conflicts: parser conflicts resolved by GLR or dynamic precedence.
 	g.SetConflicts(
 		[]string{"link_reference_definition"},
-		[]string{"link_label", "_line"},
-		[]string{"link_reference_definition", "_line"},
+		[]string{"link_label", "_paragraph_line"},
+		[]string{"link_reference_definition", "_paragraph_line"},
 	)
+
+	// Suppress LALR reduce-lookahead artifacts: when an external token only has
+	// reduce actions that duplicate non-external reduce actions in the same state,
+	// suppress the external token. This prevents _soft_line_ending from leaking
+	// into _indented_chunk states via LALR FOLLOW-set propagation.
+	g.SuppressEquivalentExternalReduceLookaheads = true
 
 	// precedences: symbol-level precedence ordering for ambiguous constructs.
 	g.Precedences = [][]PrecEntry{
