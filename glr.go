@@ -87,6 +87,15 @@ type glrMergeScratch struct {
 	slotBytes        int64
 	largeSlotBytes   int64
 	equivCacheBytes  int64
+	// Negative-only stack-pair cache: keyed on (stackHash(a), stackHash(b),
+	// depth). On hit we return false (skip the deep equiv walk). We only ever
+	// store false results — that makes the cache safe against false-positive
+	// hash collisions (any FP would say "equivalent" when it's not, which
+	// would corrupt merges; we never return true from a hit). FNs (hash
+	// collisions causing a missed merge) are harmless. See cache-design notes
+	// in the commit message.
+	stackPairCache      []glrStackPairCacheEntry
+	stackPairCacheBytes int64
 }
 
 type glrMergeKey struct {
@@ -416,12 +425,17 @@ func (s *glrMergeScratch) beginEquivEpoch() {
 	}
 	if s.equivEpoch == ^uint32(0) {
 		clear(s.equivCache)
+		clear(s.stackPairCache)
 		s.equivEpoch = 0
 	}
 	s.equivEpoch++
 	if len(s.equivCache) == 0 {
 		s.equivCache = make([]glrNodeEquivCacheEntry, glrNodeEquivCacheSize)
 		s.equivCacheBytes = glrNodeEquivCacheBytesForCap(cap(s.equivCache))
+	}
+	if len(s.stackPairCache) == 0 {
+		s.stackPairCache = make([]glrStackPairCacheEntry, glrStackPairCacheSize)
+		s.stackPairCacheBytes = int64(cap(s.stackPairCache)) * int64(stackPairCacheEntrySize)
 	}
 }
 
@@ -598,6 +612,86 @@ func nodeEquivCacheIndex(a, b *Node, depth int) int {
 	return int(h & uint64(glrNodeEquivCacheSize-1))
 }
 
+// glrStackPairCacheEntry caches the result of a previous
+// stackEquivalentForLanguageWithScratch comparison keyed on content hashes of
+// both stacks. Direct-mapped, generation-versioned, NEGATIVE-ONLY.
+type glrStackPairCacheEntry struct {
+	hashA      uint64
+	hashB      uint64
+	depth      uint32
+	generation uint32
+}
+
+const (
+	// 4096 × 24 B = 96 KiB — fits well within L2 alongside equivCache (512 KiB).
+	glrStackPairCacheSize   = 4096
+	stackPairCacheEntrySize = 24 // sizeof(glrStackPairCacheEntry)
+)
+
+func stackPairCacheIndex(hashA, hashB uint64, depth uint32) int {
+	h := hashA ^ (hashB + 0x9e3779b97f4a7c15 + (hashA << 6) + (hashA >> 2))
+	h ^= uint64(depth) * 0x517cc1b727220a95
+	return int(h & uint64(glrStackPairCacheSize-1))
+}
+
+// lookupNegativeStackPairCache returns (false, true) if (a, b) was previously
+// determined to be NOT equivalent in this epoch. Returns (false, false) on miss.
+// Never returns true — the cache is negative-only so collisions can only cause
+// missed merges (FN, safe), never incorrect merges (FP, unsafe).
+func lookupNegativeStackPairCache(scratch *glrMergeScratch, a, b glrStack) (bool, bool) {
+	if scratch == nil || len(scratch.stackPairCache) == 0 || scratch.equivEpoch == 0 {
+		return false, false
+	}
+	ah := stackHash(a)
+	bh := stackHash(b)
+	if ah == 0 || bh == 0 {
+		return false, false
+	}
+	if ah > bh {
+		ah, bh = bh, ah
+	}
+	d := uint32(a.depth())
+	if bd := uint32(b.depth()); bd > d {
+		d = bd
+	}
+	idx := stackPairCacheIndex(ah, bh, d)
+	e := &scratch.stackPairCache[idx]
+	if e.generation != scratch.equivEpoch {
+		return false, false
+	}
+	if e.hashA != ah || e.hashB != bh || e.depth != d {
+		return false, false
+	}
+	return false, true
+}
+
+// storeNegativeStackPairCache records that (a, b) was NOT equivalent. Called
+// only on a false result; positive results are intentionally not cached.
+func storeNegativeStackPairCache(scratch *glrMergeScratch, a, b glrStack) {
+	if scratch == nil || len(scratch.stackPairCache) == 0 || scratch.equivEpoch == 0 {
+		return
+	}
+	ah := stackHash(a)
+	bh := stackHash(b)
+	if ah == 0 || bh == 0 {
+		return
+	}
+	if ah > bh {
+		ah, bh = bh, ah
+	}
+	d := uint32(a.depth())
+	if bd := uint32(b.depth()); bd > d {
+		d = bd
+	}
+	idx := stackPairCacheIndex(ah, bh, d)
+	scratch.stackPairCache[idx] = glrStackPairCacheEntry{
+		hashA:      ah,
+		hashB:      bh,
+		depth:      d,
+		generation: scratch.equivEpoch,
+	}
+}
+
 func stackEntriesEqualForLanguageWithScratch(scratch *glrMergeScratch, lang *Language, a, b []stackEntry) bool {
 	if len(a) != len(b) {
 		if audit := activeEquivAudit(scratch); audit != nil {
@@ -704,11 +798,24 @@ func stackEquivalentForLanguageWithScratch(scratch *glrMergeScratch, lang *Langu
 	if perfCountersEnabled {
 		perfRecordStackEquivalentCall()
 	}
+	// Production negative-only stack-pair cache lookup. Must come before any
+	// audit bookkeeping so an audit-recorded "real" comparison only fires on
+	// genuine cache misses.
+	if _, hit := lookupNegativeStackPairCache(scratch, a, b); hit {
+		if perfCountersEnabled {
+			perfRecordStackEquivalentCall()
+		}
+		return false
+	}
 	audit := activeEquivAudit(scratch)
 	var pairKey runtimeAuditStackEquivPairKey
 	var pairPrevious bool
 	var pairHit bool
 	pairKeyOK := false
+	var contentKey runtimeAuditStackContentEquivPairKey
+	var contentPrevious bool
+	var contentHit bool
+	contentKeyOK := false
 	if audit != nil {
 		audit.recordStackEquivCall()
 		if key, ok := stackEquivPairKeyForAudit(a, b); ok {
@@ -718,28 +825,84 @@ func stackEquivalentForLanguageWithScratch(scratch *glrMergeScratch, lang *Langu
 		} else {
 			audit.recordStackEquivPairUnkeyed()
 		}
+		if ckey, ok := stackEquivContentPairKeyForAudit(a, b); ok {
+			contentKey = ckey
+			contentKeyOK = true
+			contentPrevious, contentHit = audit.lookupStackEquivContentPair(ckey)
+		}
 	}
 	if a.depth() != b.depth() {
 		if audit != nil {
 			audit.recordStackEquivDepthMismatch()
 			finishStackEquivalentForAudit(audit, pairKey, pairKeyOK, pairPrevious, pairHit, false)
+			if contentKeyOK {
+				audit.storeStackEquivContentPair(contentKey, contentPrevious, contentHit, false)
+			}
 		}
+		storeNegativeStackPairCache(scratch, a, b)
 		return false
 	}
 	if a.gss.head != nil && b.gss.head != nil {
 		eq := gssStacksEqualForLanguageWithScratch(scratch, lang, a.gss, b.gss)
+		if audit != nil && contentKeyOK {
+			audit.storeStackEquivContentPair(contentKey, contentPrevious, contentHit, eq)
+		}
+		if !eq {
+			storeNegativeStackPairCache(scratch, a, b)
+		}
 		return finishStackEquivalentResultForAudit(audit, pairKey, pairKeyOK, pairPrevious, pairHit, eq)
 	}
 	if a.gss.head != nil {
 		eq := gssStackEntriesEqualForLanguageWithScratch(scratch, lang, a.gss, b.entries)
+		if audit != nil && contentKeyOK {
+			audit.storeStackEquivContentPair(contentKey, contentPrevious, contentHit, eq)
+		}
+		if !eq {
+			storeNegativeStackPairCache(scratch, a, b)
+		}
 		return finishStackEquivalentResultForAudit(audit, pairKey, pairKeyOK, pairPrevious, pairHit, eq)
 	}
 	if b.gss.head != nil {
 		eq := gssStackEntriesEqualForLanguageWithScratch(scratch, lang, b.gss, a.entries)
+		if audit != nil && contentKeyOK {
+			audit.storeStackEquivContentPair(contentKey, contentPrevious, contentHit, eq)
+		}
+		if !eq {
+			storeNegativeStackPairCache(scratch, a, b)
+		}
 		return finishStackEquivalentResultForAudit(audit, pairKey, pairKeyOK, pairPrevious, pairHit, eq)
 	}
 	eq := stackEntriesEqualForLanguageWithScratch(scratch, lang, a.entries, b.entries)
+	if audit != nil && contentKeyOK {
+		audit.storeStackEquivContentPair(contentKey, contentPrevious, contentHit, eq)
+	}
+	if !eq {
+		storeNegativeStackPairCache(scratch, a, b)
+	}
 	return finishStackEquivalentResultForAudit(audit, pairKey, pairKeyOK, pairPrevious, pairHit, eq)
+}
+
+// stackEquivContentPairKeyForAudit returns a content-hashed key for the
+// pair-cache measurement experiment. Uses stackHash (already content-based via
+// gssNodeHash lazy cache) so churned gss.head pointers don't defeat lookups.
+func stackEquivContentPairKeyForAudit(a, b glrStack) (runtimeAuditStackContentEquivPairKey, bool) {
+	ah := stackHash(a)
+	bh := stackHash(b)
+	if ah == 0 || bh == 0 {
+		return runtimeAuditStackContentEquivPairKey{}, false
+	}
+	if ah > bh {
+		ah, bh = bh, ah
+	}
+	depth := uint32(a.depth())
+	if bd := uint32(b.depth()); bd > depth {
+		depth = bd
+	}
+	return runtimeAuditStackContentEquivPairKey{
+		a:     ah,
+		b:     bh,
+		depth: depth,
+	}, true
 }
 
 func stackEquivPairKeyForAudit(a, b glrStack) (runtimeAuditStackEquivPairKey, bool) {

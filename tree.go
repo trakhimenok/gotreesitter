@@ -729,6 +729,12 @@ type ParseRuntime struct {
 	StackEquivPairRepeatFalse                    uint64
 	StackEquivPairRepeatMismatch                 uint64
 	StackEquivPairStores                         uint64
+	StackEquivContentPairKeyed                   uint64
+	StackEquivContentPairRepeats                 uint64
+	StackEquivContentPairRepeatTrue              uint64
+	StackEquivContentPairRepeatFalse             uint64
+	StackEquivContentPairRepeatMismatch          uint64
+	StackEquivContentPairStores                  uint64
 	EquivCacheLookups                            uint64
 	EquivCacheHits                               uint64
 	EquivCacheStores                             uint64

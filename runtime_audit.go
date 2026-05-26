@@ -42,6 +42,12 @@ type runtimeAuditEquivStateInfo struct {
 	stackEquivPairRepeatFalse             uint64
 	stackEquivPairRepeatMismatch          uint64
 	stackEquivPairStores                  uint64
+	stackEquivContentPairKeyed            uint64
+	stackEquivContentPairRepeats          uint64
+	stackEquivContentPairRepeatTrue       uint64
+	stackEquivContentPairRepeatFalse      uint64
+	stackEquivContentPairRepeatMismatch   uint64
+	stackEquivContentPairStores           uint64
 	equivCacheLookups                     uint64
 	equivCacheHits                        uint64
 	equivCacheStores                      uint64
@@ -76,6 +82,15 @@ type runtimeAuditStackEquivPairKey struct {
 	depth uint32
 }
 
+// runtimeAuditStackContentEquivPairKey is the content-hash variant — keys the
+// pair cache on stackHash(a, b) so structurally-equivalent stacks with churned
+// GSS head pointers can still hit the cache. Measurement-only.
+type runtimeAuditStackContentEquivPairKey struct {
+	a     uint64
+	b     uint64
+	depth uint32
+}
+
 type runtimeAudit struct {
 	enabled              bool
 	equivEnabled         bool
@@ -88,8 +103,9 @@ type runtimeAudit struct {
 	nodeInfo   map[*Node]runtimeAuditNodeInfo
 	seenGSS    map[*gssNode]struct{}
 	seenNode   map[*Node]struct{}
-	equivState map[StateID]*runtimeAuditEquivStateInfo
-	equivPairs map[runtimeAuditStackEquivPairKey]bool
+	equivState        map[StateID]*runtimeAuditEquivStateInfo
+	equivPairs        map[runtimeAuditStackEquivPairKey]bool
+	equivContentPairs map[runtimeAuditStackContentEquivPairKey]bool
 
 	currentGSSAllocated                 uint64
 	currentGSSRetained                  uint64
@@ -158,6 +174,12 @@ type runtimeAudit struct {
 	stackEquivPairRepeatFalse             uint64
 	stackEquivPairRepeatMismatch          uint64
 	stackEquivPairStores                  uint64
+	stackEquivContentPairKeyed            uint64
+	stackEquivContentPairRepeats          uint64
+	stackEquivContentPairRepeatTrue       uint64
+	stackEquivContentPairRepeatFalse      uint64
+	stackEquivContentPairRepeatMismatch   uint64
+	stackEquivContentPairStores           uint64
 	equivCacheLookups                     uint64
 	equivCacheHits                        uint64
 	equivCacheStores                      uint64
@@ -278,6 +300,12 @@ func (a *runtimeAudit) beginParse() {
 	a.stackEquivPairRepeatFalse = 0
 	a.stackEquivPairRepeatMismatch = 0
 	a.stackEquivPairStores = 0
+	a.stackEquivContentPairKeyed = 0
+	a.stackEquivContentPairRepeats = 0
+	a.stackEquivContentPairRepeatTrue = 0
+	a.stackEquivContentPairRepeatFalse = 0
+	a.stackEquivContentPairRepeatMismatch = 0
+	a.stackEquivContentPairStores = 0
 	a.equivCacheLookups = 0
 	a.equivCacheHits = 0
 	a.equivCacheStores = 0
@@ -313,8 +341,16 @@ func (a *runtimeAudit) beginParse() {
 		} else {
 			clearRuntimeAuditStackEquivPairMap(a.equivPairs)
 		}
+		if a.equivContentPairs == nil {
+			a.equivContentPairs = make(map[runtimeAuditStackContentEquivPairKey]bool)
+		} else {
+			clearRuntimeAuditStackEquivContentPairMap(a.equivContentPairs)
+		}
 	} else if a.equivPairs != nil {
 		clearRuntimeAuditStackEquivPairMap(a.equivPairs)
+		if a.equivContentPairs != nil {
+			clearRuntimeAuditStackEquivContentPairMap(a.equivContentPairs)
+		}
 	}
 	if !a.enabled {
 		return
@@ -412,6 +448,12 @@ func (a *runtimeAudit) reset() {
 	a.stackEquivPairRepeatFalse = 0
 	a.stackEquivPairRepeatMismatch = 0
 	a.stackEquivPairStores = 0
+	a.stackEquivContentPairKeyed = 0
+	a.stackEquivContentPairRepeats = 0
+	a.stackEquivContentPairRepeatTrue = 0
+	a.stackEquivContentPairRepeatFalse = 0
+	a.stackEquivContentPairRepeatMismatch = 0
+	a.stackEquivContentPairStores = 0
 	a.equivCacheLookups = 0
 	a.equivCacheHits = 0
 	a.equivCacheStores = 0
@@ -455,6 +497,9 @@ func (a *runtimeAudit) reset() {
 	}
 	if a.equivPairs != nil {
 		clearRuntimeAuditStackEquivPairMap(a.equivPairs)
+	}
+	if a.equivContentPairs != nil {
+		clearRuntimeAuditStackEquivContentPairMap(a.equivContentPairs)
 	}
 }
 
@@ -1291,4 +1336,49 @@ func clearRuntimeAuditStackEquivPairMap(m map[runtimeAuditStackEquivPairKey]bool
 	for k := range m {
 		delete(m, k)
 	}
+}
+
+func clearRuntimeAuditStackEquivContentPairMap(m map[runtimeAuditStackContentEquivPairKey]bool) {
+	for k := range m {
+		delete(m, k)
+	}
+}
+
+func (a *runtimeAudit) lookupStackEquivContentPair(key runtimeAuditStackContentEquivPairKey) (bool, bool) {
+	if a == nil || !a.equivEnabled {
+		return false, false
+	}
+	a.stackEquivContentPairKeyed++
+	if a.equivContentPairs == nil {
+		a.equivContentPairs = make(map[runtimeAuditStackContentEquivPairKey]bool)
+		return false, false
+	}
+	previous, ok := a.equivContentPairs[key]
+	if !ok {
+		return false, false
+	}
+	a.stackEquivContentPairRepeats++
+	if previous {
+		a.stackEquivContentPairRepeatTrue++
+	} else {
+		a.stackEquivContentPairRepeatFalse++
+	}
+	return previous, true
+}
+
+func (a *runtimeAudit) storeStackEquivContentPair(key runtimeAuditStackContentEquivPairKey, previous bool, hit bool, result bool) {
+	if a == nil || !a.equivEnabled {
+		return
+	}
+	if hit {
+		if previous != result {
+			a.stackEquivContentPairRepeatMismatch++
+		}
+		return
+	}
+	if a.equivContentPairs == nil {
+		a.equivContentPairs = make(map[runtimeAuditStackContentEquivPairKey]bool)
+	}
+	a.equivContentPairs[key] = result
+	a.stackEquivContentPairStores++
 }
