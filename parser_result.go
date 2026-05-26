@@ -548,8 +548,12 @@ func normalizeKnownSpanAttribution(root *Node, source []byte, p *Parser) {
 		normalizeCSizeofUnknownTypeIdentifiers(root, source, lang)
 		normalizeCCastUnknownTypeIdentifiers(root, source, lang)
 		normalizeCBareTypeIdentifierExpressionStatements(root, source, lang)
+		normalizeCConditionClauseAssignments(root, source, lang, p)
 		normalizeCPreprocNewlineSpans(root, source, lang)
 		normalizeCPointerAssignmentPrecedence(root, lang)
+	case "cpp", "cuda", "arduino":
+		normalizeCBareTypeIdentifierExpressionStatements(root, source, lang)
+		normalizeCConditionClauseAssignments(root, source, lang, p)
 	case "c_sharp":
 		normalizeCSharpRecoveredTopLevelChunks(root, source, p)
 		normalizeCSharpRecoveredNamespaces(root, source, lang)

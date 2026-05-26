@@ -2,6 +2,8 @@ package gotreesitter
 
 import "strings"
 
+const cConditionClauseRepairPrefix = "void _tq_() { "
+
 func normalizeCTranslationUnitRoot(root *Node, lang *Language) {
 	if root == nil || lang == nil || root.Type(lang) != "ERROR" {
 		return
@@ -502,7 +504,14 @@ func normalizeCPreprocNewlineSpans(root *Node, source []byte, lang *Language) {
 }
 
 func normalizeCBareTypeIdentifierExpressionStatements(root *Node, source []byte, lang *Language) {
-	if root == nil || lang == nil || lang.Name != "c" {
+	if root == nil || lang == nil {
+		return
+	}
+	switch lang.Name {
+	case "c", "cpp", "cuda", "arduino":
+		// All C-family languages share the type_identifier vs expression_statement
+		// ambiguity where the DFA lexer cannot distinguish typedefs from identifiers.
+	default:
 		return
 	}
 	compoundSym, ok1 := symbolByName(lang, "compound_statement")
@@ -885,4 +894,194 @@ func collectCLocalTypeNames(root *Node, source []byte, lang *Language) map[strin
 	}
 	walk(root)
 	return localTypes
+}
+
+// normalizeCConditionClauseAssignments repairs ERROR nodes that arise when
+// grammargen's parser misidentifies assignment expressions (a = b) as
+// declarations inside while/if/for condition clauses. The C/C++ grammar
+// allows both declarations and expressions in condition_clause, and without
+// an external scanner to distinguish type names from identifiers, grammargen
+// may take the declaration path and fail.
+//
+// The fix: when we see an ERROR at the root level that contains tokens
+// consistent with a control-flow statement + assignment in condition, we
+// re-parse the condition portion as a standalone expression and rebuild
+// the tree.
+func normalizeCConditionClauseAssignments(root *Node, source []byte, lang *Language, parser *Parser) {
+	if root == nil || lang == nil || parser == nil {
+		return
+	}
+	switch lang.Name {
+	case "c", "cpp", "cuda", "arduino":
+	default:
+		return
+	}
+
+	// Only act if the root itself is ERROR — this handles the case where
+	// the entire statement failed to parse.
+	if root.Type(lang) != "ERROR" {
+		// Also walk children for ERROR nodes inside otherwise valid trees.
+		normalizeCConditionClauseAssignmentsInner(root, source, lang, parser)
+		return
+	}
+
+	// Check if root ERROR has children that look like a control-flow
+	// statement with a broken condition: ERROR, (, tokens..., ), compound_statement
+	// This is the pattern from `while ((a = b)) {}`
+	if len(root.children) < 3 {
+		return
+	}
+
+	// Find the keyword (while/if/for) in the ERROR children or as a direct child.
+	var keyword string
+	var keywordSym Symbol
+	for _, kw := range []string{"while", "if", "for"} {
+		sym, ok := symbolByName(lang, kw)
+		if ok {
+			for _, ch := range root.children {
+				if ch != nil && ch.symbol == sym {
+					keyword = kw
+					keywordSym = sym
+					break
+				}
+			}
+		}
+		if keyword != "" {
+			break
+		}
+		// Also check ERROR children for the keyword.
+		if root.children[0] != nil && root.children[0].Type(lang) == "ERROR" {
+			errChild := root.children[0]
+			for _, ch := range errChild.children {
+				if ch != nil && ch.Type(lang) == kw {
+					keyword = kw
+					keywordSym, _ = symbolByName(lang, kw)
+					break
+				}
+			}
+		}
+		if keyword != "" {
+			break
+		}
+	}
+
+	if keyword == "" {
+		return
+	}
+	_ = keywordSym
+
+	// Strategy: wrap the entire source in a function body so the statement
+	// parses as a block_item, using identifiers instead of type_identifiers.
+	// Actually, simpler: the runtime blob parser handles this correctly,
+	// so if we have access to the blob language, re-parse with that.
+	// But we don't necessarily have it here.
+	//
+	// Alternative: wrap the condition content in an expression statement
+	// and parse that, then splice into a synthesized while_statement.
+	// This gets complex quickly.
+	//
+	// Simplest viable fix: wrap the snippet in a function body so the parser
+	// is forced to treat it as a statement, then splice the recovered
+	// statement back under a translation_unit root.
+	wrapped := []byte(cConditionClauseRepairPrefix + string(source[root.StartByte():root.EndByte()]) + " }")
+	wrapTree, _ := parser.Parse(wrapped)
+	if wrapTree == nil || wrapTree.RootNode() == nil {
+		return
+	}
+	defer wrapTree.Release()
+	if wrapTree.RootNode().HasError() {
+		return
+	}
+
+	stmt := firstStatementInWrappedCRepair(wrapTree.RootNode(), lang)
+	if stmt == nil || stmt.hasError {
+		return
+	}
+
+	repairArena := root.ownerArena
+	if repairArena == nil {
+		repairArena = newNodeArena(arenaClassFull)
+		root.ownerArena = repairArena
+	}
+	repaired := cloneTreeNodesIntoArena(stmt, repairArena)
+	delta := int(root.StartByte()) - len(cConditionClauseRepairPrefix)
+	if !shiftNodeOffsetsToSource(repaired, delta, source) {
+		return
+	}
+
+	root.fieldIDs = nil
+	root.fieldSources = nil
+	root.productionID = 0
+	if translationUnitSym, ok := symbolByName(lang, "translation_unit"); ok {
+		root.symbol = translationUnitSym
+		root.isNamed = int(translationUnitSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[translationUnitSym].Named
+		root.children = cloneNodeSliceInArena(root.ownerArena, []*Node{repaired})
+		populateParentNode(root, root.children)
+		return
+	}
+
+	// Fallback for languages without a top-level translation unit symbol.
+	stmtSym, ok := symbolByName(lang, repaired.Type(lang))
+	if !ok {
+		return
+	}
+	root.symbol = stmtSym
+	root.isNamed = int(stmtSym) < len(lang.SymbolMetadata) && lang.SymbolMetadata[stmtSym].Named
+	root.children = repaired.children
+	populateParentNode(root, root.children)
+}
+
+func firstStatementInWrappedCRepair(root *Node, lang *Language) *Node {
+	if root == nil || lang == nil || root.ChildCount() < 1 {
+		return nil
+	}
+	funcDef := root.Child(0)
+	if funcDef == nil || funcDef.Type(lang) != "function_definition" {
+		return nil
+	}
+	for i := 0; i < funcDef.ChildCount(); i++ {
+		ch := funcDef.Child(i)
+		if ch == nil || ch.Type(lang) != "compound_statement" {
+			continue
+		}
+		for j := 0; j < ch.ChildCount(); j++ {
+			stmt := ch.Child(j)
+			if stmt != nil && stmt.Type(lang) != "{" && stmt.Type(lang) != "}" {
+				return stmt
+			}
+		}
+	}
+	return nil
+}
+
+func shiftNodeOffsetsToSource(n *Node, delta int, source []byte) bool {
+	if n == nil {
+		return true
+	}
+	start := int(n.startByte) + delta
+	end := int(n.endByte) + delta
+	if start < 0 || end < start || end > len(source) {
+		return false
+	}
+	n.startByte = uint32(start)
+	n.endByte = uint32(end)
+	n.startPoint = advancePointByBytes(Point{}, source[:start])
+	n.endPoint = advancePointByBytes(Point{}, source[:end])
+	for _, ch := range n.children {
+		if !shiftNodeOffsetsToSource(ch, delta, source) {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeCConditionClauseAssignmentsInner(root *Node, source []byte, lang *Language, parser *Parser) {
+	_ = source
+	_ = parser
+	if root == nil || lang == nil {
+		return
+	}
+	// Walk tree looking for ERROR children that could be repaired condition clauses.
+	// For now, only handle the root-level ERROR case.
+	// TODO: extend to handle ERROR nodes inside otherwise valid trees.
 }

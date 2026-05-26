@@ -59,6 +59,8 @@ Usage: run_grammargen_focus_targets.sh [options]
 
 Run the high-value grammargen targets only, with safe isolation by default:
   css, javascript, typescript, tsx, c, cpp, c_sharp, cobol, fortran
+Direct grammargen-vs-C parity also supports:
+  cuda
 
 Modes:
   all          Run real-corpus parity and direct grammargen-vs-C parity
@@ -105,6 +107,7 @@ Notes:
     unless you override it or pass --unsafe-fortran-defaults.
   - fortran is currently real-corpus-only; the direct grammargen-vs-C harness
     does not expose it yet.
+  - cuda is currently direct-parity-only in this focused runner.
 EOF
 }
 
@@ -124,6 +127,13 @@ canonical_lang() {
 
 is_supported_focus_lang() {
   case "$1" in
+    css|javascript|typescript|tsx|c|cpp|cuda|c_sharp|cobol|fortran) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+supports_real_corpus() {
+  case "$1" in
     css|javascript|typescript|tsx|c|cpp|c_sharp|cobol|fortran) return 0 ;;
     *) return 1 ;;
   esac
@@ -138,7 +148,7 @@ real_corpus_lang() {
 
 supports_cgo_parity() {
   case "$1" in
-    css|javascript|typescript|tsx|c|cpp|c_sharp|cobol) return 0 ;;
+    css|javascript|typescript|tsx|c|cpp|cuda|c_sharp|cobol) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -167,7 +177,7 @@ while [[ $# -gt 0 ]]; do
     --lr-split) LR_SPLIT=1; shift ;;
     --no-build) BUILD_IMAGE=0; shift ;;
     --list)
-      printf '%s\n' css javascript typescript tsx c cpp c_sharp cobol fortran
+      printf '%s\n' css javascript typescript tsx c cpp cuda c_sharp cobol fortran
       exit 0
       ;;
     -h|--help)
@@ -271,6 +281,12 @@ real_corpus_status_from_log() {
 
 run_real_corpus_lang() {
   local lang="$1"
+  if ! supports_real_corpus "$lang"; then
+    ((real_skip+=1))
+    echo "[real-corpus] $lang -> SKIP (not wired in focused real-corpus lane)"
+    return 0
+  fi
+
   local grammar log_path
   local effective_memory_limit
   local effective_cpus_limit

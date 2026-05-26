@@ -106,6 +106,7 @@ var grammargenCGOGrammars = []grammargenCGOGrammar{
 	// Keep cpp opt-in for direct grammargen-vs-C runs until generation fits the
 	// bounded high-value container budget; default ratchets skip seeding it.
 	{name: "cpp", jsonPath: "/tmp/grammar_parity/cpp/src/grammar.json", blobFunc: grammars.CppLanguage, genTimeout: 300 * time.Second},
+	{name: "cuda", jsonPath: "/tmp/grammar_parity/cuda/src/grammar.json", blobFunc: grammars.CudaLanguage, genTimeout: 300 * time.Second},
 	{name: "c_sharp", jsonPath: "/tmp/grammar_parity/c_sharp/src/grammar.json", blobFunc: grammars.CSharpLanguage, genTimeout: 300 * time.Second},
 	{name: "cobol", jsonPath: "/tmp/grammar_parity/cobol/src/grammar.json", blobFunc: grammars.CobolLanguage, genTimeout: 60 * time.Second},
 	// ── Languages without prior C oracle ──
@@ -264,9 +265,11 @@ func TestGrammargenCGOParity(t *testing.T) {
 				if genRoot.HasError() {
 					metrics.Divergences++
 					cTree.Close()
-					if mismatchLogs < 3 {
+					if mismatchLogs < 5 {
 						mismatchLogs++
-						t.Logf("sample %d: grammargen has ERROR, C is clean", i)
+						// Find the first ERROR node and show its context.
+						errCtx := findFirstErrorContext(genRoot, genLang, sample)
+						t.Logf("sample %d: grammargen has ERROR, C is clean\n%s", i, errCtx)
 					}
 					continue
 				}
@@ -281,13 +284,33 @@ func TestGrammargenCGOParity(t *testing.T) {
 					metrics.TreeParity++
 				} else {
 					metrics.Divergences += len(errs)
-					if mismatchLogs < 3 {
+					if mismatchLogs < 5 {
 						mismatchLogs++
 						shown := errs
 						if len(shown) > 5 {
 							shown = shown[:5]
 						}
-						t.Logf("sample %d: %d divergence(s): %s", i, len(errs), strings.Join(shown, "; "))
+						// Show source byte range around each divergence.
+						var detail strings.Builder
+						for _, e := range shown {
+							detail.WriteString("  ")
+							detail.WriteString(e)
+							detail.WriteString("\n")
+							// Extract byte range from the error and show source.
+							if start, end, ok := extractByteRange(e); ok && start < len(sample) {
+								if end > len(sample) {
+									end = len(sample)
+								}
+								snippet := sample[start:end]
+								if len(snippet) > 200 {
+									snippet = snippet[:200] + "..."
+								}
+								detail.WriteString("      source: ")
+								detail.WriteString(strings.ReplaceAll(snippet, "\n", "\n              "))
+								detail.WriteString("\n")
+							}
+						}
+						t.Logf("sample %d: %d divergence(s):\n%s", i, len(errs), detail.String())
 					}
 				}
 			}
@@ -328,7 +351,7 @@ func TestGrammargenCGOParity(t *testing.T) {
 }
 
 // compareGrammargenVsC walks a grammargen Go tree and a C sitter tree in
-// lockstep, recording structural divergences.
+// lockstep, recording structural divergences with full diagnostic context.
 func compareGrammargenVsC(goNode *gotreesitter.Node, goLang *gotreesitter.Language, cNode *sitter.Node, path string, errs *[]string) {
 	if len(*errs) >= 20 {
 		return
@@ -337,23 +360,39 @@ func compareGrammargenVsC(goNode *gotreesitter.Node, goLang *gotreesitter.Langua
 	goType := goNode.Type(goLang)
 	cType := cNode.Kind()
 	if goType != cType {
-		*errs = append(*errs, fmt.Sprintf("%s: Type gen=%q c=%q", path, goType, cType))
+		*errs = append(*errs, fmt.Sprintf("%s: Type gen=%q c=%q (bytes=%d..%d)", path, goType, cType, goNode.StartByte(), goNode.EndByte()))
 		return
 	}
 	if uint(goNode.StartByte()) != cNode.StartByte() {
-		*errs = append(*errs, fmt.Sprintf("%s: StartByte gen=%d c=%d", path, goNode.StartByte(), cNode.StartByte()))
+		*errs = append(*errs, fmt.Sprintf("%s: StartByte gen=%d c=%d (type=%q)", path, goNode.StartByte(), cNode.StartByte(), goType))
 	}
 	if uint(goNode.EndByte()) != cNode.EndByte() {
-		*errs = append(*errs, fmt.Sprintf("%s: EndByte gen=%d c=%d", path, goNode.EndByte(), cNode.EndByte()))
+		*errs = append(*errs, fmt.Sprintf("%s: EndByte gen=%d c=%d (type=%q)", path, goNode.EndByte(), cNode.EndByte(), goType))
 	}
 	if goNode.IsNamed() != cNode.IsNamed() {
-		*errs = append(*errs, fmt.Sprintf("%s: IsNamed gen=%v c=%v", path, goNode.IsNamed(), cNode.IsNamed()))
+		*errs = append(*errs, fmt.Sprintf("%s: IsNamed gen=%v c=%v (type=%q)", path, goNode.IsNamed(), cNode.IsNamed(), goType))
 	}
 
 	goCC := goNode.ChildCount()
 	cCC := int(cNode.ChildCount())
 	if goCC != cCC {
-		*errs = append(*errs, fmt.Sprintf("%s: ChildCount gen=%d c=%d", path, goCC, cCC))
+		// Emit the child lists inline for immediate diagnosis.
+		var genKids, cKids []string
+		for i := 0; i < goCC && i < 20; i++ {
+			ch := goNode.Child(i)
+			if ch != nil {
+				genKids = append(genKids, fmt.Sprintf("%s[%d..%d]", ch.Type(goLang), ch.StartByte(), ch.EndByte()))
+			}
+		}
+		for i := 0; i < cCC && i < 20; i++ {
+			ch := cNode.Child(uint(i))
+			if ch != nil {
+				cKids = append(cKids, fmt.Sprintf("%s[%d..%d]", ch.Kind(), ch.StartByte(), ch.EndByte()))
+			}
+		}
+		*errs = append(*errs, fmt.Sprintf("%s: ChildCount gen=%d c=%d (type=%q, bytes=%d..%d)\n      gen children: %s\n      c   children: %s",
+			path, goCC, cCC, goType, goNode.StartByte(), goNode.EndByte(),
+			strings.Join(genKids, ", "), strings.Join(cKids, ", ")))
 		return
 	}
 	for i := 0; i < goCC; i++ {
@@ -401,6 +440,100 @@ func grammargenGenerate(gram *grammargen.Grammar, timeout time.Duration) (*gotre
 	case <-time.After(timeout):
 		return nil, fmt.Errorf("generation timed out after %v", timeout)
 	}
+}
+
+// extractByteRange parses "bytes=N..M" from a divergence error string.
+// findFirstErrorContext walks the tree to find the first ERROR node and
+// returns a diagnostic string with the node's position, parent context,
+// surrounding source, and sibling types.
+func findFirstErrorContext(root *gotreesitter.Node, lang *gotreesitter.Language, src string) string {
+	var result string
+	var walk func(n *gotreesitter.Node, path string) bool
+	walk = func(n *gotreesitter.Node, path string) bool {
+		if n == nil {
+			return false
+		}
+		if n.Type(lang) == "ERROR" {
+			var b strings.Builder
+			start, end := int(n.StartByte()), int(n.EndByte())
+			fmt.Fprintf(&b, "  ERROR at %s (bytes=%d..%d, rows=%d..%d)\n",
+				path, start, end, n.StartPoint().Row, n.EndPoint().Row)
+
+			// Source at the ERROR node.
+			if start < len(src) {
+				if end > len(src) {
+					end = len(src)
+				}
+				snippet := src[start:end]
+				if len(snippet) > 300 {
+					snippet = snippet[:300] + "..."
+				}
+				fmt.Fprintf(&b, "  error source: %s\n", strings.ReplaceAll(snippet, "\n", "\n                "))
+			}
+
+			// Show surrounding context (line before + line after).
+			lineStart := 0
+			if start > 0 {
+				lineStart = strings.LastIndex(src[:start], "\n") + 1
+			}
+			contextStart := lineStart
+			if contextStart > 0 {
+				prevLine := strings.LastIndex(src[:contextStart-1], "\n") + 1
+				contextStart = prevLine
+			}
+			contextEnd := end
+			if idx := strings.Index(src[end:], "\n"); idx >= 0 {
+				contextEnd = end + idx
+			}
+			if contextEnd > len(src) {
+				contextEnd = len(src)
+			}
+			if contextEnd > contextStart {
+				ctx := src[contextStart:contextEnd]
+				if len(ctx) > 500 {
+					ctx = ctx[:500] + "..."
+				}
+				fmt.Fprintf(&b, "  line context:\n    %s\n", strings.ReplaceAll(ctx, "\n", "\n    "))
+			}
+
+			// Show ERROR node's children.
+			if n.ChildCount() > 0 {
+				fmt.Fprintf(&b, "  error children (%d):", n.ChildCount())
+				for i := 0; i < n.ChildCount() && i < 15; i++ {
+					ch := n.Child(i)
+					if ch != nil {
+						fmt.Fprintf(&b, " %s[%d..%d]", ch.Type(lang), ch.StartByte(), ch.EndByte())
+					}
+				}
+				fmt.Fprintf(&b, "\n")
+			}
+
+			result = b.String()
+			return true
+		}
+		for i := 0; i < n.ChildCount(); i++ {
+			if walk(n.Child(i), fmt.Sprintf("%s[%d]", path, i)) {
+				return true
+			}
+		}
+		return false
+	}
+	walk(root, "root")
+	return result
+}
+
+func extractByteRange(errStr string) (start, end int, ok bool) {
+	idx := strings.Index(errStr, "bytes=")
+	if idx < 0 {
+		return 0, 0, false
+	}
+	rest := errStr[idx+len("bytes="):]
+	var s, e int
+	n, _ := fmt.Sscanf(rest, "%d..%d", &s, &e)
+	if n == 2 {
+		return s, e, true
+	}
+	return 0, 0, false
 }
 
 // collectGrammargenCorpusSamples gathers test inputs from the grammar's

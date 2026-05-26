@@ -49,3 +49,53 @@ func TestNormalizeCUnresolvedTypedefLikeCallShape(t *testing.T) {
 		t.Fatalf("unexpected cast_expression for unresolved typedef-like call: %s", bad.SExpr(lang))
 	}
 }
+
+func TestNormalizeCPPConditionClauseAssignmentShape(t *testing.T) {
+	const src = "while ((a = b)) {}\n"
+	tree, lang := parseByLanguageName(t, "cpp", src)
+	root := tree.RootNode()
+	if root.HasError() {
+		t.Fatalf("unexpected cpp parse error: %s", root.SExpr(lang))
+	}
+
+	whileStmt := firstNode(root, func(n *gotreesitter.Node) bool {
+		return n.Type(lang) == "while_statement"
+	})
+	if whileStmt == nil {
+		t.Fatalf("missing while_statement: %s", root.SExpr(lang))
+	}
+
+	assign := firstNode(whileStmt, func(n *gotreesitter.Node) bool {
+		return n.Type(lang) == "assignment_expression" && n.Text([]byte(src)) == "a = b"
+	})
+	if assign == nil {
+		t.Fatalf("missing assignment_expression in while condition: %s", whileStmt.SExpr(lang))
+	}
+	if got := countNodes(root, func(n *gotreesitter.Node) bool { return n.Type(lang) == "ERROR" }); got != 0 {
+		t.Fatalf("unexpected cpp ERROR nodes after normalization: %d\n%s", got, root.SExpr(lang))
+	}
+}
+
+func TestNormalizeCUDABareTypeIdentifiersBecomeExpressionStatements(t *testing.T) {
+	const src = "{\n  _abc;\n  d_EG123;\n}\n"
+	tree, lang := parseByLanguageName(t, "cuda", src)
+	root := tree.RootNode()
+	if root.HasError() {
+		t.Fatalf("unexpected cuda parse error: %s", root.SExpr(lang))
+	}
+
+	body := firstNode(root, func(n *gotreesitter.Node) bool {
+		return n.Type(lang) == "compound_statement"
+	})
+	if body == nil {
+		t.Fatalf("missing compound_statement: %s", root.SExpr(lang))
+	}
+	if got := countNodes(body, func(n *gotreesitter.Node) bool { return n.Type(lang) == "expression_statement" }); got != 2 {
+		t.Fatalf("cuda expression_statement count = %d, want 2: %s", got, body.SExpr(lang))
+	}
+	if bad := firstNode(body, func(n *gotreesitter.Node) bool {
+		return n.Type(lang) == "type_identifier" && (n.Text([]byte(src)) == "_abc" || n.Text([]byte(src)) == "d_EG123")
+	}); bad != nil {
+		t.Fatalf("bare identifier still parsed as type_identifier: %s", bad.SExpr(lang))
+	}
+}
