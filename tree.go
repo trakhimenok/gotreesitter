@@ -787,6 +787,7 @@ type Tree struct {
 	arena          *nodeArena   // primary arena that owns newly-built nodes
 	borrowedArena  []*nodeArena // arenas borrowed via subtree reuse
 	parseRuntime   ParseRuntime
+	sourceLease    *sourceLease
 	released       bool
 }
 
@@ -866,6 +867,10 @@ func (t *Tree) Release() {
 	if t.arena != nil {
 		t.arena.Release()
 		t.arena = nil
+	}
+	if t.sourceLease != nil {
+		t.sourceLease.release()
+		t.sourceLease = nil
 	}
 	t.root = nil
 	t.source = nil
@@ -972,6 +977,7 @@ func (t *Tree) Copy() *Tree {
 		source:       t.source,
 		language:     t.language,
 		parseRuntime: t.parseRuntime,
+		sourceLease:  t.sourceLease.retain(),
 	}
 	if len(t.edits) > 0 {
 		out.edits = make([]InputEdit, len(t.edits))

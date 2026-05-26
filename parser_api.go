@@ -335,6 +335,81 @@ func (p *Parser) Parse(source []byte) (*Tree, error) {
 	return tree, nil
 }
 
+// ParseSource tokenizes and parses source using the built-in DFA lexer.
+//
+// If the Source can provide a full contiguous slice, the returned tree borrows
+// that slice until Tree.Release. Otherwise the source is materialized through
+// ReadAt before parsing.
+func (p *Parser) ParseSource(source Source) (*Tree, error) {
+	if err := p.checkLanguageCompatible(); err != nil {
+		return nil, err
+	}
+	if err := p.checkDFALexer(); err != nil {
+		return nil, err
+	}
+	data, release, err := sourceBytes(source)
+	if err != nil {
+		return nil, err
+	}
+	tree, err := p.Parse(data)
+	if err != nil {
+		if release != nil {
+			release()
+		}
+		return nil, err
+	}
+	return attachSourceRelease(tree, release), nil
+}
+
+// ParseFile parses a regular file using the built-in DFA lexer.
+func (p *Parser) ParseFile(path string, opts ...FileSourceOption) (*Tree, error) {
+	source, err := NewFileSource(path, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.ParseSource(source)
+}
+
+// ParseSourceWithTokenSourceFactory parses source using a token source created
+// from the borrowed or materialized source bytes.
+func (p *Parser) ParseSourceWithTokenSourceFactory(source Source, factory func([]byte) TokenSource) (*Tree, error) {
+	if err := p.checkLanguageCompatible(); err != nil {
+		return nil, err
+	}
+	if factory == nil {
+		return nil, ErrNoTokenSourceFactory
+	}
+	data, release, err := sourceBytes(source)
+	if err != nil {
+		return nil, err
+	}
+	ts := factory(data)
+	if ts == nil {
+		if release != nil {
+			release()
+		}
+		return nil, ErrNoTokenSourceFactory
+	}
+	tree, err := p.ParseWithTokenSource(data, ts)
+	if err != nil {
+		if release != nil {
+			release()
+		}
+		return nil, err
+	}
+	return attachSourceRelease(tree, release), nil
+}
+
+// ParseFileWithTokenSourceFactory parses a regular file using a token source
+// created from the borrowed or materialized file bytes.
+func (p *Parser) ParseFileWithTokenSourceFactory(path string, factory func([]byte) TokenSource, opts ...FileSourceOption) (*Tree, error) {
+	source, err := NewFileSource(path, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.ParseSourceWithTokenSourceFactory(source, factory)
+}
+
 // ParseWithTokenSource parses source using a custom token source.
 // This is used for real grammars where the lexer DFA isn't available
 // as data tables (e.g., Go grammar using go/scanner as a bridge).
@@ -384,6 +459,91 @@ func (p *Parser) ParseIncremental(source []byte, oldTree *Tree) (*Tree, error) {
 	tree := p.parseIncrementalInternal(source, oldTree, p.wrapIncludedRanges(ts), nil)
 	normalizeReturnedIncrementalTree(tree, oldTree, source, p.language)
 	return tree, nil
+}
+
+// ParseIncrementalSource re-parses source after edits were applied to oldTree.
+//
+// When parsing reuses oldTree unchanged, any newly borrowed Source slice is
+// released immediately because the returned tree is still owned by oldTree.
+func (p *Parser) ParseIncrementalSource(source Source, oldTree *Tree) (*Tree, error) {
+	if err := p.checkLanguageCompatible(); err != nil {
+		return nil, err
+	}
+	data, release, err := sourceBytes(source)
+	if err != nil {
+		return nil, err
+	}
+	tree, err := p.ParseIncremental(data, oldTree)
+	if err != nil {
+		if release != nil {
+			release()
+		}
+		return nil, err
+	}
+	if tree == oldTree {
+		if release != nil {
+			release()
+		}
+		return tree, nil
+	}
+	return attachSourceRelease(tree, release), nil
+}
+
+// ParseIncrementalFile re-parses a regular file after edits were applied to
+// oldTree.
+func (p *Parser) ParseIncrementalFile(path string, oldTree *Tree, opts ...FileSourceOption) (*Tree, error) {
+	source, err := NewFileSource(path, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.ParseIncrementalSource(source, oldTree)
+}
+
+// ParseIncrementalSourceWithTokenSourceFactory is like ParseIncrementalSource
+// but uses a token source created from the borrowed or materialized source
+// bytes.
+func (p *Parser) ParseIncrementalSourceWithTokenSourceFactory(source Source, oldTree *Tree, factory func([]byte) TokenSource) (*Tree, error) {
+	if err := p.checkLanguageCompatible(); err != nil {
+		return nil, err
+	}
+	if factory == nil {
+		return nil, ErrNoTokenSourceFactory
+	}
+	data, release, err := sourceBytes(source)
+	if err != nil {
+		return nil, err
+	}
+	ts := factory(data)
+	if ts == nil {
+		if release != nil {
+			release()
+		}
+		return nil, ErrNoTokenSourceFactory
+	}
+	tree, err := p.ParseIncrementalWithTokenSource(data, oldTree, ts)
+	if err != nil {
+		if release != nil {
+			release()
+		}
+		return nil, err
+	}
+	if tree == oldTree {
+		if release != nil {
+			release()
+		}
+		return tree, nil
+	}
+	return attachSourceRelease(tree, release), nil
+}
+
+// ParseIncrementalFileWithTokenSourceFactory is like ParseIncrementalFile but
+// uses a token source created from the borrowed or materialized file bytes.
+func (p *Parser) ParseIncrementalFileWithTokenSourceFactory(path string, oldTree *Tree, factory func([]byte) TokenSource, opts ...FileSourceOption) (*Tree, error) {
+	source, err := NewFileSource(path, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.ParseIncrementalSourceWithTokenSourceFactory(source, oldTree, factory)
 }
 
 // ParseIncrementalWithTokenSource is like ParseIncremental but uses a custom

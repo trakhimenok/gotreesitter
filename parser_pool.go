@@ -139,6 +139,48 @@ func (pp *ParserPool) Parse(source []byte) (*Tree, error) {
 	return p.Parse(source)
 }
 
+// ParseSource delegates to a pooled Parser.ParseSource call.
+func (pp *ParserPool) ParseSource(source Source) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseSource(source)
+}
+
+// ParseFile delegates to a pooled Parser.ParseFile call.
+func (pp *ParserPool) ParseFile(path string, opts ...FileSourceOption) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseFile(path, opts...)
+}
+
+// ParseSourceWithTokenSourceFactory delegates to a pooled
+// Parser.ParseSourceWithTokenSourceFactory call.
+func (pp *ParserPool) ParseSourceWithTokenSourceFactory(source Source, factory func([]byte) TokenSource) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseSourceWithTokenSourceFactory(source, factory)
+}
+
+// ParseFileWithTokenSourceFactory delegates to a pooled
+// Parser.ParseFileWithTokenSourceFactory call.
+func (pp *ParserPool) ParseFileWithTokenSourceFactory(path string, factory func([]byte) TokenSource, opts ...FileSourceOption) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseFileWithTokenSourceFactory(path, factory, opts...)
+}
+
 // ParseWithTokenSource delegates to a pooled Parser.ParseWithTokenSource call.
 func (pp *ParserPool) ParseWithTokenSource(source []byte, ts TokenSource) (*Tree, error) {
 	p := pp.checkout()
@@ -157,4 +199,46 @@ func (pp *ParserPool) ParseWith(source []byte, opts ...ParseOption) (ParseResult
 	}
 	defer pp.release(p)
 	return p.ParseWith(source, opts...)
+}
+
+// ParseIncrementalSource delegates to a pooled Parser.ParseIncrementalSource call.
+func (pp *ParserPool) ParseIncrementalSource(source Source, oldTree *Tree) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseIncrementalSource(source, oldTree)
+}
+
+// ParseIncrementalFile delegates to a pooled Parser.ParseIncrementalFile call.
+func (pp *ParserPool) ParseIncrementalFile(path string, oldTree *Tree, opts ...FileSourceOption) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseIncrementalFile(path, oldTree, opts...)
+}
+
+// ParseIncrementalSourceWithTokenSourceFactory delegates to a pooled
+// Parser.ParseIncrementalSourceWithTokenSourceFactory call.
+func (pp *ParserPool) ParseIncrementalSourceWithTokenSourceFactory(source Source, oldTree *Tree, factory func([]byte) TokenSource) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseIncrementalSourceWithTokenSourceFactory(source, oldTree, factory)
+}
+
+// ParseIncrementalFileWithTokenSourceFactory delegates to a pooled
+// Parser.ParseIncrementalFileWithTokenSourceFactory call.
+func (pp *ParserPool) ParseIncrementalFileWithTokenSourceFactory(path string, oldTree *Tree, factory func([]byte) TokenSource, opts ...FileSourceOption) (*Tree, error) {
+	p := pp.checkout()
+	if p == nil {
+		return nil, ErrNoLanguage
+	}
+	defer pp.release(p)
+	return p.ParseIncrementalFileWithTokenSourceFactory(path, oldTree, factory, opts...)
 }
