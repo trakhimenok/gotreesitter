@@ -988,11 +988,30 @@ func MarkdownGrammar() *Grammar {
 			Choice(
 				Sym("block_continuation"),
 				Blank()),
-			Repeat(Sym("_block")),
+			Repeat(Sym("_block_in_container")),
 			Sym("_block_close"),
 			Choice(
 				Sym("block_continuation"),
 				Blank())))
+
+	// any block-level element as it appears nested inside a block_quote or list_item.
+	// Lists in this context emit a visible `list` wrapper (matching the ref CST),
+	// unlike at top level where the `list` wrapper is hidden.
+	g.Define("_block_in_container",
+		Choice(
+			Alias(Sym("_setext_heading1"), "setext_heading", true),
+			Alias(Sym("_setext_heading2"), "setext_heading", true),
+			Sym("paragraph"),
+			Sym("indented_code_block"),
+			Sym("_block_quote"),
+			Sym("thematic_break"),
+			Alias(Sym("_list"), "list", true),
+			Sym("_fenced_code_block"),
+			Sym("_blank_line"),
+			Sym("html_block"),
+			Sym("link_reference_definition"),
+			Sym("_pipe_table"),
+			Sym("section")))
 
 	// an ordered or unordered list
 	// Hidden by name — see _fenced_code_block comment. The bundled markdown.bin
