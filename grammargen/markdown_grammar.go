@@ -1151,14 +1151,14 @@ func MarkdownGrammar() *Grammar {
 				Choice(
 					Sym("block_continuation"),
 					Blank()))),
-			Repeat1(Sym("_block")),
+			Repeat1(Sym("_block_in_container")),
 			Prec(1, Seq(
 				Choice(
 					Sym("task_list_marker_checked"),
 					Sym("task_list_marker_unchecked")),
 				Sym("_whitespace"),
 				Sym("paragraph"),
-				Repeat(Sym("_block"))))))
+				Repeat(Sym("_block_in_container"))))))
 
 	// external newline (inline continuation context)
 	g.Define("_newline",
