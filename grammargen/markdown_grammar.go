@@ -413,14 +413,14 @@ func MarkdownGrammar() *Grammar {
 			Alias(Sym("_setext_heading2"), "setext_heading", true),
 			Sym("paragraph"),
 			Sym("indented_code_block"),
-			Sym("block_quote"),
+			Sym("_block_quote"),
 			Sym("thematic_break"),
 			Sym("list"),
-			Sym("fenced_code_block"),
+			Sym("_fenced_code_block"),
 			Sym("_blank_line"),
 			Sym("html_block"),
 			Sym("link_reference_definition"),
-			Sym("pipe_table")))
+			Sym("_pipe_table")))
 
 	// a document section introduced by an ATX heading
 	g.Define("section",
@@ -601,7 +601,12 @@ func MarkdownGrammar() *Grammar {
 				Blank())))
 
 	// fenced code block delimited by ``` or ~~~
-	g.Define("fenced_code_block",
+	// Hidden by name (underscore prefix) — children flatten into parent rule.
+	// Matches the bundled markdown.bin parser, which has 952 reduce-to-fenced
+	// actions in its dense table but emits zero fenced_code_block nodes in
+	// the actual parse tree. The bundled blob was generated with this rule
+	// effectively inlined / hidden; mirroring that here aligns CST shape.
+	g.Define("_fenced_code_block",
 		PrecRight(0, Choice(
 			Seq(
 				Alias(Sym("_fenced_code_block_start_backtick"), "fenced_code_block_delimiter", true),
@@ -955,7 +960,8 @@ func MarkdownGrammar() *Grammar {
 				Sym("_eof"))))
 
 	// block-quote introduced by > marker
-	g.Define("block_quote",
+	// Hidden by name — see _fenced_code_block comment.
+	g.Define("_block_quote",
 		Seq(
 			Alias(Sym("_block_quote_start"), "block_quote_marker", true),
 			Choice(
@@ -1269,7 +1275,8 @@ func MarkdownGrammar() *Grammar {
 			Alias(Sym("pipe_table_row"), "pipe_table_header", true),
 			Sym("_newline")))
 
-	g.Define("pipe_table",
+	// Hidden by name — see _fenced_code_block comment.
+	g.Define("_pipe_table",
 		PrecRight(0, Seq(
 			Sym("_pipe_table_header_block"),
 			Sym("pipe_table_delimiter_row"),
