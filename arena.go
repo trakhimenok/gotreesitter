@@ -90,6 +90,15 @@ type nodeArena struct {
 	// canonically substituted; the counter is needed to compute the
 	// "safe to dedup" leaf population (total leaves minus shift leaves).
 	internShiftLeafObserved uint64
+	// internLeafLastKey + internLeafLastHit + internLeafLastValid form a
+	// 1-entry hot-path cache for canonical-leaf lookups. When the shift
+	// loop hits the same (sym, span, state, flags) tuple in immediate
+	// succession — typical for GLR forks processed back-to-back at the
+	// same token — the table hash and probe walk are skipped. Reset on
+	// arena.reset(). Valid only when internLeafLastValid is true.
+	internLeafLastKey   internKey
+	internLeafLastHit   *Node
+	internLeafLastValid bool
 
 	nodeSlabs                       []nodeSlab
 	nodeSlabCursor                  int
@@ -499,6 +508,9 @@ func (a *nodeArena) reset() {
 	a.internLeaves.reset()
 	a.internLeavesFull.reset()
 	a.internShiftLeafObserved = 0
+	a.internLeafLastValid = false
+	a.internLeafLastHit = nil
+	a.internLeafLastKey = internKey{}
 }
 
 func (a *nodeArena) resetPrimaryNodes() {

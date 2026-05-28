@@ -319,21 +319,23 @@ func observeLeafInternFull(arena *nodeArena, n *Node) {
 // On miss, returns nil; the caller allocates and calls storeCanonicalLeaf
 // afterward.
 func lookupCanonicalLeafKey(arena *nodeArena, key internKey) *Node {
+	// Hot-path 1-entry cache. GLR forks at the same parse position shift
+	// the same token in immediate succession; this cache skips the table
+	// hash + probe in that common case.
+	if arena.internLeafLastValid && arena.internLeafLastKey == key {
+		return arena.internLeafLastHit
+	}
 	if arena.internLeavesFull == nil {
 		arena.internLeavesFull = newInternTable()
 		return nil
 	}
-	// Pre-allocation lookup has no children slice to dedup against; the
-	// table is leaves-only, so any hit at this key is a true match
-	// without further collision verification beyond the key equality
-	// the table already enforces.
-	if hit := arena.internLeavesFull.lookup(key, nil); hit != nil {
-		// Update hit/lookup counters in the lookup() call. arena.audit
-		// integration happens in Phase 4 if/when the runtime audit
-		// surface gets intern fields.
-		return hit
+	hit := arena.internLeavesFull.lookup(key, nil)
+	if hit != nil {
+		arena.internLeafLastKey = key
+		arena.internLeafLastHit = hit
+		arena.internLeafLastValid = true
 	}
-	return nil
+	return hit
 }
 
 // storeCanonicalLeaf is the pre-allocation companion to
@@ -345,7 +347,14 @@ func storeCanonicalLeaf(arena *nodeArena, leaf *Node) {
 	if arena.internLeavesFull == nil {
 		arena.internLeavesFull = newInternTable()
 	}
-	arena.internLeavesFull.store(buildKeyFromNode(leaf), leaf)
+	key := buildKeyFromNode(leaf)
+	arena.internLeavesFull.store(key, leaf)
+	// Prime the hot-path cache so an immediate next-shift with this key
+	// (typical when GLR forks at the same position process back-to-back)
+	// skips the table probe.
+	arena.internLeafLastKey = key
+	arena.internLeafLastHit = leaf
+	arena.internLeafLastValid = true
 }
 
 // lookup returns the canonical node for the given key, or nil if absent.
