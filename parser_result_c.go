@@ -24,14 +24,12 @@ func normalizeCCompatibilityWithParser(root *Node, source []byte, p *Parser, lan
 		run("c_preprocessor_directive_shapes", func() {
 			normalizeCPreprocessorDirectiveShapes(root, source, lang)
 		})
+		// Fused walk replaces three consecutive single-symbol preorder passes
+		// (declaration bounds + builtin primitive identifiers + variadic ellipsis).
+		// Saves two tree walks per C parse; emitted under the old metric names so
+		// scoreboards continue to compare cleanly.
 		run("c_declaration_bounds", func() {
-			normalizeCDeclarationBounds(root, source, lang)
-		})
-		run("c_builtin_primitive_type_identifiers", func() {
-			normalizeCBuiltinPrimitiveTypeIdentifiers(root, source, lang)
-		})
-		run("c_variadic_parameter_ellipsis", func() {
-			normalizeCVariadicParameterEllipsis(root, lang)
+			normalizeCFusedDeclVariadicWalk(root, source, lang)
 		})
 		run("c_sizeof_unknown_type_identifiers", func() {
 			normalizeCSizeofUnknownTypeIdentifiers(root, source, lang)
@@ -56,15 +54,101 @@ func normalizeCCompatibilityWithParser(root *Node, source []byte, p *Parser, lan
 	normalizeCTranslationUnitRoot(root, lang)
 	normalizeCRecoveredTopLevelChunks(root, source, p, lang)
 	normalizeCPreprocessorDirectiveShapes(root, source, lang)
-	normalizeCDeclarationBounds(root, source, lang)
-	normalizeCBuiltinPrimitiveTypeIdentifiers(root, source, lang)
-	normalizeCVariadicParameterEllipsis(root, lang)
+	normalizeCFusedDeclVariadicWalk(root, source, lang)
 	normalizeCSizeofUnknownTypeIdentifiers(root, source, lang)
 	normalizeCCastUnknownTypeIdentifiers(root, source, lang)
 	normalizeCBareTypeIdentifierExpressionStatements(root, source, lang)
 	normalizeCPreprocNewlineSpans(root, source, lang)
 	normalizeCPointerAssignmentPrecedence(root, lang)
 	normalizeCCollapsedKeywordChildren(root, source, lang)
+}
+
+// normalizeCFusedDeclVariadicWalk performs the work of three previously
+// separate preorder walks in a single pass: declaration-bounds extension,
+// builtin primitive type identifier promotion, and variadic-parameter
+// ellipsis materialization. The three handlers gate on disjoint node symbols
+// so the fusion is order-independent within a single visit.
+func normalizeCFusedDeclVariadicWalk(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil {
+		return
+	}
+	isC := lang.Name == "c"
+	isCpp := lang.Name == "cpp"
+	if !isC && !isCpp {
+		return
+	}
+
+	// declaration bounds applies to c and cpp.
+	declarationSym, hasDecl := symbolByName(lang, "declaration")
+
+	// builtin primitive promotion is c only.
+	var primitiveTypeSym Symbol
+	var typeIdentifierSym Symbol
+	var primitiveTypeNamed bool
+	hasBuiltin := false
+	if isC {
+		ps, ok := lang.SymbolByName("primitive_type")
+		if ok {
+			ts, ok2 := lang.SymbolByName("type_identifier")
+			if ok2 {
+				primitiveTypeSym = ps
+				typeIdentifierSym = ts
+				primitiveTypeNamed = symbolIsNamed(lang, primitiveTypeSym)
+				hasBuiltin = true
+			}
+		}
+	}
+
+	// variadic ellipsis is c only.
+	var variadicSym Symbol
+	var ellipsisSym Symbol
+	var ellipsisNamed bool
+	hasVariadic := false
+	if isC {
+		vs, ok := lang.SymbolByName("variadic_parameter")
+		if ok {
+			es, ok2 := lang.SymbolByName("...")
+			if ok2 {
+				variadicSym = vs
+				ellipsisSym = es
+				ellipsisNamed = symbolIsNamed(lang, ellipsisSym)
+				hasVariadic = true
+			}
+		}
+	}
+
+	if !hasDecl && !hasBuiltin && !hasVariadic {
+		return
+	}
+
+	srcLen := uint32(len(source))
+	walkResultTree(root, func(n *Node) {
+		if hasDecl && n.symbol == declarationSym {
+			first, last := firstAndLastNonNilChild(n.children)
+			if first != nil && n.startByte < first.startByte &&
+				first.startByte <= srcLen &&
+				cBytesAreCommentOrTrivia(source[n.startByte:first.startByte]) {
+				n.startByte = first.startByte
+				n.startPoint = first.startPoint
+			}
+			if last != nil && n.endByte > last.endByte &&
+				n.endByte <= srcLen &&
+				bytesAreTrivia(source[last.endByte:n.endByte]) {
+				setNodeEndTo(n, last.endByte, source)
+			}
+		}
+		if hasBuiltin && n.symbol == typeIdentifierSym {
+			if isCBuiltinPrimitiveTypeName(canonicalCTypeName(n.Text(source))) {
+				n.symbol = primitiveTypeSym
+				n.setNamed(primitiveTypeNamed)
+			}
+		}
+		if hasVariadic && n.symbol == variadicSym && len(n.children) == 0 {
+			child := newLeafNodeInArena(n.ownerArena, ellipsisSym, ellipsisNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
+			n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
+			populateParentNode(n, n.children)
+		}
+	})
 }
 
 func normalizeCRecoveredTopLevelChunks(root *Node, source []byte, p *Parser, lang *Language) {
@@ -714,31 +798,6 @@ func rootLooksLikeCTopLevel(root *Node, lang *Language) bool {
 	return sawTopLevel
 }
 
-func normalizeCDeclarationBounds(root *Node, source []byte, lang *Language) {
-	if root == nil || lang == nil {
-		return
-	}
-	if lang.Name != "c" && lang.Name != "cpp" {
-		return
-	}
-	walkResultTree(root, func(n *Node) {
-		if n.Type(lang) == "declaration" {
-			first, last := firstAndLastNonNilChild(n.children)
-			if first != nil && n.startByte < first.startByte &&
-				first.startByte <= uint32(len(source)) &&
-				cBytesAreCommentOrTrivia(source[n.startByte:first.startByte]) {
-				n.startByte = first.startByte
-				n.startPoint = first.startPoint
-			}
-			if last != nil && n.endByte > last.endByte &&
-				n.endByte <= uint32(len(source)) &&
-				bytesAreTrivia(source[last.endByte:n.endByte]) {
-				setNodeEndTo(n, last.endByte, source)
-			}
-		}
-	})
-}
-
 func normalizeCPreprocessorDirectiveShapes(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || len(root.children) == 0 {
 		return
@@ -1046,45 +1105,6 @@ func normalizeCSizeofUnknownTypeIdentifiers(root *Node, source []byte, lang *Lan
 			}
 		}
 	}
-}
-
-func normalizeCBuiltinPrimitiveTypeIdentifiers(root *Node, source []byte, lang *Language) {
-	if root == nil || lang == nil || lang.Name != "c" {
-		return
-	}
-	primitiveTypeSym, ok := lang.SymbolByName("primitive_type")
-	if !ok {
-		return
-	}
-	primitiveTypeNamed := symbolIsNamed(lang, primitiveTypeSym)
-	walkResultTree(root, func(n *Node) {
-		if n.Type(lang) == "type_identifier" && isCBuiltinPrimitiveTypeName(canonicalCTypeName(n.Text(source))) {
-			n.symbol = primitiveTypeSym
-			n.setNamed(primitiveTypeNamed)
-		}
-	})
-}
-
-func normalizeCVariadicParameterEllipsis(root *Node, lang *Language) {
-	if root == nil || lang == nil || lang.Name != "c" {
-		return
-	}
-	variadicSym, ok := lang.SymbolByName("variadic_parameter")
-	if !ok {
-		return
-	}
-	ellipsisSym, ok := lang.SymbolByName("...")
-	if !ok {
-		return
-	}
-	ellipsisNamed := symbolIsNamed(lang, ellipsisSym)
-	walkResultTree(root, func(n *Node) {
-		if n.symbol == variadicSym && len(n.children) == 0 {
-			child := newLeafNodeInArena(n.ownerArena, ellipsisSym, ellipsisNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
-			n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
-			populateParentNode(n, n.children)
-		}
-	})
 }
 
 func normalizeCPreprocNewlineSpans(root *Node, source []byte, lang *Language) {
