@@ -760,6 +760,18 @@ func buildExternalLexStates(lang *gotreesitter.Language, tables *LRTables, ng *N
 	pipeTableLineEndingSymID := -1
 	lineEndingSymID := -1
 	pipeTableContentSymIDs := make([]int, 0, 4) // _word, _whitespace
+	// Markdown-specific: track `_close_block` and `block_continuation`. The
+	// bundled markdown scanner emits `_close_block` eagerly whenever it is in
+	// valid_symbols (markdown_scanner.go, near `mdScan`:
+	// `if isValid(mdTokCloseBlock) { lexer.SetResultSymbol(mdSymCloseBlock) }`).
+	// In the fenced_code_block-body state, LALR puts `_close_block` into the
+	// `_newline`-reduce lookahead, so the scanner fires it prematurely — the
+	// body becomes a `paragraph` and the closing ``` a fresh fence wrapper. We
+	// suppress `_close_block` in exactly that state; the discriminator is a
+	// `block_continuation` SHIFT (only the fence/container-body state can
+	// consume a continuation marker). See the suppression site below.
+	closeBlockSymID := -1
+	blockContinuationSymID := -1
 	for sym := 0; sym < tokenCount; sym++ {
 		if _, isExt := extSymSet[sym]; isExt {
 			switch ng.Symbols[sym].Name {
@@ -767,6 +779,10 @@ func buildExternalLexStates(lang *gotreesitter.Language, tables *LRTables, ng *N
 				pipeTableLineEndingSymID = sym
 			case "_line_ending":
 				lineEndingSymID = sym
+			case "_close_block":
+				closeBlockSymID = sym
+			case "block_continuation":
+				blockContinuationSymID = sym
 			}
 			continue
 		}
@@ -872,6 +888,42 @@ func buildExternalLexStates(lang *gotreesitter.Language, tables *LRTables, ng *N
 							if leActs, ok := acts[lineEndingSymID]; ok && len(leActs) > 0 &&
 								actListsEqual(actionList, leActs) {
 								suppressed = true
+							}
+						}
+					}
+					// Suppress `_close_block` in the fenced_code_block-body state.
+					// After the `_link_reference_definition_newline` grammar split,
+					// link-reference-definition boundaries no longer reduce the
+					// shared `_newline` with `_close_block` in lookahead, so the
+					// only reduce-only `_newline` state that also offers a
+					// `block_continuation` SHIFT is the fence/container body. The
+					// bundled scanner's eager `_close_block` (see the collection
+					// comment above) would otherwise fire there and truncate the
+					// fence body into a paragraph. A `block_continuation` SHIFT is
+					// the discriminator: genuine block boundaries (e.g. between
+					// consecutive link reference definitions) reduce on
+					// `block_continuation` instead and must keep `_close_block`.
+					if !suppressed && symID == closeBlockSymID &&
+						blockContinuationSymID >= 0 && actionsAreReduceOnly(actionList) {
+						// A reduce-only `_close_block` state that also offers a
+						// `block_continuation` SHIFT is a fenced_code_block /
+						// container body: the parser can consume a continuation
+						// marker to keep reading the body, and the bundled
+						// scanner's eager `_close_block` would otherwise truncate
+						// it. Genuine block boundaries (e.g. between consecutive
+						// link reference definitions, or a blank line closing a
+						// block) either SHIFT `_close_block` or have no
+						// `block_continuation` shift, so they keep it. After the
+						// `_link_reference_definition_newline` / `_blank_line_newline`
+						// grammar splits, the fence-body state is the ONLY
+						// reduce-only `_close_block` state with a
+						// `block_continuation` shift, so this is exact.
+						if bcActs, ok := acts[blockContinuationSymID]; ok {
+							for _, a := range bcActs {
+								if a.kind == lrShift {
+									suppressed = true
+									break
+								}
 							}
 						}
 					}
