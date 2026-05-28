@@ -232,3 +232,84 @@ func TestMarkdownGrammarConformanceInputs(t *testing.T) {
 		})
 	}
 }
+
+// TestMarkdownFencedCodeBlockContentParity locks in the fix from commit
+// 2c642068 "fix(grammargen): isolate markdown fenced code block newlines".
+//
+// Before the fix, ``` ```go\npackage main\n``` ``` parsed `package main`
+// as a `paragraph` because LALR state merging caused `_close_block` to
+// fire prematurely inside `code_fence_content`. The fix introduces a
+// distinct `_fenced_code_block_newline` rule (same pattern as the earlier
+// `_indented_chunk_newline` / `_html_block_newline` isolations) so the
+// fenced-context newline doesn't share LR state with newline contexts
+// where `_close_block` is in the FOLLOW set.
+//
+// Hard gates this test enforces:
+//   - Generated parser's S-expression equals the bundled MarkdownLanguage().
+//   - The fenced body is a `code_fence_content` node (NOT a `paragraph`).
+//   - No `ERROR` nodes anywhere in the generated tree.
+//   - No `_close_block` token marker leaks into the fence body (no
+//     extraneous close-of-block before the closing ```).
+//
+// If this test starts failing, suspect a regression of commit 2c642068
+// or a change to MarkdownGrammar() that re-merges the fenced-code newline
+// with the global `_newline` rule.
+func TestMarkdownFencedCodeBlockContentParity(t *testing.T) {
+	const input = "```go\npackage main\n```\n"
+
+	refLang := grammars.MarkdownLanguage()
+	if refLang == nil {
+		t.Fatal("reference MarkdownLanguage() not available")
+	}
+	genLang := generateMarkdownLang(t)
+
+	refParser := gotreesitter.NewParser(refLang)
+	genParser := gotreesitter.NewParser(genLang)
+
+	src := []byte(input)
+	refTree, err := refParser.Parse(src)
+	if err != nil {
+		t.Fatalf("reference parse failed: %v", err)
+	}
+	genTree, err := genParser.Parse(src)
+	if err != nil {
+		t.Fatalf("generated parse failed: %v", err)
+	}
+
+	refSexp := refTree.RootNode().SExpr(refLang)
+	genSexp := genTree.RootNode().SExpr(genLang)
+
+	// Hard gate 1: byte-identical S-expression CST.
+	if genSexp != refSexp {
+		t.Errorf("fenced code block CST diverges from bundled parser:\n  ref: %s\n  gen: %s",
+			refSexp, genSexp)
+	}
+
+	// Hard gate 2: the body must be code_fence_content, not paragraph.
+	// (This is the load-bearing assertion — before the fix, it was paragraph.)
+	if !strings.Contains(genSexp, "code_fence_content") {
+		t.Errorf("generated CST missing code_fence_content node; got: %s", genSexp)
+	}
+	if strings.Contains(genSexp, "paragraph") {
+		t.Errorf("generated CST contains paragraph node — fenced body misparsed as paragraph; got: %s",
+			genSexp)
+	}
+
+	// Hard gate 3: no ERROR nodes.
+	if strings.Contains(genSexp, "ERROR") {
+		t.Errorf("generated CST contains ERROR node(s); got: %s", genSexp)
+	}
+	if strings.Contains(refSexp, "ERROR") {
+		t.Errorf("reference CST contains ERROR node(s); got: %s", refSexp)
+	}
+
+	// Hard gate 4: _close_block must not appear inside the fence body.
+	// _close_block is a hidden external marker; if it materialized as a
+	// visible node inside the tree, that's the premature-close symptom.
+	if strings.Contains(genSexp, "_close_block") || strings.Contains(genSexp, "close_block") {
+		t.Errorf("generated CST contains a close_block marker — _close_block fired prematurely inside fence body; got: %s",
+			genSexp)
+	}
+
+	t.Logf("fenced code block parity OK; CST: %s", genSexp)
+}
