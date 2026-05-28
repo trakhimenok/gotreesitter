@@ -601,11 +601,14 @@ func MarkdownGrammar() *Grammar {
 				Blank())))
 
 	// fenced code block delimited by ``` or ~~~
-	// Hidden by name (underscore prefix) — children flatten into parent rule.
-	// Matches the bundled markdown.bin parser, which has 952 reduce-to-fenced
-	// actions in its dense table but emits zero fenced_code_block nodes in
-	// the actual parse tree. The bundled blob was generated with this rule
-	// effectively inlined / hidden; mirroring that here aligns CST shape.
+	// Hidden by name (underscore prefix) — children flatten into parent rule
+	// at the top level. The bundled markdown.bin parser emits zero
+	// fenced_code_block wrapper nodes at top level (the delimiters / info /
+	// content appear as flat siblings under `section`), but DOES emit a
+	// visible `fenced_code_block` wrapper when the fence is inside a container
+	// (list_item, block_quote). The rule stays hidden at top level via the
+	// underscore prefix, and is re-aliased to visible `fenced_code_block`
+	// inside `_block_in_container` to match the bundled CST shape.
 	g.Define("_fenced_code_block",
 		PrecRight(0, Choice(
 			Seq(
@@ -995,8 +998,8 @@ func MarkdownGrammar() *Grammar {
 				Blank())))
 
 	// any block-level element as it appears nested inside a block_quote or list_item.
-	// Block_quote and list in this context emit visible wrappers (matching the ref
-	// CST), unlike at top level where those wrappers are hidden.
+	// Block_quote, list, and fenced_code_block in this context emit visible wrappers
+	// (matching the ref CST), unlike at top level where those wrappers are hidden.
 	g.Define("_block_in_container",
 		Choice(
 			Alias(Sym("_setext_heading1"), "setext_heading", true),
@@ -1006,7 +1009,7 @@ func MarkdownGrammar() *Grammar {
 			Alias(Sym("_block_quote"), "block_quote", true),
 			Sym("thematic_break"),
 			Alias(Sym("_list"), "list", true),
-			Sym("_fenced_code_block"),
+			Alias(Sym("_fenced_code_block"), "fenced_code_block", true),
 			Sym("_blank_line"),
 			Sym("html_block"),
 			Sym("link_reference_definition"),
