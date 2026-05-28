@@ -995,15 +995,15 @@ func MarkdownGrammar() *Grammar {
 				Blank())))
 
 	// any block-level element as it appears nested inside a block_quote or list_item.
-	// Lists in this context emit a visible `list` wrapper (matching the ref CST),
-	// unlike at top level where the `list` wrapper is hidden.
+	// Block_quote and list in this context emit visible wrappers (matching the ref
+	// CST), unlike at top level where those wrappers are hidden.
 	g.Define("_block_in_container",
 		Choice(
 			Alias(Sym("_setext_heading1"), "setext_heading", true),
 			Alias(Sym("_setext_heading2"), "setext_heading", true),
 			Sym("paragraph"),
 			Sym("indented_code_block"),
-			Sym("_block_quote"),
+			Alias(Sym("_block_quote"), "block_quote", true),
 			Sym("thematic_break"),
 			Alias(Sym("_list"), "list", true),
 			Sym("_fenced_code_block"),
