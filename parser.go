@@ -3609,6 +3609,36 @@ func javascriptRepetitionShiftConflictChoice(lang *Language, tok Token, state St
 		if !symbolHasName(lang, tok.Symbol, ",") {
 			return ParseAction{}, false
 		}
+	case 1421:
+		// object_pattern_repeat1 boundary: destructuring `{a, b, c}` —
+		// the `,` separates pattern members. Verified zero-progress:
+		// reducing object_pattern_repeat1 on `,` gotos back into the
+		// 1421 cycle (via states 1452/1476) facing the same `,`, so the
+		// shift is the only token-consuming action. State 1421→992 is
+		// committed to object_pattern (992 carries only pattern members),
+		// so this is isolated from the declared object/object_pattern
+		// conflict, which resolves on the `}` boundary instead. Verified
+		// against tree-sitter C parser.c (SMALL_STATE 1421, cell 3371).
+		if !symbolHasName(lang, tok.Symbol, ",") {
+			return ParseAction{}, false
+		}
+	case 1395:
+		// string_repeat1 boundary: the body of a string literal is
+		// repeat(choice(string_fragment, escape_sequence)). On a
+		// continuation token the repeat self-loops (shift_repeat→1395);
+		// reducing string_repeat1 on a bare fragment makes zero progress
+		// (gotos back to 1395 with the same lookahead — an infinite
+		// reduce loop), so the shift is the only token-consuming action.
+		// The closing quote terminates via a separate count=1 reduce
+		// cell, so this state is fully isolated from the object/
+		// object_pattern ambiguity. Verified against tree-sitter C
+		// parser.c (SMALL_STATE 1395, action cells 3320/3322).
+		switch {
+		case symbolHasName(lang, tok.Symbol, "string_fragment"):
+		case symbolHasName(lang, tok.Symbol, "escape_sequence"):
+		default:
+			return ParseAction{}, false
+		}
 	default:
 		return ParseAction{}, false
 	}
