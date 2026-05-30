@@ -66,6 +66,42 @@ func TestParseForestEndToEnd(t *testing.T) {
 	}
 }
 
+// TestParseForestExtras exercises extra (comment) handling across every
+// position relative to the tree: interior to a node, between siblings, leading
+// the root, trailing at EOF, and combinations. Each must match the production
+// parser byte-for-byte — extras are state-transparent shifts, excluded from a
+// production's child count, trimmed when trailing a reduced node and re-pushed
+// to the surrounding context, and folded into the root when they lead or trail
+// the whole file.
+func TestParseForestExtras(t *testing.T) {
+	cases := []struct{ lang, src string }{
+		{"c", "int /* c */ x;\n"},                                  // interior to a declaration
+		{"c", "int x; // c\nint y;\n"},                             // between two declarations
+		{"c", "int x; /* a */ /* b */ int y;\n"},                   // two adjacent extras
+		{"c", "int f(void) { return 0; /* done */ }\n"},            // trailing a statement
+		{"c", "// leading\nint x;\n"},                              // leading the root
+		{"c", "int x;\n// trailing\n"},                             // trailing at EOF
+		{"c", "/* lead */ int x; // mid\nint y; /* tail */\n"},     // leading + interior + trailing
+		{"c", "int f(void) {\n  // body comment\n  return 0;\n}\n"}, // inside a block
+		{"go", "package p // pkg\nfunc f() {}\n"},
+		{"go", "// header\npackage p\nvar x = 1 // trailing\n"},
+	}
+	for _, c := range cases {
+		lang := loadBlobForDecode(t, c.lang)
+		want := mustParseSExpr(t, lang, []byte(c.src))
+		got, ok := forestParseSExpr(t, lang, []byte(c.src))
+		if !ok {
+			t.Errorf("%s %q: forest parse failed", c.lang, c.src)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s %q: mismatch\n forest=%s\n normal=%s", c.lang, c.src, got, want)
+			continue
+		}
+		t.Logf("OK  %-4s %q", c.lang, c.src)
+	}
+}
+
 func mustParseSExpr(t *testing.T, lang *Language, src []byte) string {
 	tree, err := NewParser(lang).Parse(src)
 	if err != nil {

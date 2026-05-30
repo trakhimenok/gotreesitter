@@ -133,6 +133,62 @@ func entrySymSpan(e stackEntry) (Symbol, uint32, uint32) {
 	return n.symbol, n.startByte, n.endByte
 }
 
+// collectForestRootAndExtras walks the winning (bestLink) path down from the
+// accept node to locate the start-symbol root and gather the root-level extras
+// that surround it: extras stacked above it are trailing, extras below it are
+// leading. Each group is returned in source order; foldResultRootExtras splits
+// them back into leading/trailing by position.
+func collectForestRootAndExtras(accepted *gssForestNode) (*Node, []*Node) {
+	if accepted == nil {
+		return nil, nil
+	}
+	var above []*Node // trailing extras, collected latest-first
+	var root *Node
+	below := (*gssForestNode)(nil)
+	for cur := accepted; cur != nil; {
+		link := cur.bestLink()
+		if link == nil {
+			return nil, nil
+		}
+		n := (*Node)(link.subtree.node)
+		if n.isExtra() {
+			above = append(above, n)
+			cur = link.prev
+			continue
+		}
+		root, below = n, link.prev
+		break
+	}
+	if root == nil {
+		return nil, nil
+	}
+	var belowExtras []*Node // leading extras, collected latest-first
+	for cur := below; cur != nil; {
+		link := cur.bestLink()
+		if link == nil {
+			break
+		}
+		n := (*Node)(link.subtree.node)
+		if !n.isExtra() {
+			break
+		}
+		belowExtras = append(belowExtras, n)
+		cur = link.prev
+	}
+	if len(above) == 0 && len(belowExtras) == 0 {
+		return root, nil
+	}
+	// Reverse each group into source order, then concatenate (leading first).
+	extras := make([]*Node, 0, len(belowExtras)+len(above))
+	for i := len(belowExtras) - 1; i >= 0; i-- {
+		extras = append(extras, belowExtras[i])
+	}
+	for i := len(above) - 1; i >= 0; i-- {
+		extras = append(extras, above[i])
+	}
+	return root, extras
+}
+
 // bestLink returns the link whose subtree wins tree-sitter's selection:
 // highest score (dynamic precedence), then earliest (production order).
 func (n *gssForestNode) bestLink() *gssLink {
@@ -218,25 +274,54 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 				case ParseActionReduce:
 					cc := int(act.ChildCount)
 					reduceOverForest(node, cc, func(children []stackEntry, childScore int, popTo *gssForestNode) {
-						kids := append([]stackEntry(nil), children...) // buffer is shared
-						childNodes, fieldIDs, fieldSources, _ := p.buildReduceChildrenWithPath(kids, 0, len(kids), cc, act.Symbol, act.ProductionID, arena)
-						parent := newParentNodeInArenaWithFieldSources(arena, act.Symbol, named(act.Symbol), childNodes, fieldIDs, fieldSources, act.ProductionID)
 						gotoState := p.lookupGoto(popTo.state, act.Symbol)
 						if gotoState == 0 {
 							return
 						}
+						// Trailing extras (a comment after a complete construct)
+						// are not part of the reduced node — they belong to the
+						// surrounding context. Trim them here and re-push them on
+						// top of the reduced node so the next (outer) reduce attaches
+						// them, mirroring reduceWindowFromGSS + the trailing re-push.
+						reducedEnd := reducedEndBeforeTrailingExtras(children)
+						kids := append([]stackEntry(nil), children[:reducedEnd]...)
+						childNodes, fieldIDs, fieldSources, _ := p.buildReduceChildrenWithPath(kids, 0, len(kids), cc, act.Symbol, act.ProductionID, arena)
+						parent := newParentNodeInArenaWithFieldSources(arena, act.Symbol, named(act.Symbol), childNodes, fieldIDs, fieldSources, act.ProductionID)
+						// Position the reduced node at the end of its last real
+						// child (before any trimmed trailing extras), falling back
+						// to the frontier position for empty productions.
+						parentEnd := node.byteOffset
+						if reducedEnd > 0 {
+							parentEnd = (*Node)(kids[reducedEnd-1].node).endByte
+						}
 						// Subtree score = this production's dynamic precedence +
 						// the children's accumulated scores.
-						reduced := coalesceForest(curIndex, gotoState, node.byteOffset, popTo,
+						top := coalesceForest(curIndex, gotoState, parentEnd, popTo,
 							stackEntry{node: unsafe.Pointer(parent), state: gotoState, kind: stackEntryKindNode},
 							int(act.DynamicPrecedence)+childScore, popTo.errorCost)
-						work = append(work, reduced)
+						for _, ex := range children[reducedEnd:] {
+							exEnd := (*Node)(ex.node).endByte
+							top = coalesceForest(curIndex, gotoState, exEnd, top,
+								stackEntry{node: ex.node, state: gotoState, kind: stackEntryKindNode},
+								0, top.errorCost)
+						}
+						work = append(work, top)
 					})
 				case ParseActionShift:
 					leaf := newLeafNodeInArena(arena, tok.Symbol, named(tok.Symbol), tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
+					// An extra (comment/whitespace) shifts without advancing the
+					// parse state: it stays transparent to the grammar and is
+					// attached to the surrounding node as an extra child at the next
+					// reduce. extraShiftTargetState keeps the current state when the
+					// action carries no explicit target.
+					target := act.State
+					if act.Extra {
+						leaf.setExtra(true)
+						target = extraShiftTargetState(node.state, act)
+					}
 					before := len(nextIndex)
-					sh := coalesceForest(nextIndex, act.State, tok.EndByte, node,
-						stackEntry{node: unsafe.Pointer(leaf), state: act.State, kind: stackEntryKindNode},
+					sh := coalesceForest(nextIndex, target, tok.EndByte, node,
+						stackEntry{node: unsafe.Pointer(leaf), state: target, kind: stackEntryKindNode},
 						0, node.errorCost) // a shifted leaf carries no dynamic precedence
 					if len(nextIndex) != before {
 						nextFrontier = append(nextFrontier, sh)
@@ -248,10 +333,17 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 		}
 
 		if eof {
-			if best := accepted.bestLink(); best != nil {
-				return (*Node)(best.subtree.node), true
+			root, extras := collectForestRootAndExtras(accepted)
+			if root == nil {
+				return nil, false
 			}
-			return nil, false
+			// Leading/trailing extras live outside the start-symbol node (above or
+			// below it on the accepted stack); fold them into the root the way the
+			// production result builder does, splitting by position.
+			if len(extras) > 0 {
+				foldResultRootExtras(root, extras, arena)
+			}
+			return root, true
 		}
 		if len(nextFrontier) == 0 {
 			return nil, false
@@ -281,23 +373,37 @@ func reduceOverForest(node *gssForestNode, childCount int, visit func(children [
 		visit(nil, 0, node)
 		return
 	}
-	buf := make([]stackEntry, childCount)
-	var dfs func(cur *gssForestNode, depth, score int)
-	dfs = func(cur *gssForestNode, depth, score int) {
+	// Walk back to childCount *non-extra* subtrees. Extra leaves (comments,
+	// whitespace) encountered between them are included in the child window but
+	// do not count toward childCount — mirroring reduceWindowFromGSS so the
+	// reduced node carries its interior extras while the production's symbol
+	// count stays correct. The path is collected most-recent-first and reversed
+	// to left-to-right at emit. A per-branch copy keeps sibling links (the forks)
+	// from corrupting each other's window.
+	var dfs func(cur *gssForestNode, remaining, score int, path []stackEntry)
+	dfs = func(cur *gssForestNode, remaining, score int, path []stackEntry) {
 		if cur == nil {
 			return
 		}
 		for i := range cur.links {
 			link := cur.links[i]
-			// depth counts down childCount-1..0; buf[depth] is the child at that
-			// position, so buf ends up left-to-right (buf[0] = first child).
-			buf[depth] = link.subtree
-			if depth == 0 {
-				visit(buf, score+link.score, link.prev)
-			} else {
-				dfs(link.prev, depth-1, score+link.score)
+			next := make([]stackEntry, len(path)+1)
+			copy(next, path)
+			next[len(path)] = link.subtree
+			rem := remaining
+			if !stackEntryNodeIsExtra(link.subtree) {
+				rem--
 			}
+			if rem == 0 {
+				children := make([]stackEntry, len(next))
+				for j := range next {
+					children[j] = next[len(next)-1-j]
+				}
+				visit(children, score+link.score, link.prev)
+				continue
+			}
+			dfs(link.prev, rem, score+link.score, next)
 		}
 	}
-	dfs(node, childCount-1, 0)
+	dfs(node, childCount, 0, nil)
 }
