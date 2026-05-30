@@ -9,6 +9,43 @@ for tags and release notes while still in `0.x`.
 
 - Nothing yet.
 
+## [0.20.0-rc3] - 2026-05-30
+
+Third release candidate on the 0.20 line. Parser-core GLR performance wins —
+C now parses at/below parity with tree-sitter C on real corpus — plus parser
+correctness fixes and markdown grammargen advances. CI green (build,
+parity-cgo, perf-regression).
+
+### Performance
+
+- **GLR fork reduction across the ring matrix** (#96). Extended the
+  `RepetitionShiftConflictChoice` resolver to collapse spurious reduce/shift
+  forks at boundaries where tree-sitter C resolves deterministically (verified
+  per state against C's `parser.c`; the reduce is a zero-progress dead-end with
+  no `conflicts:` entanglement). Every change is byte-for-byte C-parity-verified
+  against libtree-sitter.
+  - C: `translation_unit_repeat1` (top-level item list) + `preproc_if_repeat1`
+    (preprocessor body) collapse — `large__cluster.c` drops from 20,866 to
+    1,099 GLR forks (−95%) and ~−30% parse wall, bringing C to/below parity.
+  - Rust: macro token-tree (`delim_token_tree_repeat1`) continuation-token
+    fork reduction.
+  - Token source: O(1) valid-external-symbol fast path mirroring C's
+    `external_lex_state` indexing (single active state references the
+    precomputed row instead of rebuilding it per token).
+  - Consolidated ring A/B (real corpus): geomean −6.62%; C −30%, java −11%,
+    go −10%; no language regressed.
+
+### Fixed
+
+- Race in deferred parent-link wiring (#95).
+- Kotlin object declaration misparse (#94).
+- grammargen: terminate `html_block` type 6/7 at a blank line.
+- grammargen: de-merge `link_reference_definition` soft-break terminator.
+
+### Added
+
+- grammargen: self-contained CommonMark §3–§6 markdown parity corpus.
+
 ## [0.19.1] - 2026-05-23
 
 Kotlin source-file query compatibility patch.
