@@ -21,6 +21,13 @@ PARITY_RUN='^TestParityFreshParse$|^TestParityIncrementalParse$|^TestParityHasNo
 STRICT_SCALA=0
 BUILD_IMAGE=1
 
+# Ring-matrix scope: the top-50 value languages by default. The parser must
+# match tree-sitter C across this set for any parser-core change to merge.
+# Override with GTS_PARITY_MODE=smoke for the fast 9-language dev gate, or
+# GTS_PARITY_MODE=exhaustive for every curated structural grammar.
+: "${GTS_PARITY_MODE:=top50}"
+export GTS_PARITY_MODE
+
 usage() {
   cat <<'EOF'
 Usage: run_parity_in_docker.sh [options] [-- <custom command>]
@@ -42,6 +49,11 @@ Options:
   --no-build             Skip docker build step
   -h, --help             Show this help
 
+Ring-matrix scope (GTS_PARITY_MODE, default: top50):
+  top50       the 50 top-value languages (default ring matrix)
+  smoke       fast 9-language dev gate (bash,c,c_sharp,go,html,js,python,rust,yaml)
+  exhaustive  every curated structural grammar
+
 Environment passthrough (if set):
   GOTOOLCHAIN
   GOMAXPROCS
@@ -50,6 +62,7 @@ Environment passthrough (if set):
   GOT_GLR_V2_PENDING_PARENTS
   GOT_PARSE_NODE_LIMIT_SCALE
   GOT_GLR_FORCE_CONFLICT_WIDTH
+  GTS_PARITY_MODE
   GTS_PARITY_SKIP_LANGS
 
 Artifacts are written to <out-root>/<timestamp>[-<label>]/:
