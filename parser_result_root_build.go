@@ -84,7 +84,15 @@ func (b *resultRootBuild) tryBuildRealRootTree(nodes []*Node) *Tree {
 	realRoot = b.repairPythonRoot(realRoot)
 	extendTrailing := returnRealRoot || !realRoot.hasError()
 	if !returnRealRoot {
-		b.finalizeRoot(realRoot, false, extendTrailing)
+		// realRoot's symbol is not the grammar's root symbol, so it will be
+		// wrapped as a CHILD of a synthetic root by buildSyntheticRootTree.
+		// Apply only subtree compatibility normalization here — NOT the root-span
+		// mutations (normalizeRootSourceStart sets startByte=0; trailing-whitespace
+		// extension). Those belong to the actual wrapper root; applying them to a
+		// soon-to-be child stretches it backward over leading comments and forward
+		// over trailing whitespace, diverging from tree-sitter C (the wrapper root
+		// correctly absorbs that trivia instead).
+		b.finalizeWrappedSubtree(realRoot)
 		return nil
 	}
 	return b.finishTree(realRoot, b.shouldWireParentLinks, extendTrailing)
@@ -165,6 +173,19 @@ func (b *resultRootBuild) finishTree(root *Node, wireParentLinks, extendTrailing
 
 func (b *resultRootBuild) finalizeRoot(root *Node, wireParentLinks, extendTrailing bool) {
 	b.parser.finalizeResultRoot(root, b.source, b.linkScratch, wireParentLinks, extendTrailing)
+}
+
+// finalizeWrappedSubtree applies subtree compatibility normalization to a node
+// that is about to become a CHILD of a synthetic wrapper root. It deliberately
+// omits the root-span mutations that finalizeResultRoot performs
+// (normalizeRootSourceStart / extendNodeToTrailingWhitespace) because those are
+// only correct for the actual root — the wrapper root absorbs the leading/trailing
+// trivia. The compatibility guard mirrors finalizeResultRoot exactly.
+func (b *resultRootBuild) finalizeWrappedSubtree(root *Node) {
+	p := b.parser
+	if p == nil || (!p.noResultCompatibilityBenchmarkOnly && !p.shouldDeferResultCompatibility(root)) {
+		normalizeResultCompatibility(root, b.source, p)
+	}
 }
 
 func (b *resultRootBuild) borrowedArenas() []*nodeArena {
@@ -338,6 +359,14 @@ func (p *Parser) finalizeResultRoot(root *Node, source []byte, linkScratch *[]*N
 		start = materializationTimingStart(timing)
 		normalizeResultCompatibility(root, source, p)
 		timing.addResultCompatibility(start)
+		// Per-language compatibility passes can filter trailing trivia children
+		// (e.g. HCL drops _whitespace from config_file), which may shrink the root
+		// back below the source end. Re-extend so the ROOT still spans its trailing
+		// whitespace — the root covers the whole source in tree-sitter C. Idempotent
+		// (no-op) when compatibility did not shrink the root.
+		if extendTrailing {
+			extendNodeToTrailingWhitespace(root, source)
+		}
 	}
 	if wireParentLinks {
 		start = materializationTimingStart(timing)
