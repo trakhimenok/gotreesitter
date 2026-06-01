@@ -2531,6 +2531,10 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 						if next, ok := pythonRepetitionShiftConflictChoice(p.language, tok, currentState, actions); ok {
 							chosen, choice = next, true
 						}
+					case "d":
+						if next, ok := dRepetitionShiftConflictChoice(p.language, currentState, actions); ok {
+							chosen, choice = next, true
+						}
 					case "clojure":
 						if next, ok := clojureRepetitionShiftConflictChoice(p.language, currentState, actions); ok {
 							chosen, choice = next, true
@@ -3670,6 +3674,19 @@ func pythonRepetitionShiftConflictChoice(lang *Language, tok Token, state StateI
 			return ParseAction{}, false
 		}
 	default:
+		return ParseAction{}, false
+	}
+	return repetitionShiftConflictChoice(actions)
+}
+
+// dRepetitionShiftConflictChoice keeps D declaration/statement lists on the
+// repetition-shift path. State 118 dominates the large real-corpus fork storm,
+// while close braces still reduce because no repetition shift is present.
+func dRepetitionShiftConflictChoice(lang *Language, state StateID, actions []ParseAction) (ParseAction, bool) {
+	if lang == nil || state != 118 {
+		return ParseAction{}, false
+	}
+	if !allReducesHaveSymbol(lang, actions, "_declarations_and_statements") {
 		return ParseAction{}, false
 	}
 	return repetitionShiftConflictChoice(actions)

@@ -160,6 +160,33 @@ func TestPythonRepetitionShiftConflictChoiceRejectsOtherState(t *testing.T) {
 	}
 }
 
+func TestDRepetitionShiftConflictChoiceAllowsDeclarationsAndStatements(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "_declarations_and_statements"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 1, ChildCount: 2},
+		{Type: ParseActionShift, State: 9, Repetition: true},
+	}
+
+	chosen, ok := dRepetitionShiftConflictChoice(lang, 118, actions)
+	if !ok {
+		t.Fatal("dRepetitionShiftConflictChoice = false, want true")
+	}
+	if chosen.Type != ParseActionShift || chosen.State != 9 || !chosen.Repetition {
+		t.Fatalf("dRepetitionShiftConflictChoice picked %+v, want repetition shift", chosen)
+	}
+}
+
+func TestDRepetitionShiftConflictChoiceRejectsOtherRepeat(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "_declarations_and_statements", "other_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionShift, State: 9, Repetition: true},
+	}
+	if _, ok := dRepetitionShiftConflictChoice(lang, 118, actions); ok {
+		t.Fatal("dRepetitionShiftConflictChoice = true, want false")
+	}
+}
+
 func TestClojureRepetitionShiftConflictChoiceAllowsHotRepeats(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
