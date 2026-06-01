@@ -350,6 +350,15 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
 			return 1
 		}
+	case "cpp":
+		// C++ token-source recovery can retain many equivalent declaration-list
+		// survivors on accepted-error parses. One same-key survivor keeps the
+		// current C++ parse/highlight/query gates clean while removing most of
+		// the full-parse merge-equivalence churn; keep explicit env overrides
+		// available for diagnosing grammar-specific recovery cases.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
 	case "json":
 		// JSON recovery has a small conflict surface, but retaining many
 		// alternatives per merge key makes equivalence checks dominate full
