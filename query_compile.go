@@ -176,9 +176,10 @@ func (p *queryParser) parseGroupedPatternRoot(pat *Pattern, depth int, parentSym
 
 	if p.peekNextIsPatternElement() {
 		pat.steps = append(pat.steps, QueryStep{
-			symbol:  0,
-			isNamed: false,
-			depth:   depth,
+			symbol:    0,
+			isNamed:   false,
+			depth:     depth,
+			synthetic: true,
 		})
 		for i := range innerPat.steps {
 			innerPat.steps[i].depth++
@@ -314,7 +315,10 @@ func (b *patternBodyParser) parseRootCapture() error {
 		return err
 	}
 	if root := b.rootStep(); root != nil {
-		root.captureIDs = append(root.captureIDs, b.p.ensureCapture(capName))
+		captureID := b.p.ensureCapture(capName)
+		if !root.synthetic {
+			root.captureIDs = append(root.captureIDs, captureID)
+		}
 	}
 	return nil
 }
@@ -399,7 +403,10 @@ func (p *queryParser) parseStepSuffixInto(step *QueryStep) error {
 			return err
 		}
 		if step != nil {
-			step.captureIDs = append(step.captureIDs, p.ensureCapture(capName))
+			captureID := p.ensureCapture(capName)
+			if !step.synthetic {
+				step.captureIDs = append(step.captureIDs, captureID)
+			}
 		}
 		p.skipWhitespaceAndComments()
 	}

@@ -47,6 +47,7 @@ type QueryStep struct {
 	quantifier   queryQuantifier // ?, *, + (default: exactly one)
 	anchorBefore bool            // '.' before this step (first child / immediate sibling)
 	anchorAfter  bool            // '.' after this step (last child)
+	synthetic    bool            // true for grouping roots that do not correspond to a query node
 	// For alternation steps, alternatives lists the alternative symbols
 	// that can match at this position. If non-nil, symbol is ignored.
 	alternatives []alternativeSymbol

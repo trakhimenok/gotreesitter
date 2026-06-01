@@ -2,6 +2,7 @@ package gotreesitter
 
 import (
 	"regexp"
+	"slices"
 	"testing"
 )
 
@@ -3777,6 +3778,39 @@ func TestGroupingMultiSiblingWithCaptures(t *testing.T) {
 	// Verify captures.
 	requireStepHasCapture(t, steps[1])
 	requireStepHasCapture(t, steps[2])
+}
+
+func TestGroupingMultiSiblingOuterCaptureDoesNotEmitSyntheticRoot(t *testing.T) {
+	lang := queryTestLanguage()
+	tree := buildSimpleTree(lang)
+	q, err := NewQuery(`(((identifier) @id) . (parameter_list)) @pair`, lang)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	steps := q.patterns[0].steps
+	if len(steps) != 3 {
+		t.Fatalf("steps: got %d, want 3", len(steps))
+	}
+	if !steps[0].synthetic {
+		t.Fatal("expected grouped sibling pattern to use a synthetic root step")
+	}
+	if len(steps[0].captureIDs) != 0 {
+		t.Fatalf("synthetic root captureIDs: got %d, want 0", len(steps[0].captureIDs))
+	}
+
+	matches := q.Execute(tree)
+	if len(matches) != 1 {
+		t.Fatalf("matches: got %d, want 1", len(matches))
+	}
+	got := make([]string, 0, len(matches[0].Captures))
+	for _, capture := range matches[0].Captures {
+		got = append(got, capture.Name+":"+capture.Node.Text(tree.Source()))
+	}
+	want := []string{"id:main"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("captures: got %v, want %v", got, want)
+	}
 }
 
 func TestGroupingTripleParens(t *testing.T) {
