@@ -38,6 +38,14 @@ func normalizeCSharpInvocationStatements(root *Node, source []byte, lang *Langua
 	argumentNamed := symbolIsNamed(lang, argumentSym)
 
 	walkResultTree(root, func(n *Node) {
+		if n.Type(lang) == "member_access_expression" && len(n.children) > 0 {
+			if first := n.children[0]; first != nil && first.Type(lang) == "qualified_name" {
+				n.children[0] = csharpRewriteQualifiedNameAsMemberAccess(first, lang, memberAccessSym, memberAccessNamed, expressionFieldID, nameFieldID)
+				n.children[0].parent = n
+				n.children[0].childIndex = 0
+				n.setHasError(false)
+			}
+		}
 		if n.Type(lang) == "argument_list" {
 			csharpPopulateMissingInvocationArguments(n, source, lang)
 		}
@@ -222,18 +230,13 @@ func normalizeCSharpSwitchTupleCasePatterns(root *Node, lang *Language) {
 	if !ok {
 		return
 	}
-	positionalSym, ok := lang.SymbolByName("positional_pattern_clause")
-	if !ok {
-		return
-	}
-	subpatternSym, ok := lang.SymbolByName("subpattern")
+	argumentSym, ok := lang.SymbolByName("argument")
 	if !ok {
 		return
 	}
 	named := symbolIsNamed(lang, patternSym)
 	tupleNamed := symbolIsNamed(lang, tupleExprSym)
-	positionalNamed := symbolIsNamed(lang, positionalSym)
-	subpatternNamed := symbolIsNamed(lang, subpatternSym)
+	argumentNamed := symbolIsNamed(lang, argumentSym)
 	walkResultTree(root, func(n *Node) {
 		if n.Type(lang) == "switch_section" && len(n.children) > 1 {
 			pat := n.children[1]
@@ -249,11 +252,14 @@ func normalizeCSharpSwitchTupleCasePatterns(root *Node, lang *Language) {
 				pat != nil && (pat.Type(lang) == "tuple_expression" || pat.Type(lang) == "recursive_pattern") {
 				tuple := pat
 				if pat.Type(lang) != "tuple_expression" {
-					tupleChildren := append([]*Node(nil), pat.children...)
-					if n.ownerArena != nil && len(tupleChildren) > 0 {
-						buf := n.ownerArena.allocNodeSlice(len(tupleChildren))
-						copy(buf, tupleChildren)
-						tupleChildren = buf
+					tupleChildren, ok := csharpTupleExpressionChildrenFromRecursivePattern(pat, lang, argumentSym, argumentNamed)
+					if !ok {
+						tupleChildren = append([]*Node(nil), pat.children...)
+						if n.ownerArena != nil && len(tupleChildren) > 0 {
+							buf := n.ownerArena.allocNodeSlice(len(tupleChildren))
+							copy(buf, tupleChildren)
+							tupleChildren = buf
+						}
 					}
 					tuple = newParentNodeInArena(n.ownerArena, tupleExprSym, tupleNamed, tupleChildren, nil, 0)
 				}
@@ -263,11 +269,44 @@ func normalizeCSharpSwitchTupleCasePatterns(root *Node, lang *Language) {
 				n.children[1] = repl
 				pat = repl
 			}
-			if pat != nil && pat.Type(lang) == "constant_pattern" && len(pat.children) == 1 && pat.children[0] != nil {
-				csharpRewriteSwitchTupleLiteralPatternArguments(pat.children[0], lang, positionalSym, positionalNamed, subpatternSym, subpatternNamed, patternSym, named)
-			}
 		}
 	})
+}
+
+func csharpTupleExpressionChildrenFromRecursivePattern(pat *Node, lang *Language, argumentSym Symbol, argumentNamed bool) ([]*Node, bool) {
+	if pat == nil || lang == nil || len(pat.children) != 1 || pat.children[0] == nil || pat.children[0].Type(lang) != "positional_pattern_clause" {
+		return nil, false
+	}
+	clause := pat.children[0]
+	if len(clause.children) < 3 {
+		return nil, false
+	}
+	children := make([]*Node, 0, len(clause.children))
+	for _, child := range clause.children {
+		if child == nil {
+			continue
+		}
+		if !child.IsNamed() {
+			children = append(children, child)
+			continue
+		}
+		if child.Type(lang) != "subpattern" || len(child.children) != 1 || child.children[0] == nil {
+			return nil, false
+		}
+		value := child.children[0]
+		if value.Type(lang) == "constant_pattern" && len(value.children) == 1 && value.children[0] != nil {
+			value = value.children[0]
+		}
+		argChildren := cloneNodeSliceIfArena(pat.ownerArena, []*Node{value})
+		arg := newParentNodeInArena(pat.ownerArena, argumentSym, argumentNamed, argChildren, nil, 0)
+		arg.setHasError(false)
+		children = append(children, arg)
+	}
+	if len(children) == 0 {
+		return nil, false
+	}
+	children = cloneNodeSliceIfArena(pat.ownerArena, children)
+	return children, true
 }
 
 func csharpShouldWrapSwitchCaseConstantPattern(n *Node, lang *Language) bool {
@@ -280,52 +319,4 @@ func csharpShouldWrapSwitchCaseConstantPattern(n *Node, lang *Language) bool {
 	default:
 		return false
 	}
-}
-
-func csharpRewriteSwitchTupleLiteralPatternArguments(tuple *Node, lang *Language, positionalSym Symbol, positionalNamed bool, subpatternSym Symbol, subpatternNamed bool, constantPatternSym Symbol, constantPatternNamed bool) bool {
-	if tuple == nil || lang == nil || tuple.Type(lang) != "tuple_expression" || len(tuple.children) < 3 {
-		return false
-	}
-	for _, child := range tuple.children {
-		if child != nil && child.IsNamed() && child.Type(lang) == "positional_pattern_clause" {
-			return false
-		}
-	}
-	clauseChildren := make([]*Node, 0, len(tuple.children)-2)
-	for _, child := range tuple.children[1 : len(tuple.children)-1] {
-		if child == nil {
-			continue
-		}
-		if !child.IsNamed() {
-			clauseChildren = append(clauseChildren, child)
-			continue
-		}
-		if child.Type(lang) != "argument" || len(child.children) != 1 || child.children[0] == nil {
-			return false
-		}
-		patternChild := child.children[0]
-		if patternChild.Type(lang) != "discard" && patternChild.Type(lang) != "constant_pattern" {
-			patternChildren := []*Node{patternChild}
-			patternChildren = cloneNodeSliceIfArena(tuple.ownerArena, patternChildren)
-			patternChild = newParentNodeInArena(tuple.ownerArena, constantPatternSym, constantPatternNamed, patternChildren, nil, 0)
-			patternChild.setHasError(false)
-		}
-		subChildren := []*Node{patternChild}
-		subChildren = cloneNodeSliceIfArena(tuple.ownerArena, subChildren)
-		sub := newParentNodeInArena(tuple.ownerArena, subpatternSym, subpatternNamed, subChildren, nil, 0)
-		sub.setHasError(false)
-		clauseChildren = append(clauseChildren, sub)
-	}
-	if len(clauseChildren) == 0 {
-		return false
-	}
-	clauseChildren = cloneNodeSliceIfArena(tuple.ownerArena, clauseChildren)
-	clause := newParentNodeInArena(tuple.ownerArena, positionalSym, positionalNamed, clauseChildren, nil, 0)
-	clause.setHasError(false)
-	children := []*Node{tuple.children[0], clause, tuple.children[len(tuple.children)-1]}
-	children = cloneNodeSliceIfArena(tuple.ownerArena, children)
-	replaceNodeChildrenUnfielded(tuple, children)
-	tuple.productionID = 0
-	tuple.setHasError(false)
-	return true
 }

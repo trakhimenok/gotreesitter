@@ -33,3 +33,21 @@ string GetOutput()
 	tc := parityCase{name: "c_sharp", source: string(src)}
 	runParityCase(t, tc, "read-to-end-member-access", src)
 }
+
+func TestCSharpSwitchTupleCaseParity(t *testing.T) {
+	src := []byte("class C { void M(){ switch (a, a) { case (1, 1): break; } } }\n")
+	tc := parityCase{name: "c_sharp", source: string(src)}
+	runParityCase(t, tc, "switch-tuple-case", src)
+}
+
+func TestCSharpInterpolatedStringArgumentParity(t *testing.T) {
+	src := []byte("class C { void M(){ newLines.Add($\"{leadingWhitespaces}// <- {variable}\"); } }\n")
+	tc := parityCase{name: "c_sharp", source: string(src)}
+	runParityCase(t, tc, "interpolated-string-argument", src)
+}
+
+func TestCSharpNestedMemberAccessQualifiedLeftParity(t *testing.T) {
+	src := []byte("class C { void M(){ if (match.Success && match.Groups.Count == 3) { } } }\n")
+	tc := parityCase{name: "c_sharp", source: string(src)}
+	runParityCase(t, tc, "nested-member-access-qualified-left", src)
+}

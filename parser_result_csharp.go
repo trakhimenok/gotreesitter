@@ -64,6 +64,7 @@ func normalizeCSharpSurfaceCompatibility(root *Node, source []byte, lang *Langua
 	lambdaSym, ok := symbolByName(lang, "lambda_expression")
 	hasLambda := ok
 	argSym, hasArgument := symbolByName(lang, "argument")
+	stringLiteralSym, hasStringLiteral := symbolByName(lang, "string_literal")
 	globalNamed := symbolIsNamed(lang, globalSym)
 	modifierNamed := symbolIsNamed(lang, modifierSym)
 	walkResultTree(root, func(n *Node) {
@@ -113,6 +114,10 @@ func normalizeCSharpSurfaceCompatibility(root *Node, source []byte, lang *Langua
 				n.startByte--
 				n.startPoint = advancePointByBytes(Point{}, source[:n.startByte])
 			}
+		}
+		if hasStringLiteral && n.symbol == stringLiteralSym && n.startByte > 0 && int(n.endByte) <= len(source) && source[n.startByte-1] == '$' {
+			csharpRewriteInterpolatedStringExpression(n, source, lang)
+			return
 		}
 	})
 }
@@ -170,6 +175,118 @@ func csharpInstallCollapsedChild(n *Node, childSym Symbol, childNamed bool) {
 	child.parent = n
 	child.childIndex = 0
 	n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
+}
+
+func csharpRewriteInterpolatedStringExpression(n *Node, source []byte, lang *Language) bool {
+	if n == nil || lang == nil || n.ownerArena == nil || n.startByte == 0 || n.startByte >= n.endByte || int(n.endByte) > len(source) {
+		return false
+	}
+	dollar := n.startByte - 1
+	if source[dollar] != '$' || source[n.startByte] != '"' || source[n.endByte-1] != '"' {
+		return false
+	}
+	exprSym, ok := symbolByName(lang, "interpolated_string_expression")
+	if !ok {
+		return false
+	}
+	startTok, ok := csharpBuildLeafNodeByName(n.ownerArena, source, lang, "interpolation_start", dollar, n.startByte)
+	if !ok {
+		return false
+	}
+	openQuote, ok := csharpBuildLeafNodeByName(n.ownerArena, source, lang, "\"", n.startByte, n.startByte+1)
+	if !ok {
+		return false
+	}
+	closeQuote, ok := csharpBuildLeafNodeByName(n.ownerArena, source, lang, "\"", n.endByte-1, n.endByte)
+	if !ok {
+		return false
+	}
+	children := []*Node{startTok, openQuote}
+	cursor := n.startByte + 1
+	contentStart := cursor
+	for cursor < n.endByte-1 {
+		if source[cursor] != '{' {
+			cursor++
+			continue
+		}
+		if contentStart < cursor {
+			content, ok := csharpBuildInterpolatedStringContentNode(n.ownerArena, source, lang, contentStart, cursor)
+			if !ok {
+				return false
+			}
+			children = append(children, content)
+		}
+		closeBrace, ok := csharpFindSimpleInterpolationCloseBrace(source, cursor+1, n.endByte-1)
+		if !ok {
+			return false
+		}
+		interp, ok := csharpBuildInterpolationNode(n.ownerArena, source, lang, cursor, closeBrace)
+		if !ok {
+			return false
+		}
+		children = append(children, interp)
+		cursor = closeBrace + 1
+		contentStart = cursor
+	}
+	if contentStart < n.endByte-1 {
+		content, ok := csharpBuildInterpolatedStringContentNode(n.ownerArena, source, lang, contentStart, n.endByte-1)
+		if !ok {
+			return false
+		}
+		children = append(children, content)
+	}
+	children = append(children, closeQuote)
+	retagResultRoot(n, exprSym, symbolIsNamed(lang, exprSym))
+	n.startByte = dollar
+	n.startPoint = advancePointByBytes(Point{}, source[:dollar])
+	replaceNodeChildrenUnfielded(n, cloneNodeSliceInArena(n.ownerArena, children))
+	n.productionID = 0
+	n.setHasError(false)
+	return true
+}
+
+func csharpBuildInterpolatedStringContentNode(arena *nodeArena, source []byte, lang *Language, start, end uint32) (*Node, bool) {
+	if start >= end {
+		return nil, false
+	}
+	sym, ok := symbolByName(lang, "string_content")
+	if !ok {
+		return nil, false
+	}
+	return newLeafNodeInArena(arena, sym, symbolIsNamed(lang, sym), start, end, advancePointByBytes(Point{}, source[:start]), advancePointByBytes(Point{}, source[:end])), true
+}
+
+func csharpFindSimpleInterpolationCloseBrace(source []byte, start, limit uint32) (uint32, bool) {
+	for i := start; i < limit; i++ {
+		if source[i] == '}' {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func csharpBuildInterpolationNode(arena *nodeArena, source []byte, lang *Language, openBrace, closeBrace uint32) (*Node, bool) {
+	if openBrace+1 >= closeBrace || int(closeBrace) >= len(source) {
+		return nil, false
+	}
+	sym, ok := symbolByName(lang, "interpolation")
+	if !ok {
+		return nil, false
+	}
+	openTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "interpolation_brace", openBrace, openBrace+1)
+	if !ok {
+		return nil, false
+	}
+	expr, ok := csharpRecoverQueryExpressionNodeFromRange(source, openBrace+1, closeBrace, lang, arena)
+	if !ok {
+		return nil, false
+	}
+	closeTok, ok := csharpBuildLeafNodeByName(arena, source, lang, "interpolation_brace", closeBrace, closeBrace+1)
+	if !ok {
+		return nil, false
+	}
+	children := cloneNodeSliceInArena(arena, []*Node{openTok, expr, closeTok})
+	return newParentNodeInArena(arena, sym, symbolIsNamed(lang, sym), children, nil, 0), true
 }
 
 func normalizeCSharpRecoveredTopLevelChunks(root *Node, source []byte, p *Parser) {
