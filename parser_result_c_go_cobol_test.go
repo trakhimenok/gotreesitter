@@ -191,6 +191,69 @@ func TestNormalizeCCollapsedKeywordChildrenRestoresTypeQualifier(t *testing.T) {
 	}
 }
 
+func TestNormalizeCppCompatibilityRestoresCollapsedKeywordChildren(t *testing.T) {
+	lang := &Language{
+		Name: "cpp",
+		SymbolNames: []string{
+			"EOF",
+			"translation_unit",
+			"type_qualifier",
+			"const",
+			"noexcept",
+			"noexcept",
+			"lambda_default_capture",
+			"&",
+			"=",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF", Visible: false, Named: false},
+			{Name: "translation_unit", Visible: true, Named: true},
+			{Name: "type_qualifier", Visible: true, Named: true},
+			{Name: "const", Visible: true, Named: false},
+			{Name: "noexcept", Visible: true, Named: true},
+			{Name: "noexcept", Visible: true, Named: false},
+			{Name: "lambda_default_capture", Visible: true, Named: true},
+			{Name: "&", Visible: true, Named: false},
+			{Name: "=", Visible: true, Named: false},
+		},
+	}
+	source := []byte("const noexcept & =")
+	arena := newNodeArena(arenaClassFull)
+	qualifier := newLeafNodeInArena(arena, 2, true, 0, 5, Point{}, Point{Column: 5})
+	noexceptNode := newLeafNodeInArena(arena, 4, true, 6, 14, Point{Column: 6}, Point{Column: 14})
+	ampCapture := newLeafNodeInArena(arena, 6, true, 15, 16, Point{Column: 15}, Point{Column: 16})
+	eqCapture := newLeafNodeInArena(arena, 6, true, 17, 18, Point{Column: 17}, Point{Column: 18})
+	root := newParentNodeInArena(arena, 1, true, []*Node{qualifier, noexceptNode, ampCapture, eqCapture}, nil, 0)
+
+	runLanguageResultCompatibility(resultCompatibilityContext{
+		root:   root,
+		source: source,
+		lang:   lang,
+	})
+
+	assertCollapsedKeywordChild(t, qualifier, lang, "const")
+	assertCollapsedKeywordChild(t, noexceptNode, lang, "noexcept")
+	assertCollapsedKeywordChild(t, ampCapture, lang, "&")
+	assertCollapsedKeywordChild(t, eqCapture, lang, "=")
+}
+
+func assertCollapsedKeywordChild(t *testing.T, node *Node, lang *Language, want string) {
+	t.Helper()
+	if got := node.ChildCount(); got != 1 {
+		t.Fatalf("%s child count = %d, want 1", node.Type(lang), got)
+	}
+	child := node.Child(0)
+	if child == nil {
+		t.Fatalf("%s child = nil", node.Type(lang))
+	}
+	if got := child.Type(lang); got != want {
+		t.Fatalf("%s child type = %q, want %q", node.Type(lang), got, want)
+	}
+	if child.IsNamed() {
+		t.Fatalf("%s child should be anonymous", node.Type(lang))
+	}
+}
+
 func TestNormalizeGoSourceFileRootRetagsRecoveredTopLevelChildren(t *testing.T) {
 	lang := &Language{
 		Name:        "go",

@@ -621,6 +621,12 @@ func normalizeCCollapsedKeywordChildren(root *Node, source []byte, lang *Languag
 	if rule, ok := newCCollapsedKeywordRule(lang, "type_qualifier", "const", "restrict", "volatile", "_Atomic"); ok {
 		rules = append(rules, rule)
 	}
+	if rule, ok := newCCollapsedKeywordRule(lang, "noexcept", "noexcept"); ok {
+		rules = append(rules, rule)
+	}
+	if rule, ok := newCCollapsedKeywordRule(lang, "lambda_default_capture", "&", "="); ok {
+		rules = append(rules, rule)
+	}
 	if rule, ok := newCCollapsedKeywordRule(
 		lang,
 		"storage_class_specifier",

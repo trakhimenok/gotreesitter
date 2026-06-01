@@ -38,7 +38,7 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeBashProgramVariableAssignments(ctx.root, ctx.lang)
 		normalizeBashGeneratedCommandAssignments(ctx.root, ctx.source, ctx.lang)
 		normalizeBashCommandNameArguments(ctx.root, ctx.lang)
-	case "c":
+	case "c", "cpp":
 		normalizeCCompatibilityWithParser(ctx.root, ctx.source, ctx.parser, ctx.lang)
 	case "c_sharp":
 		normalizeCSharpCompatibility(ctx.root, ctx.source, ctx.parser, ctx.lang)
