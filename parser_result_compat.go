@@ -53,7 +53,7 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 	case "dart":
 		normalizeDartCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "elixir":
-		normalizeElixirNestedCallTargetFields(ctx.root, ctx.lang)
+		normalizeElixirCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "erlang":
 		normalizeErlangSourceFileForms(ctx.root, ctx.lang)
 	case "fortran":
