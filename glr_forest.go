@@ -614,7 +614,7 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 							parent.startPoint, parent.endPoint = span.startPoint, span.endPoint
 						}
 						if reduceChildPathMayDropSpan(childPath) {
-							extendParentSpanToWindow(parent, children, 0, reducedEnd, lang.SymbolMetadata, lang.SymbolNames)
+							extendParentSpanToWindow(parent, children, 0, reducedEnd, lang.SymbolMetadata, p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols)
 						}
 						// Position the reduced node at the end of its last real
 						// child (before any trimmed trailing extras), falling back

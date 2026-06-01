@@ -50,8 +50,10 @@ type Parser struct {
 	// where the deep stack-equivalence merge dominates and shared-leaf pointer
 	// identity short-circuits it (measured: swift 4.0x, bash 1.9x). Net-neutral
 	// or slightly negative on fast languages (go +4.9%), so it stays per-language.
-	leafInternByLang  bool
-	forceRawSpanTable []bool
+	leafInternByLang                    bool
+	forceRawSpanTable                   []bool
+	spanExtendingInvisibleSymbols       []bool
+	nonSpanExtendingInvisibleSymbols    []bool
 	included                            []Range
 	logger                              ParserLogger
 	glrTrace                            bool // verbose GLR stack tracing
@@ -366,6 +368,7 @@ func NewParser(lang *Language) *Parser {
 		p.reduceHasFields = buildReduceFieldPresence(lang)
 		p.recoverByState, p.hasRecoverState, p.hasRecoverSymbol = buildRecoverActionsByState(lang)
 		p.hasKeywordState = buildKeywordStates(lang)
+		p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols = buildInvisibleSpanSymbolTables(lang.SymbolNames)
 		p.initTypeScriptContextualKeywordSymbols(lang)
 		p.rootSymbol, p.hasRootSymbol = p.inferRootSymbol()
 		p.maxConflictWidth = computeMaxConflictWidth(lang)

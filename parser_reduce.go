@@ -1566,7 +1566,7 @@ func (p *Parser) applyReduceActionFromGSS(s *glrStack, act ParseAction, tok Toke
 	}
 	// Extend parent span to cover invisible children dropped by buildReduceChildren.
 	if reduceChildPathMayDropSpan(childPath) {
-		extendParentSpanToWindow(parent, windowEntries, window.start, window.reducedEnd, p.language.SymbolMetadata, p.language.SymbolNames)
+		extendParentSpanToWindow(parent, windowEntries, window.start, window.reducedEnd, p.language.SymbolMetadata, p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols)
 	}
 	if timing != nil {
 		timing.reduceSpanNanos += time.Since(spanStart).Nanoseconds()
@@ -1864,7 +1864,7 @@ func (p *Parser) applyReduceActionFromGSSTransientParents(s *glrStack, act Parse
 		parent.endPoint = span.endPoint
 	}
 	if reduceChildPathMayDropSpan(childPath) {
-		extendParentSpanToWindow(parent, windowEntries, 0, reducedEnd, p.language.SymbolMetadata, p.language.SymbolNames)
+		extendParentSpanToWindow(parent, windowEntries, 0, reducedEnd, p.language.SymbolMetadata, p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols)
 	}
 	if timing != nil {
 		timing.reduceSpanNanos += time.Since(spanStart).Nanoseconds()
@@ -2949,7 +2949,7 @@ func shouldUseRawSpanForReduction(sym Symbol, children []*Node, symbolMeta []Sym
 //
 // Trailing extras (separated into [reducedEnd, actualEnd)) are NOT scanned because
 // they become siblings of the parent, not children.
-func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reducedEnd int, symbolMeta []SymbolMetadata, symbolNames []string) {
+func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reducedEnd int, symbolMeta []SymbolMetadata, spanExtendingInvisibleSymbols, nonSpanExtendingInvisibleSymbols []bool) {
 	// Leading extras: extend startByte backward until the first structural child.
 	for i := start; i < reducedEnd; i++ {
 		n := stackEntryNode(entries[i])
@@ -2985,7 +2985,7 @@ func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reduced
 		if visible {
 			continue // visible children are already represented in parent's children
 		}
-		if isNonSpanExtendingInvisibleSymbol(n.symbol, symbolNames) {
+		if symbolMarked(nonSpanExtendingInvisibleSymbols, n.symbol) {
 			continue
 		}
 		// Invisible entries (with or without children) may have span that
@@ -3000,7 +3000,7 @@ func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reduced
 			parent.endPoint = n.endPoint
 		}
 		if n.startByte == n.endByte && n.startByte > parent.endByte &&
-			isSpanExtendingInvisibleSymbol(n.symbol, symbolNames) {
+			symbolMarked(spanExtendingInvisibleSymbols, n.symbol) {
 			parent.endByte = n.endByte
 			parent.endPoint = n.endPoint
 		}
@@ -3019,7 +3019,7 @@ func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reduced
 		if visible {
 			continue
 		}
-		if isNonSpanExtendingInvisibleSymbol(n.symbol, symbolNames) {
+		if symbolMarked(nonSpanExtendingInvisibleSymbols, n.symbol) {
 			continue
 		}
 		if n.startByte <= parent.endByte && n.endByte > parent.endByte {
@@ -3027,47 +3027,41 @@ func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reduced
 			parent.endPoint = n.endPoint
 		}
 		if n.startByte == n.endByte && n.startByte > parent.endByte &&
-			isSpanExtendingInvisibleSymbol(n.symbol, symbolNames) {
+			symbolMarked(spanExtendingInvisibleSymbols, n.symbol) {
 			parent.endByte = n.endByte
 			parent.endPoint = n.endPoint
 		}
 	}
 }
 
-func isSpanExtendingInvisibleSymbol(sym Symbol, symbolNames []string) bool {
-	idx := int(sym)
-	if idx < 0 || idx >= len(symbolNames) {
-		return false
+func buildInvisibleSpanSymbolTables(symbolNames []string) ([]bool, []bool) {
+	var spanExtending []bool
+	var nonSpanExtending []bool
+	for i, name := range symbolNames {
+		switch name {
+		case "_implicit_end_tag",
+			"_outdent",
+			"_single_line_string_end",
+			"_multiline_string_end",
+			"_interpolated_string_middle",
+			"_interpolated_multiline_string_middle":
+			if spanExtending == nil {
+				spanExtending = make([]bool, len(symbolNames))
+			}
+			spanExtending[i] = true
+		case "_line_ending_or_eof":
+			if nonSpanExtending == nil {
+				nonSpanExtending = make([]bool, len(symbolNames))
+			}
+			nonSpanExtending[i] = true
+		}
 	}
-	switch symbolNames[idx] {
-	case "_implicit_end_tag":
-		return true
-	case "_outdent":
-		return true
-	case "_single_line_string_end":
-		return true
-	case "_multiline_string_end":
-		return true
-	case "_interpolated_string_middle":
-		return true
-	case "_interpolated_multiline_string_middle":
-		return true
-	default:
-		return false
-	}
+	return spanExtending, nonSpanExtending
 }
 
-func isNonSpanExtendingInvisibleSymbol(sym Symbol, symbolNames []string) bool {
+func symbolMarked(table []bool, sym Symbol) bool {
 	idx := int(sym)
-	if idx < 0 || idx >= len(symbolNames) {
-		return false
-	}
-	switch symbolNames[idx] {
-	case "_line_ending_or_eof":
-		return true
-	default:
-		return false
-	}
+	return idx < len(table) && table[idx]
 }
 
 const (
@@ -4323,7 +4317,7 @@ func (p *Parser) applyReduceAction(s *glrStack, act ParseAction, tok Token, anyR
 	}
 	// Extend parent span to cover invisible children dropped by buildReduceChildren.
 	if reduceChildPathMayDropSpan(childPath) {
-		extendParentSpanToWindow(parent, entries, window.start, window.reducedEnd, p.language.SymbolMetadata, p.language.SymbolNames)
+		extendParentSpanToWindow(parent, entries, window.start, window.reducedEnd, p.language.SymbolMetadata, p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols)
 	}
 	if timing != nil {
 		timing.reduceSpanNanos += time.Since(spanStart).Nanoseconds()
@@ -4496,7 +4490,7 @@ func (p *Parser) applyReduceActionTransientParents(s *glrStack, act ParseAction,
 		parent.endPoint = span.endPoint
 	}
 	if reduceChildPathMayDropSpan(childPath) {
-		extendParentSpanToWindow(parent, entries, window.start, window.reducedEnd, p.language.SymbolMetadata, p.language.SymbolNames)
+		extendParentSpanToWindow(parent, entries, window.start, window.reducedEnd, p.language.SymbolMetadata, p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols)
 	}
 	if timing != nil {
 		timing.reduceSpanNanos += time.Since(spanStart).Nanoseconds()

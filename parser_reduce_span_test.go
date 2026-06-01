@@ -2,6 +2,11 @@ package gotreesitter
 
 import "testing"
 
+func extendParentSpanToWindowForTest(parent *Node, entries []stackEntry, start, reducedEnd int, symbolMeta []SymbolMetadata, symbolNames []string) {
+	spanExtending, nonSpanExtending := buildInvisibleSpanSymbolTables(symbolNames)
+	extendParentSpanToWindow(parent, entries, start, reducedEnd, symbolMeta, spanExtending, nonSpanExtending)
+}
+
 func TestExtendParentSpanCoversInvisibleLeafChild(t *testing.T) {
 	// Invisible non-extra leaf child [20-22] dropped by buildReduceChildren
 	// should extend parent endByte from 20 to 22 (contiguous).
@@ -24,7 +29,7 @@ func TestExtendParentSpanCoversInvisibleLeafChild(t *testing.T) {
 	meta := []SymbolMetadata{
 		{}, {}, {Visible: true}, {}, {Visible: false},
 	}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, nil)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, nil)
 
 	if got, want := parent.startByte, uint32(8); got != want {
 		t.Fatalf("parent.startByte = %d, want %d", got, want)
@@ -59,7 +64,7 @@ func TestExtendParentSpanChainsInvisiblePrefixLeaves(t *testing.T) {
 		{Visible: false},
 		{Visible: true},
 	}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, nil)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, nil)
 
 	if got, want := parent.startByte, uint32(10); got != want {
 		t.Fatalf("parent.startByte = %d, want %d", got, want)
@@ -89,7 +94,7 @@ func TestExtendParentSpanSkipsDiscontiguousPhantom(t *testing.T) {
 	meta := []SymbolMetadata{
 		{}, {}, {Visible: true}, {}, {Visible: false},
 	}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, []string{"", "", "visible", "", "_automatic_semicolon"})
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, []string{"", "", "visible", "", "_automatic_semicolon"})
 
 	if got, want := parent.endByte, uint32(26); got != want {
 		t.Fatalf("parent.endByte = %d, want %d (phantom should not extend)", got, want)
@@ -119,7 +124,7 @@ func TestExtendParentSpanCoversInvisibleWithChildren(t *testing.T) {
 	meta := []SymbolMetadata{
 		{}, {}, {}, {}, {Visible: false}, {Visible: true},
 	}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, nil)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, nil)
 
 	if got, want := parent.endByte, uint32(15); got != want {
 		t.Fatalf("parent.endByte = %d, want %d", got, want)
@@ -136,7 +141,7 @@ func TestExtendParentSpanNoOp(t *testing.T) {
 	core := NewLeafNode(2, true, 10, 20, Point{Row: 2, Column: 10}, Point{Row: 2, Column: 20})
 	entries := []stackEntry{newStackEntryNode(0, core)}
 	meta := []SymbolMetadata{{}, {}, {Visible: true}}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, nil)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, nil)
 
 	if got, want := parent.startByte, uint32(10); got != want {
 		t.Fatalf("parent.startByte = %d, want %d", got, want)
@@ -164,7 +169,7 @@ func TestExtendParentSpanAllowsImplicitEndTagGap(t *testing.T) {
 		{}, {}, {Visible: true}, {}, {Visible: false},
 	}
 	names := []string{"", "", "visible", "", "_implicit_end_tag"}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, names)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, names)
 
 	if got, want := parent.startByte, uint32(10); got != want {
 		t.Fatalf("parent.startByte = %d, want %d", got, want)
@@ -192,7 +197,7 @@ func TestExtendParentSpanAllowsOutdentGap(t *testing.T) {
 		{}, {}, {Visible: true}, {}, {Visible: false},
 	}
 	names := []string{"", "", "visible", "", "_outdent"}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, names)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, names)
 
 	if got, want := parent.endByte, uint32(3250); got != want {
 		t.Fatalf("parent.endByte = %d, want %d", got, want)
@@ -217,7 +222,7 @@ func TestExtendParentSpanAllowsMultilineStringEndGap(t *testing.T) {
 		{}, {}, {Visible: true}, {}, {Visible: false},
 	}
 	names := []string{"", "", "visible", "", "_multiline_string_end"}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, names)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, names)
 
 	if got, want := parent.endByte, uint32(2759); got != want {
 		t.Fatalf("parent.endByte = %d, want %d", got, want)
@@ -244,7 +249,7 @@ func TestExtendParentSpanChainsInterpolatedMultilineStringTail(t *testing.T) {
 		{}, {}, {Visible: true}, {}, {Visible: false}, {Visible: false},
 	}
 	names := []string{"", "", "visible", "", "_interpolated_multiline_string_middle", "_multiline_string_end"}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, names)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, names)
 
 	if got, want := parent.endByte, uint32(2759); got != want {
 		t.Fatalf("parent.endByte = %d, want %d", got, want)
@@ -269,7 +274,7 @@ func TestExtendParentSpanSkipsInvisibleLineEnding(t *testing.T) {
 		{}, {}, {Visible: true}, {}, {Visible: false},
 	}
 	names := []string{"", "", "visible", "", "_line_ending_or_eof"}
-	extendParentSpanToWindow(parent, entries, 0, len(entries), meta, names)
+	extendParentSpanToWindowForTest(parent, entries, 0, len(entries), meta, names)
 
 	if got, want := parent.startByte, uint32(10); got != want {
 		t.Fatalf("parent.startByte = %d, want %d", got, want)
