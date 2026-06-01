@@ -928,12 +928,12 @@ func computeParity(r *runner, source []byte, queries []querySpec) paritySummary 
 		return summary
 	}
 	if strings.TrimSpace(r.entry.HighlightQuery) != "" {
-		ok, err := highlightParity(r, goTree, cTree, source, r.entry.HighlightQuery)
+		ok, detail, err := highlightParity(r, goTree, cTree, source, r.entry.HighlightQuery)
 		summary.Highlight = &ok
 		if err != nil {
 			summary.Error = "highlight: " + err.Error()
 		} else if !ok {
-			summary.Error = "highlight: capture mismatch"
+			summary.Error = "highlight: " + detail
 		}
 	}
 	if len(queries) > 0 {
@@ -1785,18 +1785,22 @@ type highlightCapture struct {
 	EndByte   uint32 `json:"end_byte"`
 }
 
-func highlightParity(r *runner, goTree *gotreesitter.Tree, cTree *sitter.Tree, source []byte, queryText string) (bool, error) {
+func highlightParity(r *runner, goTree *gotreesitter.Tree, cTree *sitter.Tree, source []byte, queryText string) (bool, string, error) {
 	goCaps, err := collectGoHighlightCaptures(r, goTree, queryText)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	cCaps, err := collectCHighlightCaptures(r, cTree, source, queryText)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	gb, _ := json.Marshal(goCaps)
 	cb, _ := json.Marshal(cCaps)
-	return bytes.Equal(gb, cb), nil
+	if bytes.Equal(gb, cb) {
+		return true, "", nil
+	}
+	onlyGo, onlyC := diffHighlightCaptures(goCaps, cCaps)
+	return false, formatHighlightCaptureMismatch(onlyGo, onlyC), nil
 }
 
 func collectGoHighlightCaptures(r *runner, tree *gotreesitter.Tree, queryText string) ([]highlightCapture, error) {
@@ -1883,6 +1887,49 @@ func deduplicateHighlightCaptures(caps []highlightCapture) []highlightCapture {
 		prev = cap
 	}
 	return out
+}
+
+func diffHighlightCaptures(goCaps, cCaps []highlightCapture) (onlyGo, onlyC []highlightCapture) {
+	type capKey struct {
+		name      string
+		startByte uint32
+		endByte   uint32
+	}
+	goSet := make(map[capKey]bool, len(goCaps))
+	for _, c := range goCaps {
+		goSet[capKey{c.Name, c.StartByte, c.EndByte}] = true
+	}
+	cSet := make(map[capKey]bool, len(cCaps))
+	for _, c := range cCaps {
+		cSet[capKey{c.Name, c.StartByte, c.EndByte}] = true
+	}
+	for _, c := range goCaps {
+		if !cSet[capKey{c.Name, c.StartByte, c.EndByte}] {
+			onlyGo = append(onlyGo, c)
+		}
+	}
+	for _, c := range cCaps {
+		if !goSet[capKey{c.Name, c.StartByte, c.EndByte}] {
+			onlyC = append(onlyC, c)
+		}
+	}
+	return onlyGo, onlyC
+}
+
+func formatHighlightCaptureMismatch(onlyGo, onlyC []highlightCapture) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "capture mismatch go_only=%d c_only=%d", len(onlyGo), len(onlyC))
+	if len(onlyGo) > 0 {
+		fmt.Fprintf(&b, " first_go_only=%s", formatHighlightCapture(onlyGo[0]))
+	}
+	if len(onlyC) > 0 {
+		fmt.Fprintf(&b, " first_c_only=%s", formatHighlightCapture(onlyC[0]))
+	}
+	return b.String()
+}
+
+func formatHighlightCapture(c highlightCapture) string {
+	return fmt.Sprintf("@%s[%d:%d]", c.Name, c.StartByte, c.EndByte)
 }
 
 func cQueryMatchSatisfiesGeneralPredicates(m *sitter.QueryMatch, query *sitter.Query, source []byte) bool {
