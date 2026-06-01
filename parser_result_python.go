@@ -454,41 +454,49 @@ func pythonCompatibilitySourceFlagsFor(source []byte) pythonCompatibilitySourceF
 		if source[i] == ';' {
 			flags.trailingSelfCalls = true
 		}
-		if source[i] == '=' && bytes.IndexByte(source[i+1:], ',') >= 0 {
+		if !flags.assignmentList && source[i] == '=' && bytes.IndexByte(source[i+1:], ',') >= 0 {
 			flags.assignmentList = true
 		}
 		if source[i] == ',' {
 			flags.comma = true
 		}
-		if !flags.printChevron && pythonSourceWordAt(source, i, "print") {
-			j := i + len("print")
-			for j < len(source) && (source[j] == ' ' || source[j] == '\t' || source[j] == '\f') {
-				j++
+		switch source[i] {
+		case 'p':
+			if !flags.printChevron && pythonSourceWordAt(source, i, "print") {
+				j := i + len("print")
+				for j < len(source) && (source[j] == ' ' || source[j] == '\t' || source[j] == '\f') {
+					j++
+				}
+				if j+1 < len(source) && source[j] == '>' && source[j+1] == '>' {
+					flags.printChevron = true
+				}
 			}
-			if j+1 < len(source) && source[j] == '>' && source[j+1] == '>' {
-				flags.printChevron = true
+			if !flags.passWord && pythonSourceWordAt(source, i, "pass") {
+				flags.passWord = true
 			}
-		}
-		if !flags.passWord && pythonSourceWordAt(source, i, "pass") {
-			flags.passWord = true
-		}
-		if !flags.continueWord && pythonSourceWordAt(source, i, "continue") {
-			flags.continueWord = true
-		}
-		if !flags.breakWord && pythonSourceWordAt(source, i, "break") {
-			flags.breakWord = true
-		}
-		if !flags.returnWord && pythonSourceWordAt(source, i, "return") {
-			flags.returnWord = true
-		}
-		if !flags.raiseWord && pythonSourceWordAt(source, i, "raise") {
-			flags.raiseWord = true
-		}
-		if !flags.yieldWord && pythonSourceWordAt(source, i, "yield") {
-			flags.yieldWord = true
-		}
-		if !flags.asPattern && pythonSourceWordAt(source, i, "as") {
-			flags.asPattern = true
+		case 'c':
+			if !flags.continueWord && pythonSourceWordAt(source, i, "continue") {
+				flags.continueWord = true
+			}
+		case 'b':
+			if !flags.breakWord && pythonSourceWordAt(source, i, "break") {
+				flags.breakWord = true
+			}
+		case 'r':
+			if !flags.returnWord && pythonSourceWordAt(source, i, "return") {
+				flags.returnWord = true
+			}
+			if !flags.raiseWord && pythonSourceWordAt(source, i, "raise") {
+				flags.raiseWord = true
+			}
+		case 'y':
+			if !flags.yieldWord && pythonSourceWordAt(source, i, "yield") {
+				flags.yieldWord = true
+			}
+		case 'a':
+			if !flags.asPattern && pythonSourceWordAt(source, i, "as") {
+				flags.asPattern = true
+			}
 		}
 		i++
 	}
@@ -496,12 +504,47 @@ func pythonCompatibilitySourceFlagsFor(source []byte) pythonCompatibilitySourceF
 }
 
 func normalizePythonStarCollapsedChildrenWithStats(root *Node, source []byte, lang *Language) normalizationPassCounters {
-	wildcard := normalizeCollapsedNamedLeafChildrenBySourceWithStats(root, source, lang, "wildcard_import", "*")
-	keywordSeparator := normalizeCollapsedNamedLeafChildrenBySourceWithStats(root, source, lang, "keyword_separator", "*")
-	return normalizationPassCounters{
-		nodesVisited:   wildcard.nodesVisited + keywordSeparator.nodesVisited,
-		nodesRewritten: wildcard.nodesRewritten + keywordSeparator.nodesRewritten,
+	var counters normalizationPassCounters
+	if root == nil || lang == nil || len(source) == 0 {
+		return counters
 	}
+	wildcardSym, hasWildcard := lang.symbolByNameAndNamed("wildcard_import", true)
+	if !hasWildcard {
+		wildcardSym, hasWildcard = symbolByName(lang, "wildcard_import")
+	}
+	keywordSeparatorSym, hasKeywordSeparator := lang.symbolByNameAndNamed("keyword_separator", true)
+	if !hasKeywordSeparator {
+		keywordSeparatorSym, hasKeywordSeparator = symbolByName(lang, "keyword_separator")
+	}
+	if !hasWildcard && !hasKeywordSeparator {
+		return counters
+	}
+	starSym, ok := lang.symbolByNameAndNamed("*", false)
+	if !ok {
+		starSym, ok = symbolByName(lang, "*")
+	}
+	if !ok {
+		return counters
+	}
+	starNamed := symbolIsNamed(lang, starSym)
+	walkResultTree(root, func(n *Node) {
+		counters.nodesVisited++
+		if n == nil || resultChildCount(n) != 0 || n.startByte >= n.endByte || int(n.endByte) > len(source) {
+			return
+		}
+		if (!hasWildcard || n.symbol != wildcardSym) && (!hasKeywordSeparator || n.symbol != keywordSeparatorSym) {
+			return
+		}
+		if n.endByte-n.startByte != 1 || source[n.startByte] != '*' {
+			return
+		}
+		child := newLeafNodeInArena(n.ownerArena, starSym, starNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
+		child.parent = n
+		child.childIndex = 0
+		n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
+		counters.nodesRewritten++
+	})
+	return counters
 }
 
 func normalizePythonInlineRaiseBlocksWithStats(root *Node, lang *Language) normalizationPassCounters {
@@ -1179,20 +1222,42 @@ func normalizePythonTrailingSelfCalls(root *Node, source []byte, lang *Language)
 	if root == nil || lang == nil || lang.Name != "python" || len(source) == 0 {
 		return counters
 	}
-	walkResultTreePostorder(root, func(node *Node) {
-		counters.nodesVisited++
-		if node.Type(lang) != "block" {
-			return
-		}
-		children := resultChildSliceForMutation(node)
-		rewritten, changed := foldPythonTrailingSelfCallsInBlock(children, source, lang)
-		if !changed {
-			return
-		}
-		replaceNodeChildrenUnfielded(node, cloneNodeSliceInArena(node.ownerArena, rewritten))
-		counters.nodesRewritten++
-	})
+	blockSym, ok := symbolByName(lang, "block")
+	if !ok {
+		walkResultTreePostorder(root, func(node *Node) {
+			counters.nodesVisited++
+		})
+		return counters
+	}
+	normalizePythonTrailingSelfCallsPostorder(root, source, lang, blockSym, &counters)
 	return counters
+}
+
+func normalizePythonTrailingSelfCallsPostorder(node *Node, source []byte, lang *Language, blockSym Symbol, counters *normalizationPassCounters) {
+	if node == nil {
+		return
+	}
+	if node.ownerArena == nil || node.childIndex > finalChildSidecarIndexBase {
+		for _, child := range node.children {
+			normalizePythonTrailingSelfCallsPostorder(child, source, lang, blockSym, counters)
+		}
+	} else {
+		childCount := resultChildCount(node)
+		for i := 0; i < childCount; i++ {
+			normalizePythonTrailingSelfCallsPostorder(resultChildAt(node, i), source, lang, blockSym, counters)
+		}
+	}
+	counters.nodesVisited++
+	if node.symbol != blockSym {
+		return
+	}
+	children := resultChildSliceForMutation(node)
+	rewritten, changed := foldPythonTrailingSelfCallsInBlock(children, source, lang)
+	if !changed {
+		return
+	}
+	replaceNodeChildrenUnfielded(node, cloneNodeSliceInArena(node.ownerArena, rewritten))
+	counters.nodesRewritten++
 }
 
 func foldPythonTrailingSelfCallsInBlock(children []*Node, source []byte, lang *Language) ([]*Node, bool) {
