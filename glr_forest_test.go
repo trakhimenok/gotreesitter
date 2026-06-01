@@ -42,6 +42,24 @@ func TestReduceOverForestLinearChain(t *testing.T) {
 	}
 }
 
+func TestReduceOverForestLinearChainWithExtra(t *testing.T) {
+	// n0 <-(a:10)- n1 <-(b:11)- n2 <-(extra:90)- n3 <-(c:12)- n4
+	extra := &Node{}
+	extra.setExtra(true)
+	n0 := &gssForestNode{state: 0, byteOffset: 0}
+	n1 := &gssForestNode{state: 1, links: []gssLink{{prev: n0, subtree: stackEntry{state: 10}}}}
+	n2 := &gssForestNode{state: 2, links: []gssLink{{prev: n1, subtree: stackEntry{state: 11}}}}
+	n3 := &gssForestNode{state: 3, links: []gssLink{{prev: n2, subtree: newStackEntryNode(90, extra)}}}
+	n4 := &gssForestNode{state: 4, links: []gssLink{{prev: n3, subtree: stackEntry{state: 12}}}}
+
+	// Extras are included in the reduce window but do not count toward childCount.
+	got := pathsOf(n4, 2)
+	want := []string{"[11 90 12]|1"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("childCount=2 with extra: got %v want %v", got, want)
+	}
+}
+
 func TestReduceOverForestForkedNode(t *testing.T) {
 	// Shared base n0 <-(a:10)- n1, then two alternatives reaching a coalesced n3:
 	//   path A: n1 <-(b:11)- n2  <-(c:12)- n3
@@ -60,6 +78,9 @@ func TestReduceOverForestForkedNode(t *testing.T) {
 	want := []string{"[11 12]|1", "[21 22]|1"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("forked childCount=2: got %v want %v", got, want)
+	}
+	if got, want := pathsOf(n3, 1), []string{"[12]|2", "[22]|20"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("forked childCount=1: got %v want %v", got, want)
 	}
 }
 

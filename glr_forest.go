@@ -842,10 +842,16 @@ func (fr *forestReducer) reduce(node *gssForestNode, childCount int, visit func(
 		visit(nil, 0, node)
 		return
 	}
+	if childCount == 1 && fr.reduceOneNoExtras(node, visit) {
+		return
+	}
 	if fr.reduceLinearNoExtras(node, childCount, visit) {
 		if perfCountersEnabled {
 			perfRecordForestReduceLinearNoExtras(childCount)
 		}
+		return
+	}
+	if fr.reduceLinearSinglePath(node, childCount, visit) {
 		return
 	}
 	if perfCountersEnabled {
@@ -853,6 +859,28 @@ func (fr *forestReducer) reduce(node *gssForestNode, childCount int, visit func(
 	}
 	fr.path = fr.path[:0]
 	fr.dfs(node, childCount, 0, visit)
+}
+
+func (fr *forestReducer) reduceOneNoExtras(node *gssForestNode, visit func(children []stackEntry, childScore int, popTo *gssForestNode)) bool {
+	if node == nil {
+		return true
+	}
+	if cap(fr.rev) < 1 {
+		fr.rev = make([]stackEntry, 1)
+	} else {
+		fr.rev = fr.rev[:1]
+	}
+	for i := range node.links {
+		if stackEntryNodeIsExtra(node.links[i].subtree) {
+			return false
+		}
+	}
+	for i := range node.links {
+		link := node.links[i]
+		fr.rev[0] = link.subtree
+		visit(fr.rev, link.score, link.prev)
+	}
+	return true
 }
 
 func (fr *forestReducer) reduceLinearNoExtras(node *gssForestNode, childCount int, visit func(children []stackEntry, childScore int, popTo *gssForestNode)) bool {
@@ -880,6 +908,41 @@ func (fr *forestReducer) reduceLinearNoExtras(node *gssForestNode, childCount in
 	}
 	visit(fr.rev, score, cur)
 	return true
+}
+
+func (fr *forestReducer) reduceLinearSinglePath(node *gssForestNode, childCount int, visit func(children []stackEntry, childScore int, popTo *gssForestNode)) bool {
+	if childCount <= 0 {
+		return false
+	}
+	fr.path = fr.path[:0]
+	cur := node
+	remaining := childCount
+	score := 0
+	for cur != nil {
+		if len(cur.links) != 1 {
+			return false
+		}
+		link := cur.links[0]
+		fr.path = append(fr.path, link.subtree)
+		score += link.score
+		if !stackEntryNodeIsExtra(link.subtree) {
+			remaining--
+			if remaining == 0 {
+				if cap(fr.rev) < len(fr.path) {
+					fr.rev = make([]stackEntry, len(fr.path))
+				} else {
+					fr.rev = fr.rev[:len(fr.path)]
+				}
+				for i := range fr.path {
+					fr.rev[len(fr.path)-1-i] = fr.path[i]
+				}
+				visit(fr.rev, score, link.prev)
+				return true
+			}
+		}
+		cur = link.prev
+	}
+	return false
 }
 
 func (fr *forestReducer) dfs(cur *gssForestNode, remaining, score int, visit func(children []stackEntry, childScore int, popTo *gssForestNode)) {
