@@ -21,6 +21,10 @@ func TestNormalizeDartCollapsedLeafChildrenRestoresDartWrappers(t *testing.T) {
 			"relational_operator",
 			"<",
 			">",
+			"nullable_type",
+			"?",
+			"null_literal",
+			"null",
 		},
 		SymbolMetadata: []SymbolMetadata{
 			{Name: "EOF", Visible: false, Named: false},
@@ -38,9 +42,13 @@ func TestNormalizeDartCollapsedLeafChildrenRestoresDartWrappers(t *testing.T) {
 			{Name: "relational_operator", Visible: true, Named: true},
 			{Name: "<", Visible: true, Named: false},
 			{Name: ">", Visible: true, Named: false},
+			{Name: "nullable_type", Visible: true, Named: true},
+			{Name: "?", Visible: true, Named: false},
+			{Name: "null_literal", Visible: true, Named: true},
+			{Name: "null", Visible: true, Named: false},
 		},
 	}
-	source := []byte("final super base this ! < >")
+	source := []byte("final super base this ! < > ? null")
 	arena := newNodeArena(arenaClassFull)
 	finalNode := newLeafNodeInArena(arena, 2, true, 0, 5, Point{}, Point{Column: 5})
 	superNode := newLeafNodeInArena(arena, 4, true, 6, 11, Point{Column: 6}, Point{Column: 11})
@@ -49,7 +57,9 @@ func TestNormalizeDartCollapsedLeafChildrenRestoresDartWrappers(t *testing.T) {
 	negationNode := newLeafNodeInArena(arena, 10, true, 22, 23, Point{Column: 22}, Point{Column: 23})
 	relOpNode := newLeafNodeInArena(arena, 12, true, 24, 25, Point{Column: 24}, Point{Column: 25})
 	gtNode := newLeafNodeInArena(arena, 12, true, 26, 27, Point{Column: 26}, Point{Column: 27})
-	root := newParentNodeInArena(arena, 1, true, []*Node{finalNode, superNode, baseNode, thisNode, negationNode, relOpNode, gtNode}, nil, 0)
+	nullableNode := newLeafNodeInArena(arena, 15, true, 28, 29, Point{Column: 28}, Point{Column: 29})
+	nullNode := newLeafNodeInArena(arena, 17, true, 30, 34, Point{Column: 30}, Point{Column: 34})
+	root := newParentNodeInArena(arena, 1, true, []*Node{finalNode, superNode, baseNode, thisNode, negationNode, relOpNode, gtNode, nullableNode, nullNode}, nil, 0)
 
 	normalizeDartCompatibility(root, source, lang)
 
@@ -60,6 +70,8 @@ func TestNormalizeDartCollapsedLeafChildrenRestoresDartWrappers(t *testing.T) {
 	assertCollapsedKeywordChild(t, negationNode, lang, "!")
 	assertCollapsedKeywordChild(t, relOpNode, lang, "<")
 	assertCollapsedKeywordChild(t, gtNode, lang, ">")
+	assertCollapsedKeywordChild(t, nullableNode, lang, "?")
+	assertCollapsedKeywordChild(t, nullNode, lang, "null")
 }
 
 func TestNormalizeDartCollapsedLeafChildrenRequiresMatchingSource(t *testing.T) {

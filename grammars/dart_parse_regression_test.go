@@ -429,3 +429,85 @@ func TestDartPrivateConstructorDeclarationBuildsConstructorSignature(t *testing.
 		t.Fatalf("signature = %v, want constructor_signature; tree=%s", sig, root.SExpr(DartLanguage()))
 	}
 }
+
+func TestDartNullableTypeAndNullLiteralRestoreAnonymousChildren(t *testing.T) {
+	lang := DartLanguage()
+	if sym, ok := lang.SymbolByName("?"); !ok {
+		t.Fatal("DartLanguage missing anonymous ? symbol")
+	} else if int(sym) >= len(lang.SymbolMetadata) || lang.SymbolMetadata[sym].Named {
+		t.Fatalf("Dart ? symbol metadata = %+v, want anonymous", lang.SymbolMetadata[sym])
+	}
+	if sym, ok := lang.SymbolByName("null"); !ok {
+		t.Fatal("DartLanguage missing anonymous null symbol")
+	} else if int(sym) >= len(lang.SymbolMetadata) || lang.SymbolMetadata[sym].Named {
+		t.Fatalf("Dart null symbol metadata = %+v, want anonymous", lang.SymbolMetadata[sym])
+	}
+
+	parser := ts.NewParser(lang)
+	src := []byte(`
+class Parser {
+  Tree parse(String program, {int? encoding}) {
+    if (program == null) {
+      return Tree();
+    }
+    return Tree();
+  }
+  String? _contents;
+}
+`)
+	tree, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	root := tree.RootNode()
+	if root == nil {
+		t.Fatal("missing root node")
+	}
+	var nullableNodes []*ts.Node
+	var nullNodes []*ts.Node
+	var walk func(*ts.Node)
+	walk = func(n *ts.Node) {
+		if n == nil {
+			return
+		}
+		if n.Type(lang) == "nullable_type" {
+			nullableNodes = append(nullableNodes, n)
+		}
+		if n.Type(lang) == "null_literal" {
+			nullNodes = append(nullNodes, n)
+		}
+		for i := 0; i < n.ChildCount(); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(root)
+	if got, want := len(nullableNodes), 2; got != want {
+		t.Fatalf("nullable_type count = %d, want %d; tree=%s", got, want, root.SExpr(lang))
+	}
+	for _, nullable := range nullableNodes {
+		if got := nullable.ChildCount(); got != 1 {
+			t.Fatalf("nullable_type child count = %d, want 1; node=%s tree=%s", got, nullable.SExpr(lang), root.SExpr(lang))
+		}
+		child := nullable.Child(0)
+		if child == nil {
+			t.Fatalf("nullable_type missing question child; node=%s", nullable.SExpr(lang))
+		}
+		if child.Type(lang) != "?" || child.IsNamed() {
+			t.Fatalf("nullable child type/named = %q/%v, want ?/false; node=%s", child.Type(lang), child.IsNamed(), nullable.SExpr(lang))
+		}
+	}
+	if got, want := len(nullNodes), 1; got != want {
+		t.Fatalf("null_literal count = %d, want %d; tree=%s", got, want, root.SExpr(lang))
+	}
+	nullLiteral := nullNodes[0]
+	if got := nullLiteral.ChildCount(); got != 1 {
+		t.Fatalf("null_literal child count = %d, want 1; node=%s tree=%s", got, nullLiteral.SExpr(lang), root.SExpr(lang))
+	}
+	nullChild := nullLiteral.Child(0)
+	if nullChild == nil {
+		t.Fatalf("null_literal missing null child; node=%s", nullLiteral.SExpr(lang))
+	}
+	if nullChild.Type(lang) != "null" || nullChild.IsNamed() {
+		t.Fatalf("null child type/named = %q/%v, want null/false; node=%s", nullChild.Type(lang), nullChild.IsNamed(), nullLiteral.SExpr(lang))
+	}
+}

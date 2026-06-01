@@ -453,6 +453,7 @@ func decodeLanguageBlobData(blobName string, data []byte) (*gotreesitter.Languag
 	compactDecodedLanguage(&lang)
 	repairNoLookaheadLexModes(&lang)
 	repairJavaScriptTypeScriptOptionalChainTokenSymbol(blobName, &lang)
+	repairDartCollapsedLeafTokenSymbols(blobName, &lang)
 	attachReduceChainHints(blobName, &lang)
 
 	return &lang, nil
@@ -480,6 +481,36 @@ func repairJavaScriptTypeScriptOptionalChainTokenSymbol(blobName string, lang *g
 	lang.SymbolNames = append(lang.SymbolNames, "?.")
 	lang.SymbolMetadata = append(lang.SymbolMetadata, gotreesitter.SymbolMetadata{
 		Name:    "?.",
+		Visible: true,
+		Named:   false,
+	})
+}
+
+func repairDartCollapsedLeafTokenSymbols(blobName string, lang *gotreesitter.Language) {
+	if lang == nil {
+		return
+	}
+	name := strings.TrimSuffix(blobName, ".bin")
+	if slash := strings.LastIndexAny(name, "/\\"); slash >= 0 {
+		name = name[slash+1:]
+	}
+	if name != "dart" {
+		return
+	}
+	repairDartCollapsedLeafTokenSymbol(lang, "nullable_type", "?")
+	repairDartCollapsedLeafTokenSymbol(lang, "null_literal", "null")
+}
+
+func repairDartCollapsedLeafTokenSymbol(lang *gotreesitter.Language, parentName, childName string) {
+	if !embeddedLanguageHasSymbolName(lang, parentName) || embeddedLanguageHasSymbolName(lang, childName) {
+		return
+	}
+	for len(lang.SymbolMetadata) < len(lang.SymbolNames) {
+		lang.SymbolMetadata = append(lang.SymbolMetadata, gotreesitter.SymbolMetadata{})
+	}
+	lang.SymbolNames = append(lang.SymbolNames, childName)
+	lang.SymbolMetadata = append(lang.SymbolMetadata, gotreesitter.SymbolMetadata{
+		Name:    childName,
 		Visible: true,
 		Named:   false,
 	})
