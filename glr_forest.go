@@ -126,7 +126,7 @@ func (p *Parser) tryForestFastPath(source []byte) *Tree {
 // and faster than fresh-parse fallback.
 func languageAllowsForestIncrementalPath(name string) bool {
 	switch name {
-	case "erlang":
+	case "erlang", "scss":
 		return true
 	default:
 		return false
