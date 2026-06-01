@@ -126,7 +126,7 @@ func (p *Parser) tryForestFastPath(source []byte) *Tree {
 // and faster than fresh-parse fallback.
 func languageAllowsForestIncrementalPath(name string) bool {
 	switch name {
-	case "erlang", "css", "scss":
+	case "erlang", "cmake", "css", "scss":
 		return true
 	default:
 		return false
@@ -593,6 +593,7 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 		ts.SetGLRStates(glrStates)
 		ts.SetParserState(frontier[len(frontier)-1].state)
 		tok := ts.Next()
+		p.updateCurrentExternalTokenCheckpoint(ts, tok)
 		eof := tok.Symbol == 0
 
 		// Reduces coalesce into curIndex (same position, seeded with the
@@ -707,6 +708,7 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 					}
 					leaf.preGotoState = node.state
 					leaf.parseState = target
+					p.recordCurrentExternalLeafCheckpoint(leaf, tok)
 					before := nextIndex.len()
 					sh := coalesceForest(&nextIndex, slab, target, tok.EndByte, node,
 						stackEntry{node: unsafe.Pointer(leaf), state: target, kind: stackEntryKindNode},

@@ -81,9 +81,9 @@ func TestForestTreeIncrementalEditSupportsCSSReuse(t *testing.T) {
 	edited := append([]byte(nil), src...)
 	edited[offset] = '2'
 	edit := gts.InputEdit{
-		StartByte:   offset,
-		OldEndByte:  offset + 1,
-		NewEndByte:  offset + 1,
+		StartByte:   uint32(offset),
+		OldEndByte:  uint32(offset + 1),
+		NewEndByte:  uint32(offset + 1),
 		StartPoint:  pointForOffset(src, offset),
 		OldEndPoint: pointForOffset(src, offset+1),
 		NewEndPoint: pointForOffset(edited, offset+1),
@@ -116,6 +116,64 @@ func TestForestTreeIncrementalEditSupportsCSSReuse(t *testing.T) {
 	defer freshTree.Release()
 	if got, want := newTree.RootNode().SExpr(grm.CssLanguage()), freshTree.RootNode().SExpr(grm.CssLanguage()); got != want {
 		t.Fatalf("incremental CSS tree diverged from fresh parse\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestForestTreeIncrementalEditSupportsCMakeReuse(t *testing.T) {
+	gts.SetGLRForestEnabled(true)
+	defer gts.SetGLRForestEnabled(true)
+
+	src := []byte("cmake_minimum_required(VERSION 3.20)\nproject(demo)\nadd_library(demo STATIC demo.cc)\ntarget_compile_definitions(demo PRIVATE VALUE=1)\n")
+	oldNeedle := []byte("VALUE=1")
+	offset := strings.Index(string(src), string(oldNeedle)) + len("VALUE=")
+	if offset < len("VALUE=") || src[offset] != '1' {
+		t.Fatalf("cmake fixture drifted: byte %d = %q, want '1'", offset, src[offset])
+	}
+
+	edited := append([]byte(nil), src...)
+	edited[offset] = '2'
+	edit := gts.InputEdit{
+		StartByte:   uint32(offset),
+		OldEndByte:  uint32(offset + 1),
+		NewEndByte:  uint32(offset + 1),
+		StartPoint:  pointForOffset(src, offset),
+		OldEndPoint: pointForOffset(src, offset+1),
+		NewEndPoint: pointForOffset(edited, offset+1),
+	}
+
+	parser := gts.NewParser(grm.CmakeLanguage())
+	oldTree, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("initial parse: %v", err)
+	}
+	defer oldTree.Release()
+	oldTree.Edit(edit)
+
+	newTree, profile, err := parser.ParseIncrementalProfiled(edited, oldTree)
+	if err != nil {
+		t.Fatalf("incremental parse: %v", err)
+	}
+	defer newTree.Release()
+	if got, want := newTree.RootNode().EndByte(), uint32(len(edited)); got != want {
+		t.Fatalf("incremental root end = %d, want %d", got, want)
+	}
+	if profile.ReuseUnsupported || profile.ReuseUnsupportedReason != "" {
+		t.Fatalf("profile reuse unsupported = %v reason %q, want CMake reuse path",
+			profile.ReuseUnsupported, profile.ReuseUnsupportedReason)
+	}
+	if profile.ReparseNanos != 0 {
+		t.Fatalf("profile reparse nanos = %d, want 0 for CMake text-invariant leaf reuse", profile.ReparseNanos)
+	}
+	if profile.ReusedSubtrees == 0 {
+		t.Fatalf("profile reused subtrees = 0, want CMake sibling reuse")
+	}
+	freshTree, err := parser.Parse(edited)
+	if err != nil {
+		t.Fatalf("fresh parse: %v", err)
+	}
+	defer freshTree.Release()
+	if got, want := newTree.RootNode().SExpr(grm.CmakeLanguage()), freshTree.RootNode().SExpr(grm.CmakeLanguage()); got != want {
+		t.Fatalf("incremental CMake tree diverged from fresh parse\n got: %s\nwant: %s", got, want)
 	}
 }
 

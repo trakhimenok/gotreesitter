@@ -38,8 +38,9 @@ type cmakeState struct {
 // CmakeExternalScanner handles CMake bracket arguments, bracket comments, and line comments.
 type CmakeExternalScanner struct{}
 
-func (CmakeExternalScanner) Create() any         { return &cmakeState{} }
-func (CmakeExternalScanner) Destroy(payload any) {}
+func (CmakeExternalScanner) Create() any                    { return &cmakeState{} }
+func (CmakeExternalScanner) Destroy(payload any)            {}
+func (CmakeExternalScanner) SupportsIncrementalReuse() bool { return true }
 
 func (CmakeExternalScanner) Serialize(payload any, buf []byte) int {
 	s := payload.(*cmakeState)

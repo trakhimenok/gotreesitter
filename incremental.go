@@ -257,7 +257,7 @@ func (c *reuseCursor) reusableIndexedEntry(entry stackEntry) bool {
 	}
 	start := stackEntryNodeStartByte(entry)
 	end := stackEntryNodeEndByte(entry)
-	if c.rejectCSSDirtyTopLevelPrefix(start) {
+	if c.rejectDirtyTopLevelPrefix(start) {
 		c.rejectDirty++
 		return false
 	}
@@ -367,7 +367,7 @@ func (c *reuseCursor) advance() *Node {
 			c.rejectOutOfBounds++
 			continue
 		}
-		if c.rejectCSSDirtyTopLevelPrefix(cur.startByte) {
+		if c.rejectDirtyTopLevelPrefix(cur.startByte) {
 			c.rejectDirty++
 			continue
 		}
@@ -466,20 +466,29 @@ func (p *Parser) tryReuseSubtree(s *glrStack, lookahead Token, ts TokenSource, i
 func (c *reuseCursor) directForestTopLevelNonLeafReuse(n *Node) bool {
 	return c != nil &&
 		c.forestFastPath &&
-		c.languageName == "css" &&
+		languageAllowsForestTopLevelSiblingReuse(c.languageName) &&
 		c.topLevelParent != nil &&
 		n != nil &&
 		n.parent == c.topLevelParent &&
 		n.startByte >= c.topLevelResumeByte
 }
 
-// rejectCSSDirtyTopLevelPrefix forces CSS to reparse the first edited rule.
-// Reusing equal leaves inside that dirty top-level rule can feed the external
-// scanner stale selector/declaration context and produce a fresh-tree mismatch.
-func (c *reuseCursor) rejectCSSDirtyTopLevelPrefix(start uint32) bool {
+func languageAllowsForestTopLevelSiblingReuse(name string) bool {
+	switch name {
+	case "cmake", "css":
+		return true
+	default:
+		return false
+	}
+}
+
+// rejectDirtyTopLevelPrefix forces scanner-sensitive forest languages to reparse
+// the first edited top-level item. Reusing equal leaves inside that dirty item
+// can feed stale external-scanner context and produce a fresh-tree mismatch.
+func (c *reuseCursor) rejectDirtyTopLevelPrefix(start uint32) bool {
 	return c != nil &&
 		c.forestFastPath &&
-		c.languageName == "css" &&
+		languageAllowsForestTopLevelSiblingReuse(c.languageName) &&
 		c.topLevelParent != nil &&
 		c.topLevelResumeByte > 0 &&
 		start < c.topLevelResumeByte
@@ -522,6 +531,15 @@ func reuseNode(p *Parser, s *glrStack, n *Node, nextState StateID, startState St
 			}
 			if startState != n.PreGotoState() {
 				return lookahead, 0, false
+			}
+			if checkpoint == (externalScannerCheckpointRef{}) {
+				if skipper, ok := ts.(PointSkippableTokenSource); ok {
+					return skipper.SkipToByteWithPoint(n.EndByte(), n.EndPoint()), reusedBytes, true
+				}
+				if skipper, ok := ts.(ByteSkippableTokenSource); ok {
+					return skipper.SkipToByte(n.EndByte()), reusedBytes, true
+				}
+				return advanceTokenSourceTo(ts, lookahead, n.EndByte()), reusedBytes, true
 			}
 			if tok, ok := fastForwardWithExternalScannerCheckpoint(ts, n, checkpoint); ok {
 				return tok, reusedBytes, true

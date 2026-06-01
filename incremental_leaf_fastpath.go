@@ -31,6 +31,35 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 	if timing != nil {
 		start = time.Now()
 	}
+	if p.canReuseLanguageTextInvariantLeaf(source, oldTree, leaf, edit) {
+		tree := reuseTreeWithNewSource(oldTree, source, leaf)
+		if tree == nil || tree.root == nil {
+			return nil, false
+		}
+		tree.setParseRuntime(ParseRuntime{
+			StopReason:       ParseStopAccepted,
+			SourceLen:        uint32(len(source)),
+			TokensConsumed:   0,
+			LastTokenEndByte: leaf.endByte,
+			LastTokenSymbol:  leaf.symbol,
+			ExpectedEOFByte:  uint32(len(source)),
+			RootEndByte:      tree.root.EndByte(),
+			MaxStacksSeen:    1,
+		})
+		if timing != nil {
+			timing.reuseNanos += time.Since(start).Nanoseconds()
+			timing.reusedSubtrees++
+			timing.reusedBytes += uint64(len(source))
+			timing.maxStacksSeen = 1
+			timing.stopReason = ParseStopAccepted
+			timing.tokensConsumed = 0
+			timing.lastTokenEndByte = leaf.endByte
+			timing.expectedEOFByte = uint32(len(source))
+			timing.singleStackIterations = 1
+			timing.singleStackTokens = 0
+		}
+		return tree, true
+	}
 	tok, ok := p.scanTokenInvariantEditedLeaf(source, ts, leaf)
 	if !ok || tok.Symbol != leaf.symbol || tok.StartByte != leaf.startByte || tok.EndByte != leaf.endByte {
 		return nil, false
@@ -62,6 +91,37 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 		timing.singleStackTokens = 1
 	}
 	return tree, true
+}
+
+func (p *Parser) canReuseLanguageTextInvariantLeaf(source []byte, oldTree *Tree, leaf *Node, edit InputEdit) bool {
+	if p == nil || p.language == nil || oldTree == nil || leaf == nil {
+		return false
+	}
+	if p.language.Name != "cmake" || !oldTree.forestFastPath {
+		return false
+	}
+	if leaf.Type(p.language) != "unquoted_argument" {
+		return false
+	}
+	if edit.StartByte < leaf.startByte || edit.OldEndByte > leaf.endByte {
+		return false
+	}
+	if edit.NewEndByte != edit.OldEndByte || edit.NewEndByte > uint32(len(source)) || edit.OldEndByte > uint32(len(oldTree.source)) {
+		return false
+	}
+	for i := edit.StartByte; i < edit.OldEndByte; i++ {
+		if !cmakeTextInvariantUnquotedByte(oldTree.source[i]) || !cmakeTextInvariantUnquotedByte(source[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func cmakeTextInvariantUnquotedByte(b byte) bool {
+	return (b >= '0' && b <= '9') ||
+		(b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		b == '_'
 }
 
 func (p *Parser) tokenInvariantLeafEditCandidate(source []byte, oldTree *Tree) (*Node, InputEdit, bool) {

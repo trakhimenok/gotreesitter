@@ -32,7 +32,16 @@ func languageUsesExternalScannerCheckpoints(lang *Language) bool {
 		return false
 	}
 	switch lang.Name {
-	case "python", "mojo", "starlark":
+	case "cmake", "python", "mojo", "starlark":
+		return true
+	default:
+		return false
+	}
+}
+
+func languageAllowsCheckpointlessExternalReuse(name string) bool {
+	switch name {
+	case "cmake":
 		return true
 	default:
 		return false
@@ -276,7 +285,7 @@ func canReuseNodeWithExternalScannerCheckpoint(ts TokenSource, startState StateI
 	}
 	cp, ok := externalScannerCheckpointRefForNode(node)
 	if !ok {
-		return externalScannerCheckpointRef{}, false
+		return externalScannerCheckpointRef{}, languageAllowsCheckpointlessExternalReuse(dts.language.Name)
 	}
 	if !dts.externalScannerStateMatches(node.ownerArena.externalScannerSnapshotBytes(cp.start)) {
 		return externalScannerCheckpointRef{}, false
