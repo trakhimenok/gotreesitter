@@ -20,19 +20,16 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 		return nil, false
 	}
 	root := oldTree.RootNode()
-	leaf := oldTree.lastEditedLeaf
-	if leaf == nil || !leaf.containsByteRange(edit.StartByte, edit.OldEndByte) {
-		leaf = root.DescendantForByteRange(edit.StartByte, edit.OldEndByte)
-	}
-	if leaf == nil || leaf.ChildCount() != 0 || leaf.hasError() || leaf.isMissing() {
-		return nil, false
+	node := oldTree.lastEditedLeaf
+	if node == nil || !node.containsByteRange(edit.StartByte, edit.OldEndByte) {
+		node = root.DescendantForByteRange(edit.StartByte, edit.OldEndByte)
 	}
 	start := time.Time{}
 	if timing != nil {
 		start = time.Now()
 	}
-	if p.canReuseLanguageTextInvariantLeaf(source, oldTree, leaf, edit) {
-		tree := reuseTreeWithNewSource(oldTree, source, leaf)
+	if p.canReuseLanguageTextInvariantNode(source, oldTree, node, edit) {
+		tree := reuseTreeWithNewSource(oldTree, source, node)
 		if tree == nil || tree.root == nil {
 			return nil, false
 		}
@@ -40,8 +37,8 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 			StopReason:       ParseStopAccepted,
 			SourceLen:        uint32(len(source)),
 			TokensConsumed:   0,
-			LastTokenEndByte: leaf.endByte,
-			LastTokenSymbol:  leaf.symbol,
+			LastTokenEndByte: node.endByte,
+			LastTokenSymbol:  node.symbol,
 			ExpectedEOFByte:  uint32(len(source)),
 			RootEndByte:      tree.root.EndByte(),
 			MaxStacksSeen:    1,
@@ -53,12 +50,16 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 			timing.maxStacksSeen = 1
 			timing.stopReason = ParseStopAccepted
 			timing.tokensConsumed = 0
-			timing.lastTokenEndByte = leaf.endByte
+			timing.lastTokenEndByte = node.endByte
 			timing.expectedEOFByte = uint32(len(source))
 			timing.singleStackIterations = 1
 			timing.singleStackTokens = 0
 		}
 		return tree, true
+	}
+	leaf := node
+	if leaf == nil || leaf.ChildCount() != 0 || leaf.hasError() || leaf.isMissing() {
+		return nil, false
 	}
 	tok, ok := p.scanTokenInvariantEditedLeaf(source, ts, leaf)
 	if !ok || tok.Symbol != leaf.symbol || tok.StartByte != leaf.startByte || tok.EndByte != leaf.endByte {
@@ -93,28 +94,65 @@ func (p *Parser) tryTokenInvariantLeafEdit(source []byte, oldTree *Tree, ts Toke
 	return tree, true
 }
 
-func (p *Parser) canReuseLanguageTextInvariantLeaf(source []byte, oldTree *Tree, leaf *Node, edit InputEdit) bool {
-	if p == nil || p.language == nil || oldTree == nil || leaf == nil {
+func (p *Parser) canReuseLanguageTextInvariantNode(source []byte, oldTree *Tree, node *Node, edit InputEdit) bool {
+	if p == nil || p.language == nil || oldTree == nil || node == nil {
 		return false
 	}
-	if p.language.Name != "cmake" || !oldTree.forestFastPath {
+	if !sameLengthEditWithinNode(source, oldTree.source, node, edit) {
 		return false
 	}
-	if leaf.Type(p.language) != "unquoted_argument" {
+	switch p.language.Name {
+	case "cmake":
+		return oldTree.forestFastPath && node.Type(p.language) == "unquoted_argument" &&
+			cmakeTextInvariantEdit(source, oldTree.source, edit)
+	case "rust":
+		return node.Type(p.language) == "line_comment" && rustLineCommentTextInvariantEdit(source, oldTree.source, node, edit)
+	default:
 		return false
 	}
-	if edit.StartByte < leaf.startByte || edit.OldEndByte > leaf.endByte {
-		return false
-	}
-	if edit.NewEndByte != edit.OldEndByte || edit.NewEndByte > uint32(len(source)) || edit.OldEndByte > uint32(len(oldTree.source)) {
-		return false
-	}
+}
+
+func sameLengthEditWithinNode(source, oldSource []byte, node *Node, edit InputEdit) bool {
+	return node != nil &&
+		edit.NewEndByte-edit.StartByte == edit.OldEndByte-edit.StartByte &&
+		edit.NewEndPoint == edit.OldEndPoint &&
+		edit.StartByte >= node.startByte &&
+		edit.OldEndByte <= node.endByte &&
+		edit.NewEndByte <= uint32(len(source)) &&
+		edit.OldEndByte <= uint32(len(oldSource))
+}
+
+func cmakeTextInvariantEdit(source, oldSource []byte, edit InputEdit) bool {
 	for i := edit.StartByte; i < edit.OldEndByte; i++ {
-		if !cmakeTextInvariantUnquotedByte(oldTree.source[i]) || !cmakeTextInvariantUnquotedByte(source[i]) {
+		if !cmakeTextInvariantUnquotedByte(oldSource[i]) || !cmakeTextInvariantUnquotedByte(source[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+func rustLineCommentTextInvariantEdit(source, oldSource []byte, node *Node, edit InputEdit) bool {
+	start := int(node.startByte)
+	if start+2 > len(oldSource) || oldSource[start] != '/' || oldSource[start+1] != '/' {
+		return false
+	}
+	textStart := start + 2
+	if textStart < len(oldSource) && (oldSource[textStart] == '/' || oldSource[textStart] == '!') {
+		textStart++
+	}
+	if edit.StartByte < uint32(textStart) {
+		return false
+	}
+	for i := edit.StartByte; i < edit.OldEndByte; i++ {
+		if rustLineCommentBreakByte(oldSource[i]) || rustLineCommentBreakByte(source[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func rustLineCommentBreakByte(b byte) bool {
+	return b == '\n' || b == '\r'
 }
 
 func cmakeTextInvariantUnquotedByte(b byte) bool {
@@ -505,8 +543,26 @@ func reuseTreeWithNewSource(oldTree *Tree, source []byte, dirtyLeaf *Node) *Tree
 		arena.Retain()
 	}
 	borrowed := retainBorrowedArenasForReusedTree(oldTree, arena)
-	clearDirtyPathToRoot(dirtyLeaf)
+	clearDirtySubtreeAndPath(dirtyLeaf)
 	return newTreeWithUniqueArenas(oldTree.root, source, oldTree.language, arena, borrowed)
+}
+
+func clearDirtySubtreeAndPath(n *Node) {
+	clearDirtySubtree(n)
+	if n != nil {
+		clearDirtyPathToRoot(n.parent)
+	}
+}
+
+func clearDirtySubtree(n *Node) {
+	if n == nil {
+		return
+	}
+	n.setDirty(false)
+	childCount := nodeChildCountNoMaterialize(n)
+	for i := 0; i < childCount; i++ {
+		clearDirtySubtree(nodeChildAtForReason(n, i, materializeForEdit))
+	}
 }
 
 func clearDirtyPathToRoot(n *Node) {
