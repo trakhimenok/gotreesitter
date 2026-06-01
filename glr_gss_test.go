@@ -130,11 +130,13 @@ func TestGSSNodeHashComputedLazilyForSingleStackNodes(t *testing.T) {
 
 func TestGSSEntryHashMatchesAccessorSemantics(t *testing.T) {
 	node := &Node{
-		children:     []*Node{{symbol: 20}},
+		children:     []*Node{{symbol: 20, startByte: 1, endByte: 2, preGotoState: 8, fieldIDs: []FieldID{3}, flags: nodeFlagNamed}},
+		fieldIDs:     []FieldID{2},
 		symbol:       10,
 		startByte:    1,
 		endByte:      3,
 		parseState:   4,
+		preGotoState: 14,
 		productionID: 5,
 		flags:        nodeFlagNamed | nodeFlagHasError,
 	}
@@ -143,6 +145,7 @@ func TestGSSEntryHashMatchesAccessorSemantics(t *testing.T) {
 		startByte:    2,
 		endByte:      5,
 		parseState:   6,
+		preGotoState: 16,
 		productionID: 7,
 		flags:        nodeFlagExtra,
 	}
@@ -152,6 +155,7 @@ func TestGSSEntryHashMatchesAccessorSemantics(t *testing.T) {
 			startByte:    8,
 			endByte:      13,
 			parseState:   9,
+			preGotoState: 19,
 			productionID: 10,
 			flags:        nodeFlagNamed | nodeFlagMissing,
 		},
@@ -162,6 +166,7 @@ func TestGSSEntryHashMatchesAccessorSemantics(t *testing.T) {
 			startByte:    21,
 			endByte:      34,
 			parseState:   11,
+			preGotoState: 21,
 			productionID: 12,
 			flags:        nodeFlagNamed | nodeFlagExtra,
 		},
@@ -200,6 +205,8 @@ func gssEntryHashViaAccessors(prev uint64, entry stackEntry) uint64 {
 	h *= gssHashPrime
 	h ^= uint64(stackEntryNodeParseState(entry))
 	h *= gssHashPrime
+	h ^= uint64(stackEntryNodePreGotoState(entry))
+	h *= gssHashPrime
 	h ^= uint64(stackEntryNodeProductionID(entry))
 	h *= gssHashPrime
 	h ^= uint64(stackEntryNodeChildCount(entry))
@@ -220,6 +227,44 @@ func gssEntryHashViaAccessors(prev uint64, entry stackEntry) uint64 {
 	}
 	h ^= flags
 	h *= gssHashPrime
+	if n := stackEntryNode(entry); n != nil {
+		h = gssNodeShallowMergeHashViaAccessors(h, n)
+	}
+	return h
+}
+
+func gssNodeShallowMergeHashViaAccessors(h uint64, n *Node) uint64 {
+	if n == nil {
+		h ^= gssNilNodeSentinel
+		h *= gssHashPrime
+		return h
+	}
+	h ^= uint64(len(n.fieldIDs))
+	h *= gssHashPrime
+	for i := range n.fieldIDs {
+		h ^= uint64(n.fieldIDs[i])
+		h *= gssHashPrime
+	}
+	for i := range n.children {
+		child := n.children[i]
+		if child == nil {
+			h ^= gssNilNodeSentinel
+			h *= gssHashPrime
+			continue
+		}
+		h ^= uint64(child.symbol)
+		h *= gssHashPrime
+		h ^= (uint64(child.startByte) << 32) | uint64(child.endByte)
+		h *= gssHashPrime
+		h ^= uint64(child.preGotoState)
+		h *= gssHashPrime
+		h ^= uint64(nodeChildCountNoMaterialize(child))
+		h *= gssHashPrime
+		h ^= uint64(len(child.fieldIDs))
+		h *= gssHashPrime
+		h ^= gssEntryFlagHash(child.flags & nodeStackEquivNoMissingFlagMask)
+		h *= gssHashPrime
+	}
 	return h
 }
 
