@@ -149,6 +149,43 @@ func TestForestDispatchPromotesJavaScript(t *testing.T) {
 	}
 }
 
+func TestForestDispatchPromotesCSharp(t *testing.T) {
+	gts.SetGLRForestEnabled(true)
+	defer gts.SetGLRForestEnabled(true)
+
+	src := []byte(`using System;
+class C {
+  string Format(int x) => $"value={x}";
+  void M() {
+    foreach (var item in new[] {1, 2, 3}) {
+      Console.WriteLine(Format(item));
+    }
+  }
+}
+`)
+	lang := grm.CSharpLanguage()
+	gts.SetGLRForestEnabled(false)
+	prod, err := gts.NewParser(lang).Parse(src)
+	if err != nil {
+		t.Fatalf("production parse: %v", err)
+	}
+	defer prod.Release()
+
+	gts.SetGLRForestEnabled(true)
+	tree, err := gts.NewParser(lang).Parse(src)
+	if err != nil {
+		t.Fatalf("forest dispatch parse: %v", err)
+	}
+	defer tree.Release()
+	if got, want := tree.RootNode().SExpr(lang), prod.RootNode().SExpr(lang); got != want {
+		t.Fatalf("C# forest dispatch diverged\n got: %s\nwant: %s", got, want)
+	}
+	rt := tree.ParseRuntime()
+	if rt.StopReason != gts.ParseStopAccepted || !rt.LastTokenWasEOF || rt.TokensConsumed != 0 {
+		t.Fatalf("C# did not use forest accepted runtime: %s", rt.Summary())
+	}
+}
+
 func TestForestTreeIncrementalEditSupportsCSSReuse(t *testing.T) {
 	gts.SetGLRForestEnabled(true)
 	defer gts.SetGLRForestEnabled(true)
