@@ -54,6 +54,27 @@ type PerfCounters struct {
 	ReduceChildrenScratch           uint64
 	ReduceScratchNoAlias            uint64
 	ReduceScratchGeneral            uint64
+	ForestReduceCalls               uint64
+	ForestReduceZero                uint64
+	ForestReduceLinearNoExtras      uint64
+	ForestReduceDFS                 uint64
+	ForestReduceDFSLinks            uint64
+	ForestReduceDFSMultiLinkSteps   uint64
+	ForestReduceDFSExtraLinks       uint64
+	ForestReduceDFSVisits           uint64
+	ForestReduceDFSPathEntries      uint64
+	ForestReduceGotoHits            uint64
+	ForestReduceGotoMisses          uint64
+	ForestReduceMaxPathLen          uint64
+	ForestReduceMaxChildCount       uint64
+	ForestCoalesceCalls             uint64
+	ForestCoalesceNewNodes          uint64
+	ForestCoalesceLinkAppends       uint64
+	ForestCoalesceDedupHits         uint64
+	ForestCoalesceDedupReplacements uint64
+	ForestCoalescePreCapDrops       uint64
+	ForestCoalesceCapDrops          uint64
+	ForestCoalesceCapReplacements   uint64
 	ExtraNodes                      uint64
 	ErrorNodes                      uint64
 	MergeStacksInHist               [maxGLRStacks + 2]uint64

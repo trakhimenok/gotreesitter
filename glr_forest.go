@@ -178,11 +178,17 @@ type gssForestNode struct {
 // Stage 1 scaffold: builds the DAG. Correct trees require Stage 2 (reduce walks
 // every link); until then this is exercised only under the flag + parity gate.
 func coalesceForest(index *gssForestIndex, slab *gssForestNodeSlab, state StateID, byteOffset uint32, prev *gssForestNode, entry stackEntry, score, errorCost int) *gssForestNode {
+	if perfCountersEnabled {
+		perfRecordForestCoalesceCall()
+	}
 	key := gssForestKey{state: state, byteOffset: byteOffset}
 	node := index.lookup(key)
 	if node == nil {
 		node = slab.alloc(state, byteOffset, score, errorCost)
 		index.set(key, node)
+		if perfCountersEnabled {
+			perfRecordForestCoalesceNewNode()
+		}
 	} else if errorCost < node.errorCost || (errorCost == node.errorCost && score > node.score) {
 		node.score, node.errorCost = score, errorCost
 	}
@@ -208,9 +214,14 @@ func coalesceForest(index *gssForestIndex, slab *gssForestNodeSlab, state StateI
 			// strictly higher dynamic precedence. A replacement marks the node
 			// dirty so the reductions that already consumed the losing subtree
 			// re-run and rebuild their parents from the winner.
+			replaced := false
 			if score > l.score {
 				l.subtree, l.score = entry, score
 				node.dirty++
+				replaced = true
+			}
+			if perfCountersEnabled {
+				perfRecordForestCoalesceDedupHit(replaced)
 			}
 			return node
 		}
@@ -229,12 +240,40 @@ func coalesceForest(index *gssForestIndex, slab *gssForestNodeSlab, state StateI
 		if score > node.links[worst].score {
 			node.links[worst] = gssLink{prev: prev, subtree: entry, score: score}
 			node.dirty++
+			if perfCountersEnabled {
+				perfRecordForestCoalesceCap(true)
+			}
+		} else if perfCountersEnabled {
+			perfRecordForestCoalesceCap(false)
 		}
 		return node
 	}
 	node.links = append(node.links, gssLink{prev: prev, subtree: entry, score: score})
+	if perfCountersEnabled {
+		perfRecordForestCoalesceLinkAppend()
+	}
 	node.dirty++
 	return node
+}
+
+func forestCoalesceWouldDropForCap(index *gssForestIndex, state StateID, byteOffset uint32, score, errorCost int) bool {
+	if index == nil {
+		return false
+	}
+	node := index.lookup(gssForestKey{state: state, byteOffset: byteOffset})
+	if node == nil || len(node.links) < forestMaxLinksPerNode {
+		return false
+	}
+	if errorCost < node.errorCost {
+		return false
+	}
+	worstScore := node.links[0].score
+	for i := 1; i < len(node.links); i++ {
+		if node.links[i].score < worstScore {
+			worstScore = node.links[i].score
+		}
+	}
+	return score <= worstScore
 }
 
 // forestMaxLinksPerNode caps the alternative fan-out coalesced at one
@@ -588,7 +627,13 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 					reducer.reduce(node, cc, func(children []stackEntry, childScore int, popTo *gssForestNode) {
 						gotoState := p.lookupGoto(popTo.state, act.Symbol)
 						if gotoState == 0 {
+							if perfCountersEnabled {
+								perfRecordForestReduceGotoMiss()
+							}
 							return
+						}
+						if perfCountersEnabled {
+							perfRecordForestReduceGotoHit()
 						}
 						// Trailing extras (a comment after a complete construct)
 						// are not part of the reduced node — they belong to the
@@ -600,6 +645,17 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 						// node-builder and span helpers read it in place — no per-reduce
 						// copy. window = children[0:reducedEnd] (trailing extras trimmed).
 						reducedEnd := reducedEndBeforeTrailingExtras(children)
+						parentEnd := node.byteOffset
+						if reducedEnd > 0 {
+							parentEnd = (*Node)(children[reducedEnd-1].node).endByte
+						}
+						score := int(act.DynamicPrecedence) + childScore
+						if forestCoalesceWouldDropForCap(&curIndex, gotoState, parentEnd, score, popTo.errorCost) {
+							if perfCountersEnabled {
+								perfRecordForestCoalescePreCapDrop()
+							}
+							return
+						}
 						childNodes, fieldIDs, fieldSources, childPath := p.buildReduceChildrenWithPath(children, 0, reducedEnd, cc, act.Symbol, act.ProductionID, arena)
 						parent := newParentNodeInArenaWithFieldSources(arena, act.Symbol, named(act.Symbol), childNodes, fieldIDs, fieldSources, act.ProductionID)
 						// Recover the reduced node's byte span from the full window,
@@ -619,17 +675,13 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 						// Position the reduced node at the end of its last real
 						// child (before any trimmed trailing extras), falling back
 						// to the frontier position for empty productions.
-						parentEnd := node.byteOffset
-						if reducedEnd > 0 {
-							parentEnd = (*Node)(children[reducedEnd-1].node).endByte
-						}
 						parent.preGotoState = popTo.state
 						parent.parseState = gotoState
 						// Subtree score = this production's dynamic precedence +
 						// the children's accumulated scores.
 						top := coalesceForest(&curIndex, slab, gotoState, parentEnd, popTo,
 							stackEntry{node: unsafe.Pointer(parent), state: gotoState, kind: stackEntryKindNode},
-							int(act.DynamicPrecedence)+childScore, popTo.errorCost)
+							score, popTo.errorCost)
 						for _, ex := range children[reducedEnd:] {
 							extra := (*Node)(ex.node)
 							extra.parseState = gotoState
@@ -731,12 +783,24 @@ func (fr *forestReducer) reduce(node *gssForestNode, childCount int, visit func(
 	if node == nil {
 		return
 	}
+	if perfCountersEnabled {
+		perfRecordForestReduceCall(childCount)
+	}
 	if childCount == 0 {
+		if perfCountersEnabled {
+			perfRecordForestReduceZero()
+		}
 		visit(nil, 0, node)
 		return
 	}
 	if fr.reduceLinearNoExtras(node, childCount, visit) {
+		if perfCountersEnabled {
+			perfRecordForestReduceLinearNoExtras(childCount)
+		}
 		return
+	}
+	if perfCountersEnabled {
+		perfRecordForestReduceDFS()
 	}
 	fr.path = fr.path[:0]
 	fr.dfs(node, childCount, 0, visit)
@@ -776,12 +840,19 @@ func (fr *forestReducer) dfs(cur *gssForestNode, remaining, score int, visit fun
 	mark := len(fr.path)
 	for i := range cur.links {
 		link := cur.links[i]
+		extra := stackEntryNodeIsExtra(link.subtree)
+		if perfCountersEnabled {
+			perfRecordForestReduceDFSStep(len(cur.links), extra)
+		}
 		fr.path = append(fr.path[:mark], link.subtree)
 		rem := remaining
-		if !stackEntryNodeIsExtra(link.subtree) {
+		if !extra {
 			rem--
 		}
 		if rem == 0 {
+			if perfCountersEnabled {
+				perfRecordForestReduceDFSVisit(len(fr.path))
+			}
 			fr.rev = fr.rev[:0]
 			for j := len(fr.path) - 1; j >= 0; j-- {
 				fr.rev = append(fr.rev, fr.path[j])

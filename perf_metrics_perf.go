@@ -64,6 +64,27 @@ type perfCountersData struct {
 	reduceChildrenScratch           atomic.Uint64
 	reduceScratchNoAlias            atomic.Uint64
 	reduceScratchGeneral            atomic.Uint64
+	forestReduceCalls               atomic.Uint64
+	forestReduceZero                atomic.Uint64
+	forestReduceLinearNoExtras      atomic.Uint64
+	forestReduceDFS                 atomic.Uint64
+	forestReduceDFSLinks            atomic.Uint64
+	forestReduceDFSMultiLinkSteps   atomic.Uint64
+	forestReduceDFSExtraLinks       atomic.Uint64
+	forestReduceDFSVisits           atomic.Uint64
+	forestReduceDFSPathEntries      atomic.Uint64
+	forestReduceGotoHits            atomic.Uint64
+	forestReduceGotoMisses          atomic.Uint64
+	forestReduceMaxPathLen          atomic.Uint64
+	forestReduceMaxChildCount       atomic.Uint64
+	forestCoalesceCalls             atomic.Uint64
+	forestCoalesceNewNodes          atomic.Uint64
+	forestCoalesceLinkAppends       atomic.Uint64
+	forestCoalesceDedupHits         atomic.Uint64
+	forestCoalesceDedupReplacements atomic.Uint64
+	forestCoalescePreCapDrops       atomic.Uint64
+	forestCoalesceCapDrops          atomic.Uint64
+	forestCoalesceCapReplacements   atomic.Uint64
 	extraNodes                      atomic.Uint64
 	errorNodes                      atomic.Uint64
 	mergeStacksInHist               [perfMergeHistBins]atomic.Uint64
@@ -137,6 +158,27 @@ func ResetPerfCounters() {
 	perfCounters.reduceChildrenScratch.Store(0)
 	perfCounters.reduceScratchNoAlias.Store(0)
 	perfCounters.reduceScratchGeneral.Store(0)
+	perfCounters.forestReduceCalls.Store(0)
+	perfCounters.forestReduceZero.Store(0)
+	perfCounters.forestReduceLinearNoExtras.Store(0)
+	perfCounters.forestReduceDFS.Store(0)
+	perfCounters.forestReduceDFSLinks.Store(0)
+	perfCounters.forestReduceDFSMultiLinkSteps.Store(0)
+	perfCounters.forestReduceDFSExtraLinks.Store(0)
+	perfCounters.forestReduceDFSVisits.Store(0)
+	perfCounters.forestReduceDFSPathEntries.Store(0)
+	perfCounters.forestReduceGotoHits.Store(0)
+	perfCounters.forestReduceGotoMisses.Store(0)
+	perfCounters.forestReduceMaxPathLen.Store(0)
+	perfCounters.forestReduceMaxChildCount.Store(0)
+	perfCounters.forestCoalesceCalls.Store(0)
+	perfCounters.forestCoalesceNewNodes.Store(0)
+	perfCounters.forestCoalesceLinkAppends.Store(0)
+	perfCounters.forestCoalesceDedupHits.Store(0)
+	perfCounters.forestCoalesceDedupReplacements.Store(0)
+	perfCounters.forestCoalescePreCapDrops.Store(0)
+	perfCounters.forestCoalesceCapDrops.Store(0)
+	perfCounters.forestCoalesceCapReplacements.Store(0)
 	perfCounters.extraNodes.Store(0)
 	perfCounters.errorNodes.Store(0)
 	for i := range perfCounters.mergeStacksInHist {
@@ -239,6 +281,27 @@ func PerfCountersSnapshot() PerfCounters {
 	out.ReduceChildrenScratch = perfCounters.reduceChildrenScratch.Load()
 	out.ReduceScratchNoAlias = perfCounters.reduceScratchNoAlias.Load()
 	out.ReduceScratchGeneral = perfCounters.reduceScratchGeneral.Load()
+	out.ForestReduceCalls = perfCounters.forestReduceCalls.Load()
+	out.ForestReduceZero = perfCounters.forestReduceZero.Load()
+	out.ForestReduceLinearNoExtras = perfCounters.forestReduceLinearNoExtras.Load()
+	out.ForestReduceDFS = perfCounters.forestReduceDFS.Load()
+	out.ForestReduceDFSLinks = perfCounters.forestReduceDFSLinks.Load()
+	out.ForestReduceDFSMultiLinkSteps = perfCounters.forestReduceDFSMultiLinkSteps.Load()
+	out.ForestReduceDFSExtraLinks = perfCounters.forestReduceDFSExtraLinks.Load()
+	out.ForestReduceDFSVisits = perfCounters.forestReduceDFSVisits.Load()
+	out.ForestReduceDFSPathEntries = perfCounters.forestReduceDFSPathEntries.Load()
+	out.ForestReduceGotoHits = perfCounters.forestReduceGotoHits.Load()
+	out.ForestReduceGotoMisses = perfCounters.forestReduceGotoMisses.Load()
+	out.ForestReduceMaxPathLen = perfCounters.forestReduceMaxPathLen.Load()
+	out.ForestReduceMaxChildCount = perfCounters.forestReduceMaxChildCount.Load()
+	out.ForestCoalesceCalls = perfCounters.forestCoalesceCalls.Load()
+	out.ForestCoalesceNewNodes = perfCounters.forestCoalesceNewNodes.Load()
+	out.ForestCoalesceLinkAppends = perfCounters.forestCoalesceLinkAppends.Load()
+	out.ForestCoalesceDedupHits = perfCounters.forestCoalesceDedupHits.Load()
+	out.ForestCoalesceDedupReplacements = perfCounters.forestCoalesceDedupReplacements.Load()
+	out.ForestCoalescePreCapDrops = perfCounters.forestCoalescePreCapDrops.Load()
+	out.ForestCoalesceCapDrops = perfCounters.forestCoalesceCapDrops.Load()
+	out.ForestCoalesceCapReplacements = perfCounters.forestCoalesceCapReplacements.Load()
 	out.ExtraNodes = perfCounters.extraNodes.Load()
 	out.ErrorNodes = perfCounters.errorNodes.Load()
 	for i := range out.MergeOutHist {
@@ -528,6 +591,81 @@ func perfRecordReduceScratchGeneral(count int) {
 	}
 }
 
+func perfRecordForestReduceCall(childCount int) {
+	perfCounters.forestReduceCalls.Add(1)
+	perfMaxUint64(&perfCounters.forestReduceMaxChildCount, uint64(childCount))
+}
+
+func perfRecordForestReduceZero() {
+	perfCounters.forestReduceZero.Add(1)
+}
+
+func perfRecordForestReduceLinearNoExtras(childCount int) {
+	perfCounters.forestReduceLinearNoExtras.Add(1)
+	perfMaxUint64(&perfCounters.forestReduceMaxPathLen, uint64(childCount))
+}
+
+func perfRecordForestReduceDFS() {
+	perfCounters.forestReduceDFS.Add(1)
+}
+
+func perfRecordForestReduceDFSStep(linkCount int, extra bool) {
+	perfCounters.forestReduceDFSLinks.Add(1)
+	if linkCount > 1 {
+		perfCounters.forestReduceDFSMultiLinkSteps.Add(1)
+	}
+	if extra {
+		perfCounters.forestReduceDFSExtraLinks.Add(1)
+	}
+}
+
+func perfRecordForestReduceDFSVisit(pathLen int) {
+	perfCounters.forestReduceDFSVisits.Add(1)
+	if pathLen > 0 {
+		perfCounters.forestReduceDFSPathEntries.Add(uint64(pathLen))
+		perfMaxUint64(&perfCounters.forestReduceMaxPathLen, uint64(pathLen))
+	}
+}
+
+func perfRecordForestReduceGotoHit() {
+	perfCounters.forestReduceGotoHits.Add(1)
+}
+
+func perfRecordForestReduceGotoMiss() {
+	perfCounters.forestReduceGotoMisses.Add(1)
+}
+
+func perfRecordForestCoalesceCall() {
+	perfCounters.forestCoalesceCalls.Add(1)
+}
+
+func perfRecordForestCoalesceNewNode() {
+	perfCounters.forestCoalesceNewNodes.Add(1)
+}
+
+func perfRecordForestCoalesceLinkAppend() {
+	perfCounters.forestCoalesceLinkAppends.Add(1)
+}
+
+func perfRecordForestCoalesceDedupHit(replaced bool) {
+	perfCounters.forestCoalesceDedupHits.Add(1)
+	if replaced {
+		perfCounters.forestCoalesceDedupReplacements.Add(1)
+	}
+}
+
+func perfRecordForestCoalescePreCapDrop() {
+	perfCounters.forestCoalescePreCapDrops.Add(1)
+}
+
+func perfRecordForestCoalesceCap(replaced bool) {
+	if replaced {
+		perfCounters.forestCoalesceCapReplacements.Add(1)
+	} else {
+		perfCounters.forestCoalesceCapDrops.Add(1)
+	}
+}
+
 func perfRecordExtraNode() {
 	perfCounters.extraNodes.Add(1)
 }
@@ -628,4 +766,16 @@ func perfForkHistBin(actions int) int {
 		return perfForkHistBins - 1
 	}
 	return actions - 2
+}
+
+func perfMaxUint64(slot *atomic.Uint64, target uint64) {
+	for {
+		prev := slot.Load()
+		if target <= prev {
+			return
+		}
+		if slot.CompareAndSwap(prev, target) {
+			return
+		}
+	}
 }

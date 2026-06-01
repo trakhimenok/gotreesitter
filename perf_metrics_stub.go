@@ -56,6 +56,20 @@ func perfRecordReduceChildrenNoAlias(int)        {}
 func perfRecordReduceChildrenScratch(int)        {}
 func perfRecordReduceScratchNoAlias(int)         {}
 func perfRecordReduceScratchGeneral(int)         {}
+func perfRecordForestReduceCall(int)             {}
+func perfRecordForestReduceZero()                {}
+func perfRecordForestReduceLinearNoExtras(int)   {}
+func perfRecordForestReduceDFS()                 {}
+func perfRecordForestReduceDFSStep(int, bool)    {}
+func perfRecordForestReduceDFSVisit(int)         {}
+func perfRecordForestReduceGotoHit()             {}
+func perfRecordForestReduceGotoMiss()            {}
+func perfRecordForestCoalesceCall()              {}
+func perfRecordForestCoalesceNewNode()           {}
+func perfRecordForestCoalesceLinkAppend()        {}
+func perfRecordForestCoalesceDedupHit(bool)      {}
+func perfRecordForestCoalescePreCapDrop()        {}
+func perfRecordForestCoalesceCap(bool)           {}
 func perfRecordExtraNode()                       {}
 func perfRecordErrorNode()                       {}
 func perfRecordCloneTreeCall()                   {}
