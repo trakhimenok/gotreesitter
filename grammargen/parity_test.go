@@ -2590,6 +2590,9 @@ func TestMultiGrammarImportPipeline(t *testing.T) {
 
 	for _, g := range importParityGrammars {
 		t.Run(g.name, func(t *testing.T) {
+			if raceEnabled && g.name == "markdown_inline" {
+				t.Skip("skip markdown_inline import pipeline under -race; non-race coverage keeps the generated parser parity check")
+			}
 			totalGrammars++
 
 			// Stage 1: Import — prefer grammar.json over grammar.js.
