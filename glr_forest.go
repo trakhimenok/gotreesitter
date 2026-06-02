@@ -73,7 +73,20 @@ func (p *Parser) ParseForestExperimental(source []byte) (*Tree, bool) {
 // fallback means a language can never regress the cases it declines, but does
 // NOT catch a clean-but-different tree — so a language joins this list only
 // once its byte-range gate is green.
-// EXCLUDED: python + ruby (still diverge — genuine structural bugs).
+//
+// Verified NOT forest-amenable (2026-06-02 sweep — do NOT re-add as "divergent",
+// the older note was stale): python is forest byte-CLEAN (diverged=0) but ~0.8x
+// because it has no merge blowup for the forest to amortize the GSS overhead
+// against; rust forest TRUNCATES (incomplete) and fails safe to production; dart
+// declines every file. php is forest-clean vs PRODUCTION (diverged=0, ~1/3
+// dispatch @ 2.8x) but stays OUT for a different reason — like graphql, php
+// production itself is not yet C-oracle-clean: the real-corpus C-parity precheck
+// fails on corpus_real/php/medium__keywords.php with the forest OFF too
+// (production != C, "first=(none)"), so php can't be gated until that production
+// divergence is fixed. ruby/haskell are unverified — haskell's production parse
+// is so pathologically slow (the O(n^2) deep-merge blowup) that the
+// forest-vs-production parity gate itself times out; vetting it needs a
+// forest-vs-C oracle gate that skips the slow production leg.
 func languageWantsForest(name string) bool {
 	switch name {
 	case "bash", "erlang", "cmake", "css", "scss", "awk", "javascript", "c_sharp":
