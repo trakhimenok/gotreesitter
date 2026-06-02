@@ -166,7 +166,8 @@ func flattenDPropertyTypeChain(n *Node, lang *Language) ([]*Node, bool) {
 		if len(n.children) != 3 || n.children[1] == nil || n.children[2] == nil {
 			return nil, false
 		}
-		if n.children[1].Type(lang) != "." || n.children[2].Type(lang) != "identifier" {
+		rightType := n.children[2].Type(lang)
+		if n.children[1].Type(lang) != "." || (rightType != "identifier" && rightType != "template_instance") {
 			return nil, false
 		}
 		left, ok := flattenDPropertyTypeChain(n.children[0], lang)
