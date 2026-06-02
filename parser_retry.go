@@ -438,6 +438,27 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
 			return 1
 		}
+	case "svelte":
+		// Svelte's mixed markup/script/style grammar develops redundant
+		// same-key survivors on component-shaped inputs. One full-parse
+		// survivor keeps parse/highlight parity clean and removes merge churn.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
+	case "xml":
+		// XML's nested markup grammar can keep equivalent element/text branches
+		// alive on document-shaped inputs. One full-parse survivor keeps the
+		// current parse/highlight parity clean while reducing merge work.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
+	case "toml":
+		// TOML has a small conflict surface, but redundant same-key table/value
+		// survivors dominate the current real-corpus full parse. One survivor
+		// keeps parse/highlight parity clean and brings it under the C baseline.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
 	case "javascript":
 		// Plain JS can develop many near-equivalent GLR survivors on large
 		// runtime bundles. Keeping more than four alternatives per merge key

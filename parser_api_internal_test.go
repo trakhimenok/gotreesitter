@@ -1076,6 +1076,15 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "ruby"}, maxStacksPerMergeKey, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(ruby, default, full) = %d, want 1", got)
 	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "svelte"}, maxStacksPerMergeKey, false); got != 1 {
+		t.Fatalf("effectiveParseMergePerKeyCap(svelte, default, full) = %d, want 1", got)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "xml"}, maxStacksPerMergeKey, false); got != 1 {
+		t.Fatalf("effectiveParseMergePerKeyCap(xml, default, full) = %d, want 1", got)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "toml"}, maxStacksPerMergeKey, false); got != 1 {
+		t.Fatalf("effectiveParseMergePerKeyCap(toml, default, full) = %d, want 1", got)
+	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "json"}, 1, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(json, 1, full) = %d, want 1", got)
 	}
@@ -1138,6 +1147,15 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "ruby"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
 		t.Fatalf("effectiveParseMergePerKeyCap(ruby, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "svelte"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(svelte, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "xml"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(xml, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "toml"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(toml, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
 	}
 }
 
