@@ -407,6 +407,37 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
 			return 1
 		}
+	case "powershell":
+		// PowerShell's command/pipeline grammar can keep redundant same-key
+		// recovery survivors alive across script-sized inputs. One full-parse
+		// survivor preserves the current parity surface and brings both full
+		// and no-tree parse paths back into the C-tier range.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
+	case "graphql":
+		// GraphQL schema/query sources can retain redundant same-key value and
+		// operation-definition alternatives. One full-parse survivor preserves
+		// the current parity surface while removing the merge-equivalence churn.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
+	case "lua":
+		// Lua's string/call-heavy recovery can keep redundant alternatives
+		// alive even on small files. One full-parse survivor bounds the GLR
+		// surface and brings full parses into the C-tier range; remaining
+		// string no-tree cost is handled separately.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
+	case "ruby":
+		// Ruby still needs a wider stack budget for some real-world files, but
+		// same-key merge survivors are redundant on the current parity surface.
+		// One full-parse survivor removes the result-selection churn while
+		// preserving explicit env overrides for grammar diagnosis.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
 	case "javascript":
 		// Plain JS can develop many near-equivalent GLR survivors on large
 		// runtime bundles. Keeping more than four alternatives per merge key

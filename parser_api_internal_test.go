@@ -1064,6 +1064,18 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "scala"}, maxStacksPerMergeKey, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(scala, default, full) = %d, want 1", got)
 	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "powershell"}, maxStacksPerMergeKey, false); got != 1 {
+		t.Fatalf("effectiveParseMergePerKeyCap(powershell, default, full) = %d, want 1", got)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "graphql"}, maxStacksPerMergeKey, false); got != 1 {
+		t.Fatalf("effectiveParseMergePerKeyCap(graphql, default, full) = %d, want 1", got)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "lua"}, maxStacksPerMergeKey, false); got != 1 {
+		t.Fatalf("effectiveParseMergePerKeyCap(lua, default, full) = %d, want 1", got)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "ruby"}, maxStacksPerMergeKey, false); got != 1 {
+		t.Fatalf("effectiveParseMergePerKeyCap(ruby, default, full) = %d, want 1", got)
+	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "json"}, 1, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(json, 1, full) = %d, want 1", got)
 	}
@@ -1114,6 +1126,18 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "scala"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
 		t.Fatalf("effectiveParseMergePerKeyCap(scala, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "powershell"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(powershell, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "graphql"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(graphql, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "lua"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(lua, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "ruby"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(ruby, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
 	}
 }
 
