@@ -284,6 +284,15 @@ func effectiveFullParseInitialMaxStacks(lang *Language, initialMaxStacks int) in
 		if initialMaxStacks == maxGLRStacks {
 			initialMaxStacks = 2
 		}
+	case "php":
+		// PHP's modifier/recovery-heavy top-level sources can need more than the
+		// default stack budget to reach the C-compatible branch. Starting at 16
+		// avoids the expensive retry cycle on the high-population corpus while
+		// preserving the selected recovery tree; 32 changes the hot keywords
+		// sample's parse parity.
+		if initialMaxStacks < 16 {
+			initialMaxStacks = 16
+		}
 	case "go":
 		// Under the ts2go Go blob the initial cap was held at 2 because cap=8
 		// caused exponential blowup on large files — and the retry-with-widening
