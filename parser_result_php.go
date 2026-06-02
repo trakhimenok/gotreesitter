@@ -332,6 +332,10 @@ func rewritePHPStaticNamedFunctionFragments(nodes []*Node, source []byte, parser
 			return nil, 0, false
 		}
 		semi := newLeafNodeInArena(arena, semiSym, false, call.endByte, call.endByte, call.endPoint, call.endPoint)
+		// Zero-width recovery-synthesized ";" (no source text): tree-sitter-c
+		// marks such inserted terminals Missing, not merely error. Match it so
+		// php error trees are IsMissing-clean against the C oracle.
+		semi.setMissing(true)
 		semi.setHasError(true)
 
 		exprSym, exprNamed, ok := symbolMeta(lang, "expression_statement")
@@ -443,6 +447,10 @@ func rewritePHPStaticNamedFunctionFragmentsWithTrailingMalformedSibling(nodes []
 			return nil, 0, false
 		}
 		semi := newLeafNodeInArena(arena, semiSym, false, call.endByte, call.endByte, call.endPoint, call.endPoint)
+		// Zero-width recovery-synthesized ";" (no source text): tree-sitter-c
+		// marks such inserted terminals Missing, not merely error. Match it so
+		// php error trees are IsMissing-clean against the C oracle.
+		semi.setMissing(true)
 		semi.setHasError(true)
 
 		exprSym, exprNamed, ok := symbolMeta(lang, "expression_statement")
@@ -544,6 +552,9 @@ func rewritePHPStaticAnonymousFunctionFragments(nodes []*Node, source []byte, la
 		semiStartPoint = lastExtra.endPoint
 	}
 	semi := newLeafNodeInArena(arena, semiSym, false, semiStartByte, semiStartByte, semiStartPoint, semiStartPoint)
+	// Zero-width recovery-synthesized ";" (no source text): tree-sitter-c marks
+	// such inserted terminals Missing, not merely error. Match it.
+	semi.setMissing(true)
 	semi.setHasError(true)
 
 	exprSym, exprNamed, ok := symbolMeta(lang, "expression_statement")
