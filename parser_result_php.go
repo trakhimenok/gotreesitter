@@ -711,19 +711,21 @@ func phpReparsedTopLevelSuffix(source []byte, start uint32, lang *Language, aren
 	if start < uint32(len(prefix)) || startPoint.Row < prefixPoint.Row {
 		return nil, false
 	}
-	offsetRoot := tree.RootNodeWithOffset(
-		start-uint32(len(prefix)),
-		Point{Row: startPoint.Row - prefixPoint.Row, Column: startPoint.Column},
-	)
-	if offsetRoot == nil || len(offsetRoot.children) == 0 {
+	root := tree.RootNode()
+	if root == nil || len(root.children) == 0 {
 		return nil, false
 	}
-	out := make([]*Node, 0, len(offsetRoot.children))
-	for _, child := range offsetRoot.children {
+	offset := &cloneOffset{
+		byteDelta: start - uint32(len(prefix)),
+		point:     Point{Row: startPoint.Row - prefixPoint.Row, Column: startPoint.Column},
+		baseRow:   root.startPoint.Row,
+	}
+	out := make([]*Node, 0, len(root.children))
+	for _, child := range root.children {
 		if child == nil || child.Type(lang) == "php_tag" {
 			continue
 		}
-		out = append(out, cloneTreeNodesIntoArena(child, arena))
+		out = append(out, cloneTreeNodesIntoArenaWithOffset(child, arena, offset))
 	}
 	return out, len(out) > 0
 }
