@@ -374,6 +374,15 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		if mergePerKeyCap > 1 {
 			return 1
 		}
+	case "php":
+		// PHP's namespace/modifier-heavy corpus keeps many equivalent recovery
+		// branches alive around statement/declaration ambiguity. One full-parse
+		// survivor preserves the current parse and highlight parity gates while
+		// removing most merge-equivalence churn; incremental reparses keep the
+		// wider default above.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
 	case "javascript":
 		// Plain JS can develop many near-equivalent GLR survivors on large
 		// runtime bundles. Keeping more than four alternatives per merge key
