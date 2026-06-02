@@ -3,7 +3,8 @@
 // work in the GLR merge phase.
 //
 // Usage: go run ./cmd/equiv_audit_oneshot <lang> <file>
-//   lang: javascript | python | rust | ...
+//
+//	lang: any registered grammar name or linguist alias, e.g. elixir | javascript | python | rust
 package main
 
 import (
@@ -28,21 +29,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	var lang *gotreesitter.Language
-	switch langName {
-	case "javascript", "js":
-		lang = grammars.JavascriptLanguage()
-	case "python", "py":
-		lang = grammars.PythonLanguage()
-	case "rust", "rs":
-		lang = grammars.RustLanguage()
-	case "typescript", "ts":
-		lang = grammars.TypescriptLanguage()
-	case "go":
-		lang = grammars.GoLanguage()
-	default:
+	entry := grammars.DetectLanguageByName(langName)
+	if entry == nil || entry.Language == nil {
 		fmt.Fprintf(os.Stderr, "unsupported lang: %s\n", langName)
 		os.Exit(2)
+	}
+	lang := entry.Language()
+	if lang == nil {
+		fmt.Fprintf(os.Stderr, "load language %s: nil language\n", entry.Name)
+		os.Exit(1)
 	}
 
 	gotreesitter.EnableGLREquivAudit(true)
