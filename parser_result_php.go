@@ -1,13 +1,96 @@
 package gotreesitter
 
 func normalizePHPCompatibility(root *Node, source []byte, lang *Language) {
-	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "static_modifier", "static")
-	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "abstract_modifier", "abstract")
-	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "final_modifier", "final")
-	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "readonly_modifier", "readonly")
-	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "visibility_modifier", "public", "protected", "private")
+	normalizePHPCollapsedModifierChildren(root, source, lang)
 	normalizePHPSingletonTypeWrappers(root, lang)
 	normalizePHPStaticFunctionFragments(root, source, lang)
+}
+
+func normalizePHPCollapsedModifierChildren(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "php" || len(source) == 0 {
+		return
+	}
+	staticParent, staticParentOK := phpNamedSymbol(lang, "static_modifier")
+	staticChild, staticChildOK := phpAnonymousSymbol(lang, "static")
+	abstractParent, abstractParentOK := phpNamedSymbol(lang, "abstract_modifier")
+	abstractChild, abstractChildOK := phpAnonymousSymbol(lang, "abstract")
+	finalParent, finalParentOK := phpNamedSymbol(lang, "final_modifier")
+	finalChild, finalChildOK := phpAnonymousSymbol(lang, "final")
+	readonlyParent, readonlyParentOK := phpNamedSymbol(lang, "readonly_modifier")
+	readonlyChild, readonlyChildOK := phpAnonymousSymbol(lang, "readonly")
+	visibilityParent, visibilityParentOK := phpNamedSymbol(lang, "visibility_modifier")
+	publicChild, publicChildOK := phpAnonymousSymbol(lang, "public")
+	protectedChild, protectedChildOK := phpAnonymousSymbol(lang, "protected")
+	privateChild, privateChildOK := phpAnonymousSymbol(lang, "private")
+
+	walkResultTree(root, func(n *Node) {
+		if n == nil || resultChildCount(n) != 0 || int(n.startByte) > len(source) || int(n.endByte) > len(source) || n.startByte > n.endByte {
+			return
+		}
+		switch n.symbol {
+		case staticParent:
+			if staticParentOK && staticChildOK && phpNodeSourceEquals(n, source, "static") {
+				phpRestoreCollapsedModifierChild(n, staticChild, lang)
+			}
+		case abstractParent:
+			if abstractParentOK && abstractChildOK && phpNodeSourceEquals(n, source, "abstract") {
+				phpRestoreCollapsedModifierChild(n, abstractChild, lang)
+			}
+		case finalParent:
+			if finalParentOK && finalChildOK && phpNodeSourceEquals(n, source, "final") {
+				phpRestoreCollapsedModifierChild(n, finalChild, lang)
+			}
+		case readonlyParent:
+			if readonlyParentOK && readonlyChildOK && phpNodeSourceEquals(n, source, "readonly") {
+				phpRestoreCollapsedModifierChild(n, readonlyChild, lang)
+			}
+		case visibilityParent:
+			switch {
+			case visibilityParentOK && publicChildOK && phpNodeSourceEquals(n, source, "public"):
+				phpRestoreCollapsedModifierChild(n, publicChild, lang)
+			case visibilityParentOK && protectedChildOK && phpNodeSourceEquals(n, source, "protected"):
+				phpRestoreCollapsedModifierChild(n, protectedChild, lang)
+			case visibilityParentOK && privateChildOK && phpNodeSourceEquals(n, source, "private"):
+				phpRestoreCollapsedModifierChild(n, privateChild, lang)
+			}
+		}
+	})
+}
+
+func phpNamedSymbol(lang *Language, name string) (Symbol, bool) {
+	sym, ok := lang.symbolByNameAndNamed(name, true)
+	if ok {
+		return sym, true
+	}
+	return symbolByName(lang, name)
+}
+
+func phpAnonymousSymbol(lang *Language, name string) (Symbol, bool) {
+	sym, ok := lang.symbolByNameAndNamed(name, false)
+	if ok {
+		return sym, true
+	}
+	return symbolByName(lang, name)
+}
+
+func phpNodeSourceEquals(n *Node, source []byte, want string) bool {
+	if n == nil || int(n.endByte) > len(source) || n.startByte > n.endByte || int(n.endByte-n.startByte) != len(want) {
+		return false
+	}
+	got := source[n.startByte:n.endByte]
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func phpRestoreCollapsedModifierChild(n *Node, childSym Symbol, lang *Language) {
+	child := newLeafNodeInArena(n.ownerArena, childSym, symbolIsNamed(lang, childSym), n.startByte, n.endByte, n.startPoint, n.endPoint)
+	child.parent = n
+	child.childIndex = 0
+	n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
 }
 
 func normalizePHPSingletonTypeWrappers(root *Node, lang *Language) {
