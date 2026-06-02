@@ -474,11 +474,13 @@ func (p *Parser) Parse(source []byte) (*Tree, error) {
 	deterministicExternalConflicts := fullParseUsesDeterministicExternalConflicts(p.language)
 	initialMaxStacks := fullParseInitialMaxStacks(p.language, p.maxConflictWidth)
 	tree := p.parseInternal(source, p.wrapIncludedRanges(ts), nil, nil, arenaClassFull, nil, initialMaxStacks, 0, 0, deterministicExternalConflicts)
-	tree = p.retryFullParseWithDFA(source, initialMaxStacks, deterministicExternalConflicts, tree)
-	if shouldRepeatExternalScannerFullParse(p.language, tree) {
+	if !p.noTreeBenchmarkOnly {
 		tree = p.retryFullParseWithDFA(source, initialMaxStacks, deterministicExternalConflicts, tree)
+		if shouldRepeatExternalScannerFullParse(p.language, tree) {
+			tree = p.retryFullParseWithDFA(source, initialMaxStacks, deterministicExternalConflicts, tree)
+		}
+		p.normalizeReturnedTree(rawRootOrNil(tree), source)
 	}
-	p.normalizeReturnedTree(rawRootOrNil(tree), source)
 	return tree, nil
 }
 

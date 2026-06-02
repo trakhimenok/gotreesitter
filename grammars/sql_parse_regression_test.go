@@ -107,6 +107,100 @@ func TestSQLSelectClauseBodyIntoFieldRequiresIntoKeyword(t *testing.T) {
 	}
 }
 
+func TestSQLNoTreeBenchmarkSkipsFullParseRetry(t *testing.T) {
+	src := []byte(`SELECT a, b::INT;
+-- <- keyword
+--         ^ operator
+--            ^ type.builtin
+
+SELECT a, b  ::  INT;
+--           ^ operator
+--               ^ type.builtin
+--        ^ variable
+
+SELECT foo(a)
+-- <- keyword
+--      ^ function
+FROM table1
+-- <- keyword
+LEFT JOIN table2 ON table1.a = table2.a
+-- <- keyword
+--    ^ keyword
+--               ^ keyword
+WHERE a = b
+-- <- keyword
+--      ^ operator
+GROUP BY a, b
+-- <- keyword
+--    ^ keyword
+ORDER BY lower(a), b
+-- <- keyword
+--    ^ keyword
+--        ^ function
+select a, b::int;
+-- <- keyword
+--            ^ type.builtin
+from table1
+-- <- keyword
+where a = b
+-- <- keyword
+group by a, b
+-- <- keyword
+--    ^ keyword
+order by lower(a), b;
+-- <- keyword
+--    ^ keyword
+
+SELECT (SELECT 1), a
+-- <- keyword
+--         ^ keyword
+--             ^ number
+FROM (SELECT a FROM table) AS b;
+-- <- keyword
+--     ^ keyword
+--             ^ keyword
+--                         ^ keyword
+
+SELECT a, b
+FROM a
+ORDER    by a, b
+-- <- keyword
+--       ^ keyword
+GrOUP
+-- <- keyword
+By a, b
+-- <- keyword
+
+SELECT $$a$$, $a$baz$a$, $a$$$$a$, $a$b$$a$;
+-- <- keyword
+--       ^ string
+--              ^ string
+--                          ^ string
+--                                    ^ string
+`)
+
+	parser := ts.NewParser(SqlLanguage())
+	ts.ResetPerfCounters()
+	defer ts.ResetPerfCounters()
+	tree, err := parser.ParseNoTreeBenchmarkOnly(src)
+	if err != nil {
+		t.Fatalf("no-tree parse failed: %v", err)
+	}
+	defer tree.Release()
+
+	rt := tree.ParseRuntime()
+	perf := ts.PerfCountersSnapshot()
+	if perf.LexBytes == 0 && perf.LexTokens == 0 {
+		t.Skip("perf counters are disabled")
+	}
+	if perf.LexBytes > uint64(len(src))*2 {
+		t.Fatalf("no-tree parse lexed %d bytes for %d-byte source, expected no hidden full-parse retry; runtime=%s", perf.LexBytes, len(src), rt.Summary())
+	}
+	if perf.LexTokens > rt.TokensConsumed*2 {
+		t.Fatalf("no-tree parse lexed %d tokens after consuming %d, expected no hidden full-parse retry; runtime=%s", perf.LexTokens, rt.TokensConsumed, rt.Summary())
+	}
+}
+
 func sqlFirstSelectClauseBody(t *testing.T, tree *ts.Tree, lang *ts.Language) *ts.Node {
 	t.Helper()
 	root := tree.RootNode()
