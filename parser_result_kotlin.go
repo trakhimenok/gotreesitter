@@ -5,6 +5,10 @@ import "strings"
 func normalizeKotlinCompatibility(root *Node, source []byte, lang *Language) {
 	normalizeKotlinRecoveredSourceFileRoot(root, source, lang)
 	normalizeKotlinBindingPatternKindTokens(root, source, lang)
+	normalizeKotlinCollapsedModifierChildren(root, source, lang)
+	normalizeKotlinCollapsedSimpleIdentifierChildren(root, source, lang)
+	normalizeKotlinCollapsedLiteralChildren(root, source, lang)
+	normalizeKotlinCollapsedExpressionChildren(root, source, lang)
 }
 
 func normalizeKotlinRecoveredSourceFileRoot(root *Node, source []byte, lang *Language) {
@@ -136,4 +140,155 @@ func normalizeKotlinBindingPatternKindToken(n *Node, source []byte, lang *Langua
 	normalizeCollapsedTextToken(n, source, lang, func(text string) bool {
 		return text == "val" || text == "var"
 	})
+}
+
+type kotlinCollapsedModifierRule struct {
+	parent   string
+	children []string
+}
+
+type kotlinCollapsedModifierChild struct {
+	symbol Symbol
+	named  bool
+}
+
+var kotlinCollapsedModifierRules = []kotlinCollapsedModifierRule{
+	{parent: "class_modifier", children: []string{"sealed", "annotation", "data", "inner", "value"}},
+	{parent: "member_modifier", children: []string{"override", "lateinit"}},
+	{parent: "visibility_modifier", children: []string{"public", "private", "internal", "protected"}},
+	{parent: "variance_modifier", children: []string{"in", "out"}},
+	{parent: "function_modifier", children: []string{"tailrec", "operator", "infix", "inline", "external", "suspend"}},
+	{parent: "property_modifier", children: []string{"const"}},
+	{parent: "inheritance_modifier", children: []string{"abstract", "final", "open"}},
+	{parent: "parameter_modifier", children: []string{"vararg", "noinline", "crossinline"}},
+	{parent: "reification_modifier", children: []string{"reified"}},
+	{parent: "platform_modifier", children: []string{"expect", "actual"}},
+}
+
+func normalizeKotlinCollapsedModifierChildren(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "kotlin" || len(source) == 0 {
+		return
+	}
+	rules := kotlinCollapsedModifierSymbolRules(lang)
+	if len(rules) == 0 {
+		return
+	}
+	walkResultTree(root, func(n *Node) {
+		if n == nil || resultChildCount(n) != 0 || int(n.startByte) > len(source) || int(n.endByte) > len(source) || n.startByte > n.endByte {
+			return
+		}
+		children, ok := rules[n.symbol]
+		if !ok {
+			return
+		}
+		child, ok := children[string(source[n.startByte:n.endByte])]
+		if !ok {
+			return
+		}
+		leaf := newLeafNodeInArena(n.ownerArena, child.symbol, child.named, n.startByte, n.endByte, n.startPoint, n.endPoint)
+		leaf.parent = n
+		leaf.childIndex = 0
+		n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{leaf})
+		n.fieldIDs = nil
+		n.fieldSources = nil
+	})
+}
+
+func kotlinCollapsedModifierSymbolRules(lang *Language) map[Symbol]map[string]kotlinCollapsedModifierChild {
+	out := make(map[Symbol]map[string]kotlinCollapsedModifierChild, len(kotlinCollapsedModifierRules))
+	for _, rule := range kotlinCollapsedModifierRules {
+		parentSym, ok := lang.symbolByNameAndNamed(rule.parent, true)
+		if !ok {
+			parentSym, ok = symbolByName(lang, rule.parent)
+		}
+		if !ok {
+			continue
+		}
+		childSyms := make(map[string]kotlinCollapsedModifierChild, len(rule.children))
+		for _, childName := range rule.children {
+			childSym, ok := lang.symbolByNameAndNamed(childName, false)
+			if !ok {
+				childSym, ok = symbolByName(lang, childName)
+			}
+			if !ok {
+				continue
+			}
+			childSyms[childName] = kotlinCollapsedModifierChild{
+				symbol: childSym,
+				named:  symbolIsNamed(lang, childSym),
+			}
+		}
+		if len(childSyms) != 0 {
+			out[parentSym] = childSyms
+		}
+	}
+	return out
+}
+
+var kotlinSimpleIdentifierKeywordChildren = []string{
+	"expect",
+	"data",
+	"inner",
+	"value",
+	"actual",
+	"set",
+	"get",
+	"override",
+	"suspend",
+	"annotation",
+	"sealed",
+	"lateinit",
+	"tailrec",
+	"operator",
+	"infix",
+	"inline",
+	"external",
+	"public",
+	"private",
+	"internal",
+	"protected",
+	"abstract",
+	"final",
+	"open",
+	"const",
+	"vararg",
+	"noinline",
+	"crossinline",
+	"reified",
+	"field",
+	"property",
+	"receiver",
+	"param",
+	"setparam",
+	"delegate",
+	"companion",
+	"constructor",
+	"init",
+	"dynamic",
+	"where",
+	"catch",
+	"finally",
+	"enum",
+}
+
+func normalizeKotlinCollapsedSimpleIdentifierChildren(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "kotlin" || len(source) == 0 {
+		return
+	}
+	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "simple_identifier", kotlinSimpleIdentifierKeywordChildren...)
+}
+
+func normalizeKotlinCollapsedLiteralChildren(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "kotlin" || len(source) == 0 {
+		return
+	}
+	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "boolean_literal", "true", "false")
+}
+
+func normalizeKotlinCollapsedExpressionChildren(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "kotlin" || len(source) == 0 {
+		return
+	}
+	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "this_expression", "this")
+	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "super_expression", "super")
 }

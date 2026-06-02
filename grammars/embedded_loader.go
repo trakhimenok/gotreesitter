@@ -497,11 +497,11 @@ func repairDartCollapsedLeafTokenSymbols(blobName string, lang *gotreesitter.Lan
 	if name != "dart" {
 		return
 	}
-	repairDartCollapsedLeafTokenSymbol(lang, "nullable_type", "?")
-	repairDartCollapsedLeafTokenSymbol(lang, "null_literal", "null")
+	repairCollapsedLeafTokenSymbol(lang, "nullable_type", "?")
+	repairCollapsedLeafTokenSymbol(lang, "null_literal", "null")
 }
 
-func repairDartCollapsedLeafTokenSymbol(lang *gotreesitter.Language, parentName, childName string) {
+func repairCollapsedLeafTokenSymbol(lang *gotreesitter.Language, parentName, childName string) {
 	if !embeddedLanguageHasSymbolName(lang, parentName) || embeddedLanguageHasSymbolName(lang, childName) {
 		return
 	}
