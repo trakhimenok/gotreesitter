@@ -125,7 +125,13 @@ func (p *Parser) parseForRecovery(source []byte) (*Tree, error) {
 	}
 	parser := p.recoveryParser
 	if parser == nil || parser.language != p.language {
-		parser = NewParser(p.language)
+		if parser != nil {
+			releaseSnippetParser(parser)
+		}
+		parser = acquireSnippetParser(p.language)
+		if parser == nil {
+			return nil, ErrNoLanguage
+		}
 		p.recoveryParser = parser
 	}
 	parser.skipRecoveryReparse = true
@@ -137,6 +143,14 @@ func (p *Parser) parseForRecovery(source []byte) (*Tree, error) {
 		return parser.ParseWithTokenSource(source, ts)
 	}
 	return parser.Parse(source)
+}
+
+func (p *Parser) clearRecoveryParser() {
+	if p == nil || p.recoveryParser == nil {
+		return
+	}
+	releaseSnippetParser(p.recoveryParser)
+	p.recoveryParser = nil
 }
 
 // parseWithSnippetParser runs a recovery snippet parse. timeoutMicros is
@@ -172,10 +186,8 @@ func (p *Parser) parseWithTokenSource(source []byte, ts TokenSource, reparseFact
 	if ts == nil {
 		return nil, ErrNoTokenSource
 	}
-	p.recoveryParser = nil
-	defer func() {
-		p.recoveryParser = nil
-	}()
+	p.clearRecoveryParser()
+	defer p.clearRecoveryParser()
 	releaseTS := manageTokenSourceLifetime(ts)
 	defer releaseTS()
 	prevFactory := p.reparseFactory
@@ -456,10 +468,8 @@ func (p *Parser) Parse(source []byte) (*Tree, error) {
 	if tree := p.tryForestFastPath(source); tree != nil {
 		return tree, nil
 	}
-	p.recoveryParser = nil
-	defer func() {
-		p.recoveryParser = nil
-	}()
+	p.clearRecoveryParser()
+	defer p.clearRecoveryParser()
 	prevFactory := p.reparseFactory
 	p.reparseFactory = p.dfaReparseFactory()
 	defer func() {
