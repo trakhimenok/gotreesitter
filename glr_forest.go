@@ -92,6 +92,15 @@ func (p *Parser) ParseForestExperimental(source []byte) (*Tree, bool) {
 // corpus) because the failed forest attempts on the ~2/3 fallback files cost
 // more than the dispatched third saves. Re-promote only if the dispatch rate
 // rises (e.g. the forest learns the constructs it currently parse_fails on).
+//
+// go is NOT yet here despite being attractive (forest-vs-C oracle is diverged=0
+// on the curated corpus at ~0.9x C, and the forest is actually MORE correct than
+// production on real .go: it fixes a for-range composite-literal-vs-block
+// mis-parse and parses ~6% of valid files that production error-recovers). It is
+// blocked on ONE pre-existing forest divergence the broad corpus surfaced: Go
+// generics `T[X]` reduces to index_expression where C produces
+// type_instantiation_expression (a GLR disambiguation/scoring gap, unrelated to
+// the keyword-leaf collapse below). Re-evaluate once that is closed.
 func languageWantsForest(name string) bool {
 	switch name {
 	case "bash", "erlang", "cmake", "css", "scss", "awk", "javascript", "c_sharp":
@@ -481,6 +490,56 @@ func collectForestRootAndExtras(accepted *gssForestNode) (*Node, []*Node) {
 
 // bestLink returns the link whose subtree wins tree-sitter's selection:
 // highest score (dynamic precedence), then earliest (production order).
+// forestCollapsibleNamedKeywordLeaf returns the collapsed LEAF for a unary reduce
+// `NamedSym -> single anonymous keyword token` whose token name equals the rule
+// name (a keyword-as-named-node: go `false`/`nil`/`true`/`iota`). tree-sitter C
+// inlines these to named leaves (ChildCount 0); the production reduce collapses
+// them too. Two gates make it forest-safe where the production predicate is not:
+//
+//   - sameSymbolName only (NOT the broader isSingleTokenWrapperSymbol path that
+//     collapsibleRawUnarySelfReduction also takes): production gates that path on
+//     child.parent != nil, but the forest connects nodes via gssLink and never
+//     sets node.parent, so it would over-collapse rules C keeps as cc=1 (css
+//     universal_selector `*`).
+//   - KeywordCaptureToken != 0: only languages with word-token keyword extraction
+//     inline a `Named -> 'kw'` rule; languages without it keep the token child
+//     even when names match (css `to`/`from`), so the same-name test alone is not
+//     enough.
+//
+// aliasedNodeInArena clones, so the shared child is never mutated. Returns nil
+// when not applicable.
+func (p *Parser) forestCollapsibleNamedKeywordLeaf(act ParseAction, tok Token, arena *nodeArena, entries []stackEntry, start, reducedEnd int) *Node {
+	if p == nil || arena == nil || tok.NoLookahead {
+		return nil
+	}
+	if p.language == nil || p.language.KeywordCaptureToken == 0 {
+		return nil
+	}
+	if reducedEnd-start != 1 || start < 0 || reducedEnd > len(entries) {
+		return nil
+	}
+	if p.reduceProductionHasEffectiveFields(int(act.ChildCount), act.ProductionID, arena) || len(p.reduceAliasSequence(act.ProductionID)) != 0 {
+		return nil
+	}
+	child := stackEntryNode(entries[start])
+	if child == nil || child.ownerArena != arena || child.parent != nil {
+		return nil
+	}
+	if child.symbol == act.Symbol || child.ChildCount() != 0 {
+		return nil
+	}
+	if !p.canCollapseNamedLeafWrapper(act.Symbol, child.symbol) {
+		return nil
+	}
+	if p.shouldPreserveVisibleUnaryTokenWrapper(act.Symbol) {
+		return nil
+	}
+	if !p.sameSymbolName(act.Symbol, child.symbol) {
+		return nil
+	}
+	return aliasedNodeInArena(arena, p.language, child, act.Symbol)
+}
+
 func (n *gssForestNode) bestLink() *gssLink {
 	if n == nil || len(n.links) == 0 {
 		return nil
@@ -833,23 +892,35 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 							}
 							return
 						}
-						childNodes, fieldIDs, fieldSources, childPath := p.buildReduceChildrenWithPath(children, 0, reducedEnd, cc, act.Symbol, act.ProductionID, arena)
-						parent := newParentNodeInArenaWithFieldSources(arena, act.Symbol, named(act.Symbol), childNodes, fieldIDs, fieldSources, act.ProductionID)
-						// Recover the reduced node's byte span from the full window,
-						// mirroring the production reduce. newParentNode spans only the
-						// VISIBLE children, so anonymous/invisible tokens that
-						// buildReduceChildren drops (e.g. the digits of a css
-						// integer_value, or a node with zero visible children) would
-						// otherwise leave the span wrong or empty ([0:0]).
-						rawSpanApplied := false
-						if shouldUseRawSpanForReduction(act.Symbol, childNodes, lang.SymbolMetadata, p.forceRawSpanAll, p.forceRawSpanTable) && reducedEnd > 0 {
-							span := computeReduceRawSpan(children, 0, reducedEnd)
-							parent.startByte, parent.endByte = span.startByte, span.endByte
-							parent.startPoint, parent.endPoint = span.startPoint, span.endPoint
-							rawSpanApplied = true
-						}
-						if !rawSpanApplied && reduceChildPathMayDropSpan(childPath) {
-							extendParentSpanToWindow(parent, children, 0, reducedEnd, lang.SymbolMetadata, p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols)
+						// A collapsible named-keyword-leaf reduce (e.g. go `false`->'false',
+						// `nil`, `iota`): the named node absorbs its single anonymous keyword
+						// token to a LEAF, matching the production reduce (applyReduceAction)
+						// and tree-sitter C (ChildCount 0, not 1). aliasedNodeInArena clones,
+						// so the shared forest child is never mutated; skip the child build
+						// entirely so the child's parent link is untouched and the collapsed
+						// leaf keeps the child's span.
+						var parent *Node
+						if collapsed := p.forestCollapsibleNamedKeywordLeaf(act, tok, arena, children, 0, reducedEnd); collapsed != nil {
+							parent = collapsed
+						} else {
+							childNodes, fieldIDs, fieldSources, childPath := p.buildReduceChildrenWithPath(children, 0, reducedEnd, cc, act.Symbol, act.ProductionID, arena)
+							parent = newParentNodeInArenaWithFieldSources(arena, act.Symbol, named(act.Symbol), childNodes, fieldIDs, fieldSources, act.ProductionID)
+							// Recover the reduced node's byte span from the full window,
+							// mirroring the production reduce. newParentNode spans only the
+							// VISIBLE children, so anonymous/invisible tokens that
+							// buildReduceChildren drops (e.g. the digits of a css
+							// integer_value, or a node with zero visible children) would
+							// otherwise leave the span wrong or empty ([0:0]).
+							rawSpanApplied := false
+							if shouldUseRawSpanForReduction(act.Symbol, childNodes, lang.SymbolMetadata, p.forceRawSpanAll, p.forceRawSpanTable) && reducedEnd > 0 {
+								span := computeReduceRawSpan(children, 0, reducedEnd)
+								parent.startByte, parent.endByte = span.startByte, span.endByte
+								parent.startPoint, parent.endPoint = span.startPoint, span.endPoint
+								rawSpanApplied = true
+							}
+							if !rawSpanApplied && reduceChildPathMayDropSpan(childPath) {
+								extendParentSpanToWindow(parent, children, 0, reducedEnd, lang.SymbolMetadata, p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols)
+							}
 						}
 						// Coalescing tracks parser input position, not necessarily the
 						// visible node span. JavaScript blocks can end before dropped
