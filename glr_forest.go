@@ -135,21 +135,21 @@ func (p *Parser) ParseForestExperimental(source []byte) (*Tree, bool) {
 // more than the dispatched third saves. Re-promote only if the dispatch rate
 // rises (e.g. the forest learns the constructs it currently parse_fails on).
 //
-// go is NOT yet here despite being attractive (forest-vs-C oracle diverged=0 on
-// the curated corpus at ~0.9x C; the forest is MORE correct than production on
-// real .go — it fixes a for-range composite-literal-vs-block mis-parse and parses
-// ~6% of valid files production error-recovers). Over a 250-file repo sweep it is
-// BETTER than production on 25, equal on 224, WORSE on 1. The generics `T[X]`
-// divergence is FIXED (commit 880124ca: the coalesce dedup tie-break preferring
-// the taller subtree on a score tie). The lone remaining forest-WORSE case is
-// `blank_identifier` (`import _`): C collapses it to a leaf, the forest keeps the
-// `_` child. It is statically indistinguishable from awk `pattern` (both 1
-// production, cc=1, same SymbolMetadata) which C KEEPS; production tells them
-// apart via child.parent (contextual, unavailable in the forest DAG). Closing it
-// needs a C-oracle-seeded per-language collapse set.
+// go joined 2026-06-03. forest-vs-production on the curated corpus is diverged=0
+// at 1.5x; forest-vs-C oracle is diverged=0 at ~0.88x C (near C-tier); and a
+// 250-file repo sweep is forest>=production on EVERY file (BETTER 25, equal 224,
+// WORSE 0) — the forest is in fact MORE correct than production on real .go (it
+// fixes a for-range composite-literal-vs-block mis-parse and parses ~6% of valid
+// files production error-recovers). Required three forest fixes:
+//   - keyword-leaf collapse (false/nil -> leaf), commit 03031c9b
+//   - generics `T[X]` dedup tie-break (taller subtree wins a coalesce score tie,
+//     under the shared `_expression` supertype), with cached node height; 880124ca
+//   - blank_identifier `import _` C-oracle-seeded gap collapse; adb1a0fd
+// One pre-existing gotreesitter-vs-C span quirk (off-by-3 on a few files) is
+// SHARED with production (not a forest regression), so it does not block.
 func languageWantsForest(name string) bool {
 	switch name {
-	case "bash", "erlang", "cmake", "css", "scss", "awk", "javascript", "c_sharp":
+	case "bash", "erlang", "cmake", "css", "scss", "awk", "javascript", "c_sharp", "go":
 		return true
 	default:
 		return false
