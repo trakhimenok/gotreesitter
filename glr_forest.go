@@ -901,8 +901,9 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 	// allocation/GC of fresh maps+slices each step dominated the profile.
 	curIndex := newGSSForestIndex(16)
 	nextIndex := newGSSForestIndex(16)
-	var work, nextFrontier []*gssForestNode
+	var work, nextFrontier, relex []*gssForestNode
 	processEpoch := int32(0)
+	noLookaheadSteps := 0
 
 	for {
 		processEpoch++
@@ -925,7 +926,12 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 		ts.SetParserState(frontier[len(frontier)-1].state)
 		tok := ts.Next()
 		p.updateCurrentExternalTokenCheckpoint(ts, tok)
-		eof := tok.Symbol == 0
+		// A NoLookahead token is a SYNTHETIC EOF the token source emits to force
+		// the no-lookahead-state reduction (e.g. completing a multi-token comment
+		// extra) — it is NOT real end-of-input. Only Symbol==0 && !NoLookahead is
+		// real EOF. Treating the synthetic one as EOF truncated any file whose
+		// comment lexes as >1 token (rust/lua/dart starting with a comment).
+		eof := tok.Symbol == 0 && !tok.NoLookahead
 
 		// Reduces coalesce into curIndex (same position, seeded with the
 		// frontier so a reduced nonterminal can merge with an existing actor);
@@ -1096,6 +1102,30 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 			}
 			return root, true
 		}
+		if tok.NoLookahead {
+			// The no-lookahead reductions ran in the work loop above and advanced
+			// the frontier in place (no token was consumed, so nextIndex is for
+			// the same position). Re-lex at this position with the states those
+			// reductions produced — but DROP states that themselves only emit a
+			// no-lookahead reduce, which would re-emit the synthetic EOF and loop.
+			relex = relex[:0]
+			for i := range curIndex.entries {
+				n := curIndex.entries[i].node
+				if ts.lexStateForState(n.state) != noLookaheadLexState {
+					relex = append(relex, n)
+				}
+			}
+			if len(relex) == 0 {
+				return nil, false
+			}
+			noLookaheadSteps++
+			if noLookaheadSteps > maxForestNoLookaheadSteps {
+				return nil, false // runaway no-lookahead chain; fall back to production
+			}
+			frontier = append(frontier[:0], relex...)
+			continue
+		}
+		noLookaheadSteps = 0
 		if len(nextFrontier) == 0 {
 			return nil, false
 		}
@@ -1104,6 +1134,12 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 		frontier = append(frontier[:0], nextFrontier...)
 	}
 }
+
+// maxForestNoLookaheadSteps bounds consecutive no-lookahead re-lex steps at one
+// input position (each should complete a no-lookahead reduction and advance the
+// frontier); exceeding it means a runaway chain, so the forest declines to
+// production rather than spin.
+const maxForestNoLookaheadSteps = 64
 
 // reduceOverForest enumerates every length-childCount path of subtrees ending at
 // `node` and invokes visit once per path with the children in left-to-right
