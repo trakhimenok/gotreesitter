@@ -135,14 +135,18 @@ func (p *Parser) ParseForestExperimental(source []byte) (*Tree, bool) {
 // more than the dispatched third saves. Re-promote only if the dispatch rate
 // rises (e.g. the forest learns the constructs it currently parse_fails on).
 //
-// go is NOT yet here despite being attractive (forest-vs-C oracle is diverged=0
-// on the curated corpus at ~0.9x C, and the forest is actually MORE correct than
-// production on real .go: it fixes a for-range composite-literal-vs-block
-// mis-parse and parses ~6% of valid files that production error-recovers). It is
-// blocked on ONE pre-existing forest divergence the broad corpus surfaced: Go
-// generics `T[X]` reduces to index_expression where C produces
-// type_instantiation_expression (a GLR disambiguation/scoring gap, unrelated to
-// the keyword-leaf collapse below). Re-evaluate once that is closed.
+// go is NOT yet here despite being attractive (forest-vs-C oracle diverged=0 on
+// the curated corpus at ~0.9x C; the forest is MORE correct than production on
+// real .go — it fixes a for-range composite-literal-vs-block mis-parse and parses
+// ~6% of valid files production error-recovers). Over a 250-file repo sweep it is
+// BETTER than production on 25, equal on 224, WORSE on 1. The generics `T[X]`
+// divergence is FIXED (commit 880124ca: the coalesce dedup tie-break preferring
+// the taller subtree on a score tie). The lone remaining forest-WORSE case is
+// `blank_identifier` (`import _`): C collapses it to a leaf, the forest keeps the
+// `_` child. It is statically indistinguishable from awk `pattern` (both 1
+// production, cc=1, same SymbolMetadata) which C KEEPS; production tells them
+// apart via child.parent (contextual, unavailable in the forest DAG). Closing it
+// needs a C-oracle-seeded per-language collapse set.
 func languageWantsForest(name string) bool {
 	switch name {
 	case "bash", "erlang", "cmake", "css", "scss", "awk", "javascript", "c_sharp":
