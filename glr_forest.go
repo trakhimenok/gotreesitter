@@ -558,6 +558,35 @@ func collectForestRootAndExtras(accepted *gssForestNode) (*Node, []*Node) {
 //
 // aliasedNodeInArena clones, so the shared child is never mutated. Returns nil
 // when not applicable.
+// forestGapCollapseSymbols lists, per forest language, the named single-token
+// rules tree-sitter C collapses to a LEAF that the sameSymbolName test misses
+// (the rule name != the token, so it is not a same-name keyword like false/nil:
+// go `blank_identifier` -> '_'). C-ORACLE-SEEDED: the collapse_extract dev tool
+// (parse each forest lang + go vs the C oracle, diff forest-keeps-vs-C-collapses
+// on single anonymous children) found this is the ONLY such gap across all forest
+// languages + go — the 8 allowlisted langs are gap-free. Re-run that tool when
+// adding a language. This whitelist is the only safe way to collapse these: they
+// are statically indistinguishable from single-token rules C KEEPS (awk
+// `pattern`), which production tells apart via child.parent, a contextual signal
+// the forest's link-based DAG lacks.
+var forestGapCollapseSymbols = map[string]map[string]bool{
+	"go": {"blank_identifier": true},
+}
+
+func forestGapCollapse(lang *Language, sym Symbol) bool {
+	if lang == nil {
+		return false
+	}
+	set := forestGapCollapseSymbols[lang.Name]
+	if set == nil {
+		return false
+	}
+	if int(sym) < 0 || int(sym) >= len(lang.SymbolNames) {
+		return false
+	}
+	return set[lang.SymbolNames[sym]]
+}
+
 func (p *Parser) forestCollapsibleNamedKeywordLeaf(act ParseAction, tok Token, arena *nodeArena, entries []stackEntry, start, reducedEnd int) *Node {
 	if p == nil || arena == nil || tok.NoLookahead {
 		return nil
@@ -584,7 +613,7 @@ func (p *Parser) forestCollapsibleNamedKeywordLeaf(act ParseAction, tok Token, a
 	if p.shouldPreserveVisibleUnaryTokenWrapper(act.Symbol) {
 		return nil
 	}
-	if !p.sameSymbolName(act.Symbol, child.symbol) {
+	if !p.sameSymbolName(act.Symbol, child.symbol) && !forestGapCollapse(p.language, act.Symbol) {
 		return nil
 	}
 	return aliasedNodeInArena(arena, p.language, child, act.Symbol)
