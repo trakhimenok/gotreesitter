@@ -961,11 +961,13 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 		if arena.budgetExhausted() {
 			// Memory budget hit; decline so the production parser re-runs and
 			// reports ParseStopMemoryBudget (the forest has no partial-tree path).
+			p.recordForestDecline("budget", Token{StartByte: frontier[len(frontier)-1].byteOffset}, nil)
 			return nil, false
 		}
 		if reducer.capped {
 			// A forest reduce exceeded forestReduceStepCap (high-ambiguity
 			// blowup); decline so the caller falls back to the production parser.
+			p.recordForestDecline("reducer_capped", Token{StartByte: frontier[len(frontier)-1].byteOffset}, nil)
 			return nil, false
 		}
 		// GLR-lex over the union of frontier states; lead = the most-advanced.
