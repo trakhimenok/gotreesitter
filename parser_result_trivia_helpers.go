@@ -12,6 +12,30 @@ func bytesAreTrivia(b []byte) bool {
 	return true
 }
 
+// bytesAreInterTokenTrivia is bytesAreTrivia plus line-continuation backslashes
+// (`\` immediately before a newline). The forest's reduce-coverage rejection
+// uses it to decide whether a hole BETWEEN two reduced children is real
+// (a dropped statement/token → invalid) or just inter-token whitespace the
+// lexer skips. A bare `\<newline>` only appears between tokens where the
+// language treats it as a continuation (bash/python/C/…), so accepting it here
+// is safe; a real `\` token is never immediately followed by a newline.
+func bytesAreInterTokenTrivia(b []byte) bool {
+	for i := 0; i < len(b); i++ {
+		switch b[i] {
+		case ' ', '\t', '\n', '\r', '\f':
+			continue
+		case '\\':
+			if i+1 < len(b) && (b[i+1] == '\n' || b[i+1] == '\r') {
+				continue // line-continuation backslash; the newline is whitespace
+			}
+			return false
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func lastNonTriviaByteEnd(source []byte) uint32 {
 	for i := len(source); i > 0; i-- {
 		switch source[i-1] {

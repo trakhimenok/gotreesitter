@@ -1053,6 +1053,32 @@ func (p *Parser) parseForest(arena *nodeArena, source []byte) (*Node, bool) {
 							reducedEnd = reducedEndBeforeTrailingExtras(children)
 						}
 						score := int(act.DynamicPrecedence) + childScore
+						// Coverage rejection: a reduction whose children leave a
+						// NON-TRIVIA hole skipped real input and is INVALID. This is
+						// the load-bearing fix for tree-sitter's binary repeat
+						// (`X_repeat1 -> X_repeat1 X_repeat1`): the forest forks on every
+						// grouping of the same statement list, and some binary merges
+						// combine two halves with a dropped statement between them
+						// (lua `chunk_repeat1[0-99] + chunk_repeat1[162-X]` skipping a
+						// `local function` statement). Such a gapped node shares its
+						// (symbol, start, end) span with the gap-free grouping, so the
+						// (sym,span) dedup merges them and a gapped one can win on score —
+						// dropping the statement. Scanning ALL children (extras provide
+						// coverage, so an interior comment is NOT a gap) and rejecting any
+						// real hole keeps only valid groupings; the gap-free merge then
+						// wins. Gap-free reductions (every promoted lang) never trip it.
+						if reducedEnd > 0 {
+							lastEnd := stackEntryNodeEndByte(children[0])
+							for k := 1; k < reducedEnd; k++ {
+								cs := stackEntryNodeStartByte(children[k])
+								if cs > lastEnd && int(cs) <= len(source) && !bytesAreInterTokenTrivia(source[lastEnd:cs]) {
+									return
+								}
+								if ce := stackEntryNodeEndByte(children[k]); ce > lastEnd {
+									lastEnd = ce
+								}
+							}
+						}
 						// If the target forest node is already at its fan-out cap and
 						// this reduction cannot displace an existing alternative, avoid
 						// building the reduced children and parent node just to drop it.
