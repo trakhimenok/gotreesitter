@@ -1277,6 +1277,9 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "toml"}, maxStacksPerMergeKey, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(toml, default, full) = %d, want 1", got)
 	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "nix"}, maxStacksPerMergeKey, false); got != 1 {
+		t.Fatalf("effectiveParseMergePerKeyCap(nix, default, full) = %d, want 1", got)
+	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "json"}, 1, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(json, 1, full) = %d, want 1", got)
 	}
@@ -1352,6 +1355,9 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "toml"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
 		t.Fatalf("effectiveParseMergePerKeyCap(toml, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
 	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "nix"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(nix, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
 }
 
 func TestEffectiveParseMergePerKeyCapJavaExplicitOverride(t *testing.T) {
@@ -1370,6 +1376,9 @@ func TestEffectiveParseMergePerKeyCapJavaExplicitOverride(t *testing.T) {
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "rust"}, 4, false); got != 4 {
 		t.Fatalf("effectiveParseMergePerKeyCap(rust, explicit, full) = %d, want 4", got)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "nix"}, 4, false); got != 4 {
+		t.Fatalf("effectiveParseMergePerKeyCap(nix, explicit, full) = %d, want 4", got)
 	}
 }
 

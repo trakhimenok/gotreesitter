@@ -496,6 +496,14 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
 			return 1
 		}
+	case "nix":
+		// Nix real-corpus parses are tiny in token count but spend most full-parse
+		// time comparing redundant same-key expression alternatives. One survivor
+		// preserves the current parity surface while removing the merge churn;
+		// incremental reparses and explicit env overrides keep the wider default.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
+			return 1
+		}
 	case "javascript":
 		// Plain JS can develop many near-equivalent GLR survivors on large
 		// runtime bundles. Keeping more than four alternatives per merge key
