@@ -283,6 +283,60 @@ func TestAwkTextInvariantNumberEdit(t *testing.T) {
 	}
 }
 
+func TestElixirTextInvariantIdentifierEdit(t *testing.T) {
+	lang := &Language{Name: "elixir", SymbolNames: []string{"identifier", "atom"}}
+	oldSource := []byte("defprotocol")
+	source := []byte("eefprotocol")
+	node := &Node{symbol: 0, startByte: 0, endByte: uint32(len(oldSource))}
+	edit := InputEdit{StartByte: 0, OldEndByte: 1, NewEndByte: 1}
+	if !elixirTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("elixirTextInvariantNodeEdit rejected stable identifier edit")
+	}
+
+	source = []byte("false")
+	oldSource = []byte("falsf")
+	node.endByte = uint32(len(oldSource))
+	edit = InputEdit{StartByte: 4, OldEndByte: 5, NewEndByte: 5}
+	if elixirTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("elixirTextInvariantNodeEdit allowed keyword replacement")
+	}
+
+	source = []byte("value!")
+	oldSource = []byte("value?")
+	node.endByte = uint32(len(oldSource))
+	edit = InputEdit{StartByte: 5, OldEndByte: 6, NewEndByte: 6}
+	if !elixirTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("elixirTextInvariantNodeEdit rejected stable bang/predicate suffix edit")
+	}
+
+	node.symbol = 1
+	if elixirTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("elixirTextInvariantNodeEdit allowed non-identifier node")
+	}
+}
+
+func TestHashLineCommentTextInvariantEdit(t *testing.T) {
+	oldSource := []byte("# This file is part of Julia.\n")
+	source := []byte("# Uhis file is part of Julia.\n")
+	node := &Node{startByte: 0, endByte: uint32(len(oldSource) - 1)}
+	edit := InputEdit{StartByte: 2, OldEndByte: 3, NewEndByte: 3}
+	if !hashLineCommentTextInvariantEdit(source, oldSource, node, edit) {
+		t.Fatal("hashLineCommentTextInvariantEdit rejected stable comment text edit")
+	}
+
+	source = []byte("x This file is part of Julia.\n")
+	edit = InputEdit{StartByte: 0, OldEndByte: 1, NewEndByte: 1}
+	if hashLineCommentTextInvariantEdit(source, oldSource, node, edit) {
+		t.Fatal("hashLineCommentTextInvariantEdit allowed leading delimiter edit")
+	}
+
+	source = []byte("# \nhis file is part of Julia.\n")
+	edit = InputEdit{StartByte: 2, OldEndByte: 3, NewEndByte: 3}
+	if hashLineCommentTextInvariantEdit(source, oldSource, node, edit) {
+		t.Fatal("hashLineCommentTextInvariantEdit allowed line break insertion")
+	}
+}
+
 func TestSnapshotTokenSourceStateRestoresDFATokenSource(t *testing.T) {
 	original := &dfaTokenSource{
 		state:                      42,

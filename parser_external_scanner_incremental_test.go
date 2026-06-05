@@ -108,6 +108,88 @@ func TestExternalScannerIncrementalReusePolicy(t *testing.T) {
 	}
 }
 
+func TestExternalScannerTokenInvariantLeafReuse(t *testing.T) {
+	cases := []struct {
+		name        string
+		lang        func() *gotreesitter.Language
+		source      []byte
+		marker      []byte
+		replacement byte
+	}{
+		{
+			name:        "elixir identifier",
+			lang:        grammars.ElixirLanguage,
+			source:      []byte("value = 1\nIO.inspect(value)\n"),
+			marker:      []byte("value"),
+			replacement: 'w',
+		},
+		{
+			name:        "julia line comment",
+			lang:        grammars.JuliaLanguage,
+			source:      []byte("# This file is part of Julia.\nx = 1\n"),
+			marker:      []byte("This"),
+			replacement: 'U',
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			offset := bytes.Index(tc.source, tc.marker)
+			if offset < 0 {
+				t.Fatalf("fixture missing marker %q", tc.marker)
+			}
+			next := append([]byte(nil), tc.source...)
+			next[offset] = tc.replacement
+
+			lang := tc.lang()
+			parser := gotreesitter.NewParser(lang)
+			fresh, err := parser.Parse(next)
+			if err != nil {
+				t.Fatalf("fresh parse: %v", err)
+			}
+			defer fresh.Release()
+			requireCompleteParse(t, fresh, next, lang, "fresh")
+			if fresh.RootNode().HasError() {
+				t.Fatalf("fresh parse has error: %s", fresh.RootNode().SExpr(lang))
+			}
+
+			oldTree, err := parser.Parse(tc.source)
+			if err != nil {
+				t.Fatalf("old parse: %v", err)
+			}
+			defer oldTree.Release()
+			requireCompleteParse(t, oldTree, tc.source, lang, "old")
+			oldTree.Edit(gotreesitter.InputEdit{
+				StartByte:   uint32(offset),
+				OldEndByte:  uint32(offset + 1),
+				NewEndByte:  uint32(offset + 1),
+				StartPoint:  pointForOffset(tc.source, offset),
+				OldEndPoint: pointForOffset(tc.source, offset+1),
+				NewEndPoint: pointForOffset(next, offset+1),
+			})
+
+			newTree, profile, err := parser.ParseIncrementalProfiled(next, oldTree)
+			if err != nil {
+				t.Fatalf("incremental parse: %v", err)
+			}
+			defer newTree.Release()
+			requireCompleteParse(t, newTree, next, lang, "incremental")
+			if profile.ReuseUnsupported {
+				t.Fatalf("token-invariant edit fell back to fresh parse: %s", profile.ReuseUnsupportedReason)
+			}
+			if profile.ReparseNanos != 0 {
+				t.Fatalf("ReparseNanos = %d, want 0 for token-invariant edit", profile.ReparseNanos)
+			}
+			if profile.ReusedSubtrees == 0 {
+				t.Fatalf("token-invariant edit reused no subtrees: %+v", profile)
+			}
+			if got, want := newTree.RootNode().SExpr(lang), fresh.RootNode().SExpr(lang); got != want {
+				t.Fatalf("incremental tree diverged from fresh parse\n got: %s\nwant: %s", got, want)
+			}
+		})
+	}
+}
+
 func makeSvelteBenchmarkSource(funcCount int) []byte {
 	var buf bytes.Buffer
 	buf.WriteString("<script>\n")

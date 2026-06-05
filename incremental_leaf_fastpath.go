@@ -117,8 +117,12 @@ func (p *Parser) canReuseLanguageTextInvariantNode(source []byte, oldTree *Tree,
 		return oldTree.forestFastPath && node.Type(p.language) == "identifier" &&
 			csharpTokenInvariantIdentifierText(oldTree.source, node) &&
 			csharpTokenInvariantIdentifierText(source, node)
+	case "elixir":
+		return elixirTextInvariantNodeEdit(source, oldTree.source, node, edit, p.language)
 	case "hcl":
 		return hclTextInvariantNodeEdit(source, oldTree.source, node, edit, p.language)
+	case "julia":
+		return node.Type(p.language) == "line_comment" && hashLineCommentTextInvariantEdit(source, oldTree.source, node, edit)
 	case "powershell":
 		return powershellTextInvariantNodeEdit(source, oldTree.source, node, edit, p.language)
 	case "rust":
@@ -171,6 +175,22 @@ func rustLineCommentTextInvariantEdit(source, oldSource []byte, node *Node, edit
 
 func rustLineCommentBreakByte(b byte) bool {
 	return b == '\n' || b == '\r'
+}
+
+func hashLineCommentTextInvariantEdit(source, oldSource []byte, node *Node, edit InputEdit) bool {
+	if node == nil || edit.StartByte <= node.startByte {
+		return false
+	}
+	start := int(node.startByte)
+	if start >= len(source) || start >= len(oldSource) || source[start] != '#' || oldSource[start] != '#' {
+		return false
+	}
+	for i := edit.StartByte; i < edit.OldEndByte; i++ {
+		if rustLineCommentBreakByte(oldSource[i]) || rustLineCommentBreakByte(source[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func cmakeTextInvariantUnquotedByte(b byte) bool {
@@ -500,6 +520,60 @@ func clojureTextInvariantNodeEdit(source, oldSource []byte, node *Node, edit Inp
 		return start >= 0 && end <= len(source) && clojureStableSymbolName(source[start:end])
 	case "str_lit":
 		return clojureStableStringLiteralEdit(source, node, edit)
+	default:
+		return false
+	}
+}
+
+func elixirTextInvariantNodeEdit(source, oldSource []byte, node *Node, edit InputEdit, lang *Language) bool {
+	if !sameLengthEditWithinNode(source, oldSource, node, edit) {
+		return false
+	}
+	switch node.Type(lang) {
+	case "identifier":
+		return elixirStableIdentifierText(oldSource, node) && elixirStableIdentifierText(source, node)
+	default:
+		return false
+	}
+}
+
+func elixirStableIdentifierText(source []byte, node *Node) bool {
+	if node == nil || node.startByte >= node.endByte || int(node.endByte) > len(source) {
+		return false
+	}
+	text := source[node.startByte:node.endByte]
+	if len(text) == 0 || !elixirIdentifierStartByte(text[0]) {
+		return false
+	}
+	end := len(text)
+	if text[end-1] == '!' || text[end-1] == '?' {
+		end--
+		if end == 0 {
+			return false
+		}
+	}
+	for _, b := range text[1:end] {
+		if !elixirIdentifierContinueByte(b) {
+			return false
+		}
+	}
+	return !elixirTokenInvariantIdentifierKeyword(string(text))
+}
+
+func elixirIdentifierStartByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || b == '_'
+}
+
+func elixirIdentifierContinueByte(b byte) bool {
+	return elixirIdentifierStartByte(b) ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9')
+}
+
+func elixirTokenInvariantIdentifierKeyword(text string) bool {
+	switch text {
+	case "after", "and", "catch", "do", "else", "end", "false", "fn", "in", "nil", "not", "or", "rescue", "true", "when":
+		return true
 	default:
 		return false
 	}
