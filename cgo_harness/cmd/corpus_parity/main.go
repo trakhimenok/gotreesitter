@@ -84,6 +84,7 @@ func main() {
 		oracleTimeoutMS         int
 		gcAfterFile             bool
 		skipGoOnOracleRootError bool
+		failOnMismatch          bool
 	)
 
 	flag.StringVar(&langFlag, "lang", "top10", "language name, comma list, or top10")
@@ -96,6 +97,7 @@ func main() {
 	flag.IntVar(&oracleTimeoutMS, "oracle-timeout-ms", 0, "if >0, set a timeout for pinned C oracle parses and emit oracle_timeout rows when they abort")
 	flag.BoolVar(&gcAfterFile, "gc-after-file", false, "when true, force GC and return free heap pages to the OS after each file; intended for bounded corpus sweeps")
 	flag.BoolVar(&skipGoOnOracleRootError, "skip-go-on-oracle-error", false, "when true, emit a result row and skip gotreesitter parsing if the C oracle root already has parse errors")
+	flag.BoolVar(&failOnMismatch, "fail-on-mismatch", false, "when true, exit non-zero after writing outputs if any result row has pass=false")
 	flag.Parse()
 
 	if corpusFlag == "" {
@@ -149,6 +151,7 @@ func main() {
 
 	scores := make(map[string]score, len(langs))
 	seenFiles := 0
+	failedFiles := 0
 
 	for _, lang := range langs {
 		runner, err := buildRunner(lang, entriesByName, supportByName, oracleTimeoutMS)
@@ -190,6 +193,8 @@ func main() {
 				}
 				_ = enc.Encode(res)
 				updateScore(scores, lang, false)
+				seenFiles++
+				failedFiles++
 				continue
 			}
 
@@ -199,6 +204,9 @@ func main() {
 			}
 			updateScore(scores, lang, result.Pass)
 			seenFiles++
+			if !result.Pass {
+				failedFiles++
+			}
 			if gcAfterFile {
 				runtime.GC()
 				debug.FreeOSMemory()
@@ -220,6 +228,17 @@ func main() {
 	if strings.TrimSpace(scoreboardMD) != "" {
 		fmt.Printf("updated scoreboard: %s\n", scoreboardMD)
 	}
+	if code := mismatchGateExitCode(failOnMismatch, failedFiles); code != 0 {
+		fmt.Fprintf(os.Stderr, "parity mismatches: %d/%d result rows failed\n", failedFiles, seenFiles)
+		os.Exit(code)
+	}
+}
+
+func mismatchGateExitCode(enabled bool, failedRows int) int {
+	if enabled && failedRows > 0 {
+		return 2
+	}
+	return 0
 }
 
 func parseLangs(raw string) []string {

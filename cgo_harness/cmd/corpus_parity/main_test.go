@@ -85,6 +85,28 @@ func TestShouldSkipGoOnOracleRootError(t *testing.T) {
 	}
 }
 
+func TestMismatchGateExitCode(t *testing.T) {
+	cases := []struct {
+		name       string
+		enabled    bool
+		failedRows int
+		want       int
+	}{
+		{name: "disabled clean", enabled: false, failedRows: 0},
+		{name: "disabled failing", enabled: false, failedRows: 3},
+		{name: "enabled clean", enabled: true, failedRows: 0},
+		{name: "enabled failing", enabled: true, failedRows: 1, want: 2},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mismatchGateExitCode(tc.enabled, tc.failedRows); got != tc.want {
+				t.Fatalf("mismatchGateExitCode(%v, %d) = %d, want %d", tc.enabled, tc.failedRows, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestOracleParseFailure(t *testing.T) {
 	cases := []struct {
 		name          string

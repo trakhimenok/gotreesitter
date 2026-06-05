@@ -349,6 +349,7 @@ Notes:
 - For multiple languages, corpus layout is `--corpus/<language>/**`.
 - For a single language (`--lang go`), `--corpus` can point directly at that language directory.
 - `--artifact-mode failures` is recommended for large real-corpus sweeps; it keeps dump artifacts only for failing files.
+- `--fail-on-mismatch` is recommended for gate runs; it still writes JSONL and artifacts, then exits non-zero if any row has `pass=false`.
 
 ## Build Real Corpus (Lock-Pinned)
 
