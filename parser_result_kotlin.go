@@ -9,6 +9,7 @@ func normalizeKotlinCompatibility(root *Node, source []byte, lang *Language) {
 	normalizeKotlinCollapsedSimpleIdentifierChildren(root, source, lang)
 	normalizeKotlinCollapsedLiteralChildren(root, source, lang)
 	normalizeKotlinCollapsedExpressionChildren(root, source, lang)
+	normalizeKotlinInterpolatedCallExpressions(root, lang)
 }
 
 func normalizeKotlinRecoveredSourceFileRoot(root *Node, source []byte, lang *Language) {
@@ -291,4 +292,35 @@ func normalizeKotlinCollapsedExpressionChildren(root *Node, source []byte, lang 
 	}
 	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "this_expression", "this")
 	normalizeCollapsedNamedLeafChildrenBySource(root, source, lang, "super_expression", "super")
+}
+
+func normalizeKotlinInterpolatedCallExpressions(root *Node, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "kotlin" {
+		return
+	}
+	callExpressionSym, ok := lang.symbolByNameAndNamed("call_expression", true)
+	if !ok {
+		callExpressionSym, ok = symbolByName(lang, "call_expression")
+		if !ok {
+			return
+		}
+	}
+	callExpressionNamed := symbolIsNamed(lang, callExpressionSym)
+
+	walkResultTree(root, func(n *Node) {
+		if n == nil || symbolTypeName(lang, n.symbol) != "interpolated_expression" || resultChildCount(n) != 2 {
+			return
+		}
+		first := resultChildAt(n, 0)
+		second := resultChildAt(n, 1)
+		if first == nil || second == nil ||
+			symbolTypeName(lang, first.symbol) != "navigation_expression" ||
+			symbolTypeName(lang, second.symbol) != "call_suffix" {
+			return
+		}
+		arena := n.ownerArena
+		callChildren := cloneNodeSliceInArena(arena, []*Node{first, second})
+		call := newParentNodeInArena(arena, callExpressionSym, callExpressionNamed, callChildren, nil, 0)
+		replaceNodeChildrenUnfielded(n, cloneNodeSliceInArena(arena, []*Node{call}))
+	})
 }

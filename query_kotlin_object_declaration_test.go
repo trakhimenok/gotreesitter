@@ -42,6 +42,21 @@ func kotlinHasNodeType(n *gotreesitter.Node, lang *gotreesitter.Language, typ st
 	return false
 }
 
+func kotlinFirstNodeOfType(n *gotreesitter.Node, lang *gotreesitter.Language, typ string) *gotreesitter.Node {
+	if n == nil {
+		return nil
+	}
+	if n.Type(lang) == typ {
+		return n
+	}
+	for i := 0; i < n.ChildCount(); i++ {
+		if found := kotlinFirstNodeOfType(n.Child(i), lang, typ); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
 func TestKotlinTopLevelObjectParsesAsDeclaration(t *testing.T) {
 	src := "package demo\n\nobject Singleton {\n    fun work() = Unit\n}\n"
 	tree, lang := kotlinParseTree(t, src)
@@ -78,5 +93,27 @@ func TestKotlinAnonymousObjectStaysExpression(t *testing.T) {
 	}
 	if !kotlinHasNodeType(root, lang, "object_literal") {
 		t.Errorf("anonymous object should parse as an object_literal expression:\n%s", root.SExpr(lang))
+	}
+}
+
+func TestKotlinInterpolatedCallExpressionWrapsCallSuffix(t *testing.T) {
+	src := "package demo\n\nfun f() {\n  val time = if (true) \"${Instant.now()} \" else \"\"\n}\n"
+	tree, lang := kotlinParseTree(t, src)
+	defer tree.Release()
+	root := tree.RootNode()
+	if root.HasError() {
+		t.Fatalf("Kotlin interpolated call parse has errors:\n%s", root.SExpr(lang))
+	}
+
+	interpolated := kotlinFirstNodeOfType(root, lang, "interpolated_expression")
+	if interpolated == nil {
+		t.Fatalf("missing interpolated_expression:\n%s", root.SExpr(lang))
+	}
+	if got, want := interpolated.ChildCount(), 1; got != want {
+		t.Fatalf("interpolated_expression child count = %d, want %d:\n%s", got, want, interpolated.SExpr(lang))
+	}
+	call := interpolated.Child(0)
+	if call == nil || call.Type(lang) != "call_expression" {
+		t.Fatalf("interpolated_expression child = %v, want call_expression:\n%s", call, interpolated.SExpr(lang))
 	}
 }
