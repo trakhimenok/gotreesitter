@@ -350,6 +350,7 @@ Notes:
 - For a single language (`--lang go`), `--corpus` can point directly at that language directory.
 - `--artifact-mode failures` is recommended for large real-corpus sweeps; it keeps dump artifacts only for failing files.
 - `--fail-on-mismatch` is recommended for gate runs; it still writes JSONL and artifacts, then exits non-zero if any row has `pass=false`.
+- `--workers N` parallelizes files within each language with one Go parser and one C parser per worker. The default is `1`; use higher values only inside a memory-bounded container and pair them with matching CPU/GOMAXPROCS limits. JSONL output remains sorted by input file order.
 
 ## Build Real Corpus (Lock-Pinned)
 

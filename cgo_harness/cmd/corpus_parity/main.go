@@ -15,6 +15,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	gotreesitter "github.com/odvcencio/gotreesitter"
@@ -85,6 +86,7 @@ func main() {
 		gcAfterFile             bool
 		skipGoOnOracleRootError bool
 		failOnMismatch          bool
+		workers                 int
 	)
 
 	flag.StringVar(&langFlag, "lang", "top10", "language name, comma list, or top10")
@@ -98,6 +100,7 @@ func main() {
 	flag.BoolVar(&gcAfterFile, "gc-after-file", false, "when true, force GC and return free heap pages to the OS after each file; intended for bounded corpus sweeps")
 	flag.BoolVar(&skipGoOnOracleRootError, "skip-go-on-oracle-error", false, "when true, emit a result row and skip gotreesitter parsing if the C oracle root already has parse errors")
 	flag.BoolVar(&failOnMismatch, "fail-on-mismatch", false, "when true, exit non-zero after writing outputs if any result row has pass=false")
+	flag.IntVar(&workers, "workers", 1, "parallel parity workers per language; each worker owns separate Go and C parsers")
 	flag.Parse()
 
 	if corpusFlag == "" {
@@ -108,6 +111,9 @@ func main() {
 	}
 	if oracleTimeoutMS < 0 {
 		fatalf("--oracle-timeout-ms must be >= 0")
+	}
+	if workers < 1 {
+		fatalf("--workers must be >= 1")
 	}
 	var err error
 	artifactMode, err = normalizeArtifactMode(artifactMode)
@@ -154,10 +160,6 @@ func main() {
 	failedFiles := 0
 
 	for _, lang := range langs {
-		runner, err := buildRunner(lang, entriesByName, supportByName, oracleTimeoutMS)
-		if err != nil {
-			fatalf("init %s runner: %v", lang, err)
-		}
 		files, root, err := collectFilesForLanguage(corpusFlag, lang, len(langs) == 1)
 		if err != nil {
 			fatalf("%s corpus: %v", lang, err)
@@ -175,44 +177,32 @@ func main() {
 			}
 		}
 
-		for _, abs := range files {
-			rel, err := filepath.Rel(root, abs)
-			if err != nil {
-				rel = filepath.Base(abs)
-			}
-			src, err := os.ReadFile(abs)
-			if err != nil {
-				res := parityResult{
-					Language:    lang,
-					FileID:      rel,
-					FilePath:    abs,
-					DumpVersion: cgoharness.DumpV1Version,
-					Pass:        false,
-					Category:    "io",
-					Error:       err.Error(),
-				}
-				_ = enc.Encode(res)
-				updateScore(scores, lang, false)
-				seenFiles++
-				failedFiles++
-				continue
-			}
-
-			result := runFileParity(runner, langArtifacts, artifactMode, skipGoOnOracleRootError, abs, rel, src)
+		results, err := runLanguageParity(
+			lang,
+			files,
+			root,
+			langArtifacts,
+			artifactMode,
+			skipGoOnOracleRootError,
+			entriesByName,
+			supportByName,
+			oracleTimeoutMS,
+			workers,
+			gcAfterFile,
+		)
+		if err != nil {
+			fatalf("%s parity: %v", lang, err)
+		}
+		for _, result := range results {
 			if err := enc.Encode(result); err != nil {
-				fatalf("write jsonl for %s: %v", abs, err)
+				fatalf("write jsonl for %s: %v", result.FilePath, err)
 			}
 			updateScore(scores, lang, result.Pass)
 			seenFiles++
 			if !result.Pass {
 				failedFiles++
 			}
-			if gcAfterFile {
-				runtime.GC()
-				debug.FreeOSMemory()
-			}
 		}
-		runner.Close()
 	}
 
 	if err := writer.Flush(); err != nil {
@@ -239,6 +229,101 @@ func mismatchGateExitCode(enabled bool, failedRows int) int {
 		return 2
 	}
 	return 0
+}
+
+type fileParityTask struct {
+	index int
+	abs   string
+	rel   string
+}
+
+type fileParityOutput struct {
+	index  int
+	result parityResult
+}
+
+func runLanguageParity(
+	lang string,
+	files []string,
+	root string,
+	artifactDir string,
+	artifactMode string,
+	skipGoOnOracleRootError bool,
+	entriesByName map[string]grammars.LangEntry,
+	supportByName map[string]grammars.ParseSupport,
+	oracleTimeoutMS int,
+	workers int,
+	gcAfterFile bool,
+) ([]parityResult, error) {
+	workerCount := effectiveCorpusParityWorkers(workers, len(files))
+	if workerCount == 0 {
+		return nil, nil
+	}
+	runners := make([]*languageRunner, 0, workerCount)
+	for i := 0; i < workerCount; i++ {
+		runner, err := buildRunner(lang, entriesByName, supportByName, oracleTimeoutMS)
+		if err != nil {
+			for _, existing := range runners {
+				existing.Close()
+			}
+			return nil, fmt.Errorf("init worker %d runner: %w", i, err)
+		}
+		runners = append(runners, runner)
+	}
+	defer func() {
+		for _, runner := range runners {
+			runner.Close()
+		}
+	}()
+
+	tasks := make(chan fileParityTask)
+	outputs := make(chan fileParityOutput, len(files))
+	var wg sync.WaitGroup
+	for _, runner := range runners {
+		wg.Add(1)
+		go func(runner *languageRunner) {
+			defer wg.Done()
+			for task := range tasks {
+				result := runPathParity(runner, artifactDir, artifactMode, skipGoOnOracleRootError, task.abs, task.rel)
+				outputs <- fileParityOutput{index: task.index, result: result}
+				if gcAfterFile {
+					runtime.GC()
+					debug.FreeOSMemory()
+				}
+			}
+		}(runner)
+	}
+	go func() {
+		for i, abs := range files {
+			rel, err := filepath.Rel(root, abs)
+			if err != nil {
+				rel = filepath.Base(abs)
+			}
+			tasks <- fileParityTask{index: i, abs: abs, rel: rel}
+		}
+		close(tasks)
+		wg.Wait()
+		close(outputs)
+	}()
+
+	results := make([]parityResult, len(files))
+	for output := range outputs {
+		results[output.index] = output.result
+	}
+	return results, nil
+}
+
+func effectiveCorpusParityWorkers(requested, fileCount int) int {
+	if fileCount <= 0 {
+		return 0
+	}
+	if requested < 1 {
+		return 1
+	}
+	if requested > fileCount {
+		return fileCount
+	}
+	return requested
 }
 
 func parseLangs(raw string) []string {
@@ -391,6 +476,22 @@ func collectFiles(root string) ([]string, string, error) {
 	}
 	sort.Strings(files)
 	return files, root, nil
+}
+
+func runPathParity(runner *languageRunner, artifactDir, artifactMode string, skipGoOnOracleRootError bool, absPath, fileID string) parityResult {
+	src, err := os.ReadFile(absPath)
+	if err != nil {
+		return parityResult{
+			Language:    runner.name,
+			FileID:      fileID,
+			FilePath:    absPath,
+			DumpVersion: cgoharness.DumpV1Version,
+			Pass:        false,
+			Category:    "io",
+			Error:       err.Error(),
+		}
+	}
+	return runFileParity(runner, artifactDir, artifactMode, skipGoOnOracleRootError, absPath, fileID, src)
 }
 
 func runFileParity(runner *languageRunner, artifactDir, artifactMode string, skipGoOnOracleRootError bool, absPath, fileID string, src []byte) parityResult {
