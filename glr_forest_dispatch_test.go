@@ -808,12 +808,11 @@ func TestHCLIncrementalEditDigitLeafReuseIsCorrect(t *testing.T) {
 	}
 }
 
-// TestForestTreeIncrementalEditCMakeFreshFallbackIsCorrect: cmake was demoted
-// from languageAllowsForestIncrementalPath (TestForestIncrementalCorrectness
-// found its forest-incremental reuse produces wrong trees on some valid edits).
-// Edits on a cmake forest old tree now route to a fresh parse; verify the
-// fallback is signalled and the tree stays byte-identical to a fresh parse.
-func TestForestTreeIncrementalEditCMakeFreshFallbackIsCorrect(t *testing.T) {
+// TestForestTreeIncrementalEditCMakeTextInvariantLeafReuseIsCorrect: cmake
+// remains demoted from languageAllowsForestIncrementalPath, but same-length
+// alphanumeric edits inside unquoted_argument leaves can use the token-invariant
+// rescue path safely.
+func TestForestTreeIncrementalEditCMakeTextInvariantLeafReuseIsCorrect(t *testing.T) {
 	gts.SetGLRForestEnabled(true)
 	defer gts.SetGLRForestEnabled(true)
 
@@ -851,8 +850,21 @@ func TestForestTreeIncrementalEditCMakeFreshFallbackIsCorrect(t *testing.T) {
 	if got, want := newTree.RootNode().EndByte(), uint32(len(edited)); got != want {
 		t.Fatalf("incremental root end = %d, want %d", got, want)
 	}
-	if !profile.ReuseUnsupported {
-		t.Fatalf("cmake forest tree edit should fall back to fresh parse (reuse demoted), got ReuseUnsupported=false")
+	if profile.ReuseUnsupported {
+		leaf := oldTree.RootNode().DescendantForByteRange(uint32(offset), uint32(offset+1))
+		leafType := "<nil>"
+		leafText := ""
+		if leaf != nil {
+			leafType = leaf.Type(grm.CmakeLanguage())
+			leafText = leaf.Text(src)
+		}
+		t.Fatalf("cmake text-invariant leaf edit fell back to fresh parse: %s leaf=%s text=%q", profile.ReuseUnsupportedReason, leafType, leafText)
+	}
+	if profile.ReparseNanos != 0 {
+		t.Fatalf("ReparseNanos = %d, want 0 for CMake text-invariant leaf edit", profile.ReparseNanos)
+	}
+	if profile.ReusedSubtrees == 0 {
+		t.Fatalf("cmake text-invariant leaf edit reused no subtrees: %+v", profile)
 	}
 	freshTree, err := parser.Parse(edited)
 	if err != nil {
