@@ -130,6 +130,13 @@ func TestExternalScannerTokenInvariantLeafReuse(t *testing.T) {
 			marker:      []byte("This"),
 			replacement: 'U',
 		},
+		{
+			name:        "sql identifier",
+			lang:        grammars.SqlLanguage,
+			source:      []byte("select * from table1\n"),
+			marker:      []byte("1"),
+			replacement: '2',
+		},
 	}
 
 	for _, tc := range cases {

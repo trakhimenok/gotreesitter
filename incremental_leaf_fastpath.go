@@ -127,6 +127,8 @@ func (p *Parser) canReuseLanguageTextInvariantNode(source []byte, oldTree *Tree,
 		return powershellTextInvariantNodeEdit(source, oldTree.source, node, edit, p.language)
 	case "rust":
 		return node.Type(p.language) == "line_comment" && rustLineCommentTextInvariantEdit(source, oldTree.source, node, edit)
+	case "sql":
+		return sqlTextInvariantNodeEdit(source, oldTree.source, node, edit, p.language)
 	case "yaml":
 		return yamlTextInvariantScalarEdit(source, oldTree.source, node, edit, node.Type(p.language))
 	default:
@@ -573,6 +575,87 @@ func elixirIdentifierContinueByte(b byte) bool {
 func elixirTokenInvariantIdentifierKeyword(text string) bool {
 	switch text {
 	case "after", "and", "catch", "do", "else", "end", "false", "fn", "in", "nil", "not", "or", "rescue", "true", "when":
+		return true
+	default:
+		return false
+	}
+}
+
+func sqlTextInvariantNodeEdit(source, oldSource []byte, node *Node, edit InputEdit, lang *Language) bool {
+	if !sameLengthEditWithinNode(source, oldSource, node, edit) || node.Type(lang) != "identifier" {
+		return false
+	}
+	return sqlStableIdentifierText(oldSource, node) && sqlStableIdentifierText(source, node)
+}
+
+func sqlStableIdentifierText(source []byte, node *Node) bool {
+	if node == nil || node.startByte >= node.endByte || int(node.endByte) > len(source) {
+		return false
+	}
+	text := source[node.startByte:node.endByte]
+	if len(text) == 0 || !sqlIdentifierStartByte(text[0]) {
+		return false
+	}
+	for _, b := range text[1:] {
+		if !sqlIdentifierContinueByte(b) {
+			return false
+		}
+	}
+	return !sqlTokenInvariantIdentifierKeyword(text)
+}
+
+func sqlIdentifierStartByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		b == '_'
+}
+
+func sqlIdentifierContinueByte(b byte) bool {
+	return sqlIdentifierStartByte(b) || (b >= '0' && b <= '9')
+}
+
+func sqlTokenInvariantIdentifierKeyword(text []byte) bool {
+	switch {
+	case bytesEqualFoldASCIIString(text, "all"),
+		bytesEqualFoldASCIIString(text, "alter"),
+		bytesEqualFoldASCIIString(text, "and"),
+		bytesEqualFoldASCIIString(text, "as"),
+		bytesEqualFoldASCIIString(text, "between"),
+		bytesEqualFoldASCIIString(text, "by"),
+		bytesEqualFoldASCIIString(text, "case"),
+		bytesEqualFoldASCIIString(text, "cast"),
+		bytesEqualFoldASCIIString(text, "create"),
+		bytesEqualFoldASCIIString(text, "delete"),
+		bytesEqualFoldASCIIString(text, "distinct"),
+		bytesEqualFoldASCIIString(text, "drop"),
+		bytesEqualFoldASCIIString(text, "else"),
+		bytesEqualFoldASCIIString(text, "end"),
+		bytesEqualFoldASCIIString(text, "false"),
+		bytesEqualFoldASCIIString(text, "from"),
+		bytesEqualFoldASCIIString(text, "group"),
+		bytesEqualFoldASCIIString(text, "having"),
+		bytesEqualFoldASCIIString(text, "in"),
+		bytesEqualFoldASCIIString(text, "insert"),
+		bytesEqualFoldASCIIString(text, "is"),
+		bytesEqualFoldASCIIString(text, "join"),
+		bytesEqualFoldASCIIString(text, "like"),
+		bytesEqualFoldASCIIString(text, "limit"),
+		bytesEqualFoldASCIIString(text, "not"),
+		bytesEqualFoldASCIIString(text, "null"),
+		bytesEqualFoldASCIIString(text, "offset"),
+		bytesEqualFoldASCIIString(text, "on"),
+		bytesEqualFoldASCIIString(text, "or"),
+		bytesEqualFoldASCIIString(text, "order"),
+		bytesEqualFoldASCIIString(text, "select"),
+		bytesEqualFoldASCIIString(text, "set"),
+		bytesEqualFoldASCIIString(text, "table"),
+		bytesEqualFoldASCIIString(text, "then"),
+		bytesEqualFoldASCIIString(text, "true"),
+		bytesEqualFoldASCIIString(text, "union"),
+		bytesEqualFoldASCIIString(text, "update"),
+		bytesEqualFoldASCIIString(text, "values"),
+		bytesEqualFoldASCIIString(text, "when"),
+		bytesEqualFoldASCIIString(text, "where"):
 		return true
 	default:
 		return false

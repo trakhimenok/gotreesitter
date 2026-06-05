@@ -315,6 +315,47 @@ func TestElixirTextInvariantIdentifierEdit(t *testing.T) {
 	}
 }
 
+func TestSQLTextInvariantIdentifierEdit(t *testing.T) {
+	lang := &Language{Name: "sql", SymbolNames: []string{"identifier", "number"}}
+	oldSource := []byte("table1")
+	source := []byte("table2")
+	node := &Node{symbol: 0, startByte: 0, endByte: uint32(len(oldSource))}
+	edit := InputEdit{StartByte: 5, OldEndByte: 6, NewEndByte: 6}
+	if !sqlTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("sqlTextInvariantNodeEdit rejected stable identifier edit")
+	}
+
+	oldSource = []byte("from1")
+	source = []byte("from_")
+	node.endByte = uint32(len(oldSource))
+	edit = InputEdit{StartByte: 4, OldEndByte: 5, NewEndByte: 5}
+	if !sqlTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("sqlTextInvariantNodeEdit rejected underscore continuation edit")
+	}
+
+	oldSource = []byte("fron")
+	source = []byte("from")
+	node.endByte = uint32(len(oldSource))
+	edit = InputEdit{StartByte: 3, OldEndByte: 4, NewEndByte: 4}
+	if sqlTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("sqlTextInvariantNodeEdit allowed keyword replacement")
+	}
+
+	oldSource = []byte("table1")
+	source = []byte("table-")
+	node.endByte = uint32(len(oldSource))
+	edit = InputEdit{StartByte: 5, OldEndByte: 6, NewEndByte: 6}
+	if sqlTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("sqlTextInvariantNodeEdit allowed punctuation replacement")
+	}
+
+	node.symbol = 1
+	source = []byte("table2")
+	if sqlTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("sqlTextInvariantNodeEdit allowed non-identifier node")
+	}
+}
+
 func TestHashLineCommentTextInvariantEdit(t *testing.T) {
 	oldSource := []byte("# This file is part of Julia.\n")
 	source := []byte("# Uhis file is part of Julia.\n")
