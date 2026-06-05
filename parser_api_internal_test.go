@@ -592,9 +592,43 @@ func TestRustRepetitionShiftConflictChoiceAllowsTokenTreeRepeat(t *testing.T) {
 	}
 }
 
+func TestRustRepetitionShiftConflictChoiceAllowsSourceFileRepeatAtTokenTreeBoundary(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "token_tree", "source_file_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionShift, State: 165, Repetition: true},
+	}
+
+	chosen, ok := rustRepetitionShiftConflictChoice(lang, Token{Symbol: 1}, 83, actions)
+	if !ok {
+		t.Fatal("rustRepetitionShiftConflictChoice = false, want true")
+	}
+	if chosen.Type != ParseActionShift || chosen.State != 165 || !chosen.Repetition {
+		t.Fatalf("rustRepetitionShiftConflictChoice picked %+v, want repetition shift", chosen)
+	}
+}
+
+func TestRustRepetitionShiftConflictChoiceAllowsSourceFileRepeatAtCommentBoundary(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "line_comment", "source_file_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionShift, State: 165, Repetition: true},
+	}
+
+	for _, state := range []StateID{175, 205} {
+		chosen, ok := rustRepetitionShiftConflictChoice(lang, Token{Symbol: 1}, state, actions)
+		if !ok {
+			t.Fatalf("rustRepetitionShiftConflictChoice(state %d) = false, want true", state)
+		}
+		if chosen.Type != ParseActionShift || chosen.State != 165 || !chosen.Repetition {
+			t.Fatalf("rustRepetitionShiftConflictChoice(state %d) picked %+v, want repetition shift", state, chosen)
+		}
+	}
+}
+
 // TestRustRepetitionShiftConflictChoiceRejectsNonTokenTreeReduceAtState83 proves
-// the state-83 collapse is scoped to delim_token_tree_repeat1: a conflict at the
-// same state whose reduce closes a different repeat must NOT be collapsed.
+// the state-83 collapse stays scoped to known Rust repeat boundaries: a conflict
+// whose reduce closes a different repeat must NOT be collapsed.
 func TestRustRepetitionShiftConflictChoiceRejectsNonTokenTreeReduceAtState83(t *testing.T) {
 	lang := &Language{SymbolNames: []string{"end", "identifier", ",", "(", "primitive_type", "::", ".", ";", "delim_token_tree_repeat1", "+", "<<", "block_repeat1"}}
 	actions := []ParseAction{

@@ -4268,6 +4268,18 @@ func rustRepetitionShiftConflictChoice(lang *Language, tok Token, state StateID,
 		// tree on these tokens; held to byte-for-byte parity by
 		// TestRustTokenTreeParity + the Docker ring matrix.
 		if !rustAllReducesAreDelimTokenTree(lang, actions) {
+			// The same state also carries source_file_repeat1 continuation forks
+			// for recovered token-tree-shaped top-level fragments; keep them on
+			// the repeat path instead of leaving a dead reduced source-file branch.
+			if !allReducesHaveSymbol(lang, actions, "source_file_repeat1") {
+				return ParseAction{}, false
+			}
+		}
+	case 175, 205:
+		// Comment/trivia boundaries reached after token-tree reductions can
+		// continue the source_file repeat. Reducing here creates a branch that
+		// survives to EOF and burns no-action checks without becoming the winner.
+		if !allReducesHaveSymbol(lang, actions, "source_file_repeat1") {
 			return ParseAction{}, false
 		}
 	default:
