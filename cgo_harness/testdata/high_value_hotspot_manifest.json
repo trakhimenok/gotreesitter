@@ -63,6 +63,15 @@
       "order": "largest",
       "max_files": 10,
       "max_file_bytes": 500000
+    },
+    {
+      "name": "r_real",
+      "language": "r",
+      "root": "cgo_harness/corpus_real/r",
+      "include": ["*.R", "*.r"],
+      "order": "largest",
+      "max_files": 10,
+      "max_file_bytes": 500000
     }
   ]
 }

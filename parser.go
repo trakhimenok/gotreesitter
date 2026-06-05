@@ -2657,6 +2657,10 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 						if next, ok := pythonRepetitionShiftConflictChoice(p.language, tok, currentState, actions); ok {
 							chosen, choice = next, true
 						}
+					case "r":
+						if next, ok := rRepetitionShiftConflictChoice(p.language, currentState, actions); ok {
+							chosen, choice = next, true
+						}
 					case "php":
 						if next, ok := phpRepetitionShiftConflictChoice(p.language, tok, currentState, actions); ok {
 							chosen, choice = next, true
@@ -3821,6 +3825,25 @@ func pythonRepetitionShiftConflictChoice(lang *Language, tok Token, state StateI
 	switch state {
 	case 71, 72:
 		if !symbolHasName(lang, tok.Symbol, "identifier") && !symbolHasName(lang, tok.Symbol, "def") {
+			return ParseAction{}, false
+		}
+	default:
+		return ParseAction{}, false
+	}
+	return repetitionShiftConflictChoice(actions)
+}
+
+func rRepetitionShiftConflictChoice(lang *Language, state StateID, actions []ParseAction) (ParseAction, bool) {
+	if lang == nil {
+		return ParseAction{}, false
+	}
+	switch state {
+	case 448:
+		if !allReducesHaveSymbol(lang, actions, "program_repeat1") {
+			return ParseAction{}, false
+		}
+	case 445:
+		if !allReducesHaveSymbol(lang, actions, "braced_expression_repeat1") {
 			return ParseAction{}, false
 		}
 	default:

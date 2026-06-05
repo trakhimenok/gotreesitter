@@ -100,6 +100,42 @@ func TestCSharpRepetitionShiftConflictChoiceRejectsOtherRepeats(t *testing.T) {
 	}
 }
 
+func TestRRepetitionShiftConflictChoiceAllowsHotRepeats(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "identifier", "program_repeat1", "braced_expression_repeat1"}}
+	for _, tc := range []struct {
+		name       string
+		state      StateID
+		reduceSym  Symbol
+		shiftState StateID
+	}{
+		{name: "program", state: 448, reduceSym: 2, shiftState: 446},
+		{name: "braced_expression", state: 445, reduceSym: 3, shiftState: 446},
+	} {
+		actions := []ParseAction{
+			{Type: ParseActionReduce, Symbol: tc.reduceSym, ChildCount: 2},
+			{Type: ParseActionShift, State: tc.shiftState, Repetition: true},
+		}
+		chosen, ok := rRepetitionShiftConflictChoice(lang, tc.state, actions)
+		if !ok {
+			t.Fatalf("rRepetitionShiftConflictChoice(%s) = false, want true", tc.name)
+		}
+		if chosen.Type != ParseActionShift || chosen.State != tc.shiftState || !chosen.Repetition {
+			t.Fatalf("rRepetitionShiftConflictChoice(%s) picked %+v, want repetition shift", tc.name, chosen)
+		}
+	}
+}
+
+func TestRRepetitionShiftConflictChoiceRejectsWrongReduce(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "identifier", "program_repeat1", "other_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 3, ChildCount: 2},
+		{Type: ParseActionShift, State: 446, Repetition: true},
+	}
+	if _, ok := rRepetitionShiftConflictChoice(lang, 448, actions); ok {
+		t.Fatal("rRepetitionShiftConflictChoice = true, want false for wrong repeat symbol")
+	}
+}
+
 func TestTypeScriptRepetitionShiftConflictChoiceAllowsHotProgramRepeat(t *testing.T) {
 	lang := &Language{SymbolNames: []string{"end", "function", "identifier", "const", "return", "if", "export", "program_repeat1"}}
 	actions := []ParseAction{
