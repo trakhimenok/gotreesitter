@@ -113,7 +113,7 @@ func (p *Parser) disabledOldTreeTokenInvariantLeafAllowed(source []byte, oldTree
 	if node == nil || !node.containsByteRange(edit.StartByte, edit.OldEndByte) {
 		node = root.DescendantForByteRange(edit.StartByte, edit.OldEndByte)
 	}
-	if p.language.Name == "css" && p.canReuseLanguageTextInvariantNode(source, oldTree, node, edit) {
+	if (p.language.Name == "css" || p.language.Name == "scss") && p.canReuseLanguageTextInvariantNode(source, oldTree, node, edit) {
 		return true
 	}
 	if !tokenInvariantLeafReusable(node) {
@@ -122,7 +122,7 @@ func (p *Parser) disabledOldTreeTokenInvariantLeafAllowed(source []byte, oldTree
 	switch p.language.Name {
 	case "go":
 		return true
-	case "css":
+	case "css", "scss":
 		return cssDisabledTreeTokenInvariantLeafAllowed(oldTree, node)
 	case "c_sharp":
 		return csharpDisabledTreeTokenInvariantLeafAllowed(p.language, node, oldTree.source, source)

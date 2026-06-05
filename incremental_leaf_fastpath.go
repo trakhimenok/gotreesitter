@@ -105,7 +105,7 @@ func (p *Parser) canReuseLanguageTextInvariantNode(source []byte, oldTree *Tree,
 	case "cmake":
 		return oldTree.forestFastPath && node.Type(p.language) == "unquoted_argument" &&
 			cmakeTextInvariantEdit(source, oldTree.source, edit)
-	case "css":
+	case "css", "scss":
 		return oldTree.forestFastPath && node.Type(p.language) == "integer_value" &&
 			cssTextInvariantIntegerValueEdit(source, oldTree.source, edit)
 	case "c_sharp":

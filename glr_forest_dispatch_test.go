@@ -502,6 +502,69 @@ func TestForestTreeIncrementalEditCSSTokenInvariantLeafReuseIsCorrect(t *testing
 	}
 }
 
+func TestForestTreeIncrementalEditSCSSTokenInvariantLeafReuseIsCorrect(t *testing.T) {
+	gts.SetGLRForestEnabled(true)
+	defer gts.SetGLRForestEnabled(true)
+
+	src := []byte("$gap: 1px;\n.a { color: red; margin: $gap; padding: 4px; .child { width: 1px; } }\n")
+	const oldNeedle = "padding: 4px"
+	offset := strings.Index(string(src), oldNeedle) + len("padding: ")
+	if offset < len("padding: ") || len(src) <= offset || src[offset] != '4' {
+		t.Fatalf("scss fixture drifted: byte %d = %q, want '4'", offset, src[offset])
+	}
+
+	edited := append([]byte(nil), src...)
+	edited[offset] = '5'
+	edit := gts.InputEdit{
+		StartByte:   uint32(offset),
+		OldEndByte:  uint32(offset + 1),
+		NewEndByte:  uint32(offset + 1),
+		StartPoint:  pointForOffset(src, offset),
+		OldEndPoint: pointForOffset(src, offset+1),
+		NewEndPoint: pointForOffset(edited, offset+1),
+	}
+
+	parser := gts.NewParser(grm.ScssLanguage())
+	oldTree, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("initial parse: %v", err)
+	}
+	defer oldTree.Release()
+	oldTree.Edit(edit)
+
+	newTree, profile, err := parser.ParseIncrementalProfiled(edited, oldTree)
+	if err != nil {
+		t.Fatalf("incremental parse: %v", err)
+	}
+	defer newTree.Release()
+	if got, want := newTree.RootNode().EndByte(), uint32(len(edited)); got != want {
+		t.Fatalf("incremental root end = %d, want %d", got, want)
+	}
+	if profile.ReuseUnsupported {
+		leaf := oldTree.RootNode().DescendantForByteRange(uint32(offset), uint32(offset+1))
+		leafType := "<nil>"
+		leafText := ""
+		leafChildren := 0
+		if leaf != nil {
+			leafType = leaf.Type(grm.ScssLanguage())
+			leafText = leaf.Text(src)
+			leafChildren = leaf.ChildCount()
+		}
+		t.Fatalf("scss token-invariant leaf edit fell back to fresh parse: %s leaf=%s children=%d text=%q", profile.ReuseUnsupportedReason, leafType, leafChildren, leafText)
+	}
+	if profile.ReusedSubtrees == 0 {
+		t.Fatalf("scss token-invariant leaf edit reused no subtrees: %+v", profile)
+	}
+	freshTree, err := parser.Parse(edited)
+	if err != nil {
+		t.Fatalf("fresh parse: %v", err)
+	}
+	defer freshTree.Release()
+	if got, want := newTree.RootNode().SExpr(grm.ScssLanguage()), freshTree.RootNode().SExpr(grm.ScssLanguage()); got != want {
+		t.Fatalf("incremental SCSS tree diverged from fresh parse\n got: %s\nwant: %s", got, want)
+	}
+}
+
 // TestForestTreeIncrementalEditCMakeFreshFallbackIsCorrect: cmake was demoted
 // from languageAllowsForestIncrementalPath (TestForestIncrementalCorrectness
 // found its forest-incremental reuse produces wrong trees on some valid edits).
