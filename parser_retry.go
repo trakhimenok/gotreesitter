@@ -367,10 +367,26 @@ func fullParseInitialMaxStacks(lang *Language, conflictWidth int) int {
 }
 
 func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incremental bool, sourceLen ...int) int {
-	if lang == nil || incremental {
+	if lang == nil {
+		return mergePerKeyCap
+	}
+	if incremental {
+		if lang.Name == "dart" && dartIncrementalFallbackCanUseTightMergeCap(sourceLen...) &&
+			!parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 4 {
+			return 4
+		}
 		return mergePerKeyCap
 	}
 	switch lang.Name {
+	case "dart":
+		// Dart's generic/postfix ambiguity keeps redundant same-key survivors
+		// alive across full parses and large-source external-scanner fallback
+		// reparses. Four survivors preserve the current parse/highlight parity
+		// surface while reducing merge-equivalence churn; explicit env
+		// overrides stay available for grammar diagnosis.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 4 {
+			return 4
+		}
 	case "go":
 		// Go's full-tree path is false-equivalence heavy around expression/type
 		// ambiguity. Three same-key survivors preserve the current parse,
@@ -574,6 +590,10 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 
 func typescriptFullParseCanUseTightMergeCap(sourceLen ...int) bool {
 	return len(sourceLen) == 0 || sourceLen[0] <= 64*1024
+}
+
+func dartIncrementalFallbackCanUseTightMergeCap(sourceLen ...int) bool {
+	return len(sourceLen) > 0 && sourceLen[0] > dartIncrementalReuseMaxSourceBytes
 }
 
 func tsxFullParseNeedsTypedArrowMergeWidth(lang *Language, source []byte, reuse *reuseCursor) bool {

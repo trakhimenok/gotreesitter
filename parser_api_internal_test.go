@@ -1235,6 +1235,9 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "java"}, maxStacksPerMergeKey, false, javaTightMergeCapSourceLen); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(java, large default, full) = %d, want 1", got)
 	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, maxStacksPerMergeKey, false); got != 4 {
+		t.Fatalf("effectiveParseMergePerKeyCap(dart, default, full) = %d, want 4", got)
+	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "c"}, maxStacksPerMergeKey, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(c, default, full) = %d, want 1", got)
 	}
@@ -1298,6 +1301,9 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "javascript"}, 2, false); got != 2 {
 		t.Fatalf("effectiveParseMergePerKeyCap(javascript, 2, full) = %d, want 2", got)
 	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, 3, false); got != 3 {
+		t.Fatalf("effectiveParseMergePerKeyCap(dart, 3, full) = %d, want 3", got)
+	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "json"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
 		t.Fatalf("effectiveParseMergePerKeyCap(json, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
 	}
@@ -1327,6 +1333,15 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "tsx"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
 		t.Fatalf("effectiveParseMergePerKeyCap(tsx, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(dart, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, maxStacksPerMergeKey, true, dartIncrementalReuseMaxSourceBytes); got != maxStacksPerMergeKey {
+		t.Fatalf("effectiveParseMergePerKeyCap(dart, small incremental) = %d, want %d", got, maxStacksPerMergeKey)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, maxStacksPerMergeKey, true, dartIncrementalReuseMaxSourceBytes+1); got != 4 {
+		t.Fatalf("effectiveParseMergePerKeyCap(dart, large incremental fallback) = %d, want 4", got)
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "php"}, maxStacksPerMergeKey, true); got != maxStacksPerMergeKey {
 		t.Fatalf("effectiveParseMergePerKeyCap(php, default, incremental) = %d, want %d", got, maxStacksPerMergeKey)
@@ -1394,6 +1409,19 @@ func TestEffectiveParseMergePerKeyCapJavaExplicitOverride(t *testing.T) {
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "ocaml"}, 4, false); got != 4 {
 		t.Fatalf("effectiveParseMergePerKeyCap(ocaml, explicit, full) = %d, want 4", got)
+	}
+}
+
+func TestEffectiveParseMergePerKeyCapDartExplicitOverride(t *testing.T) {
+	t.Setenv("GOT_GLR_MAX_MERGE_PER_KEY", "8")
+	ResetParseEnvConfigCacheForTests()
+	defer ResetParseEnvConfigCacheForTests()
+
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, 8, false); got != 8 {
+		t.Fatalf("effectiveParseMergePerKeyCap(dart, explicit, full) = %d, want 8", got)
+	}
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, 8, true, dartIncrementalReuseMaxSourceBytes+1); got != 8 {
+		t.Fatalf("effectiveParseMergePerKeyCap(dart, explicit, large incremental fallback) = %d, want 8", got)
 	}
 }
 
