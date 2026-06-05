@@ -138,6 +138,40 @@ func TestPowerShellStringTextInvariantEditRejectsChildAndDelimiterEdits(t *testi
 	}
 }
 
+func TestHCLTextInvariantNodeEditAllowsDigitLeaves(t *testing.T) {
+	lang := &Language{Name: "hcl", SymbolNames: []string{"", "template_literal", "numeric_lit", "identifier"}}
+	for _, tc := range []struct {
+		name    string
+		oldText string
+		newText string
+		symbol  Symbol
+		offset  uint32
+	}{
+		{name: "template literal", oldText: "10.0.0.0/16", newText: "20.0.0.0/16", symbol: 1, offset: 0},
+		{name: "numeric literal", oldText: "1", newText: "2", symbol: 2, offset: 0},
+	} {
+		node := &Node{symbol: tc.symbol, startByte: 0, endByte: uint32(len(tc.oldText))}
+		edit := InputEdit{StartByte: tc.offset, OldEndByte: tc.offset + 1, NewEndByte: tc.offset + 1}
+		if !hclTextInvariantNodeEdit([]byte(tc.newText), []byte(tc.oldText), node, edit, lang) {
+			t.Fatalf("%s: hclTextInvariantNodeEdit rejected digit edit", tc.name)
+		}
+	}
+}
+
+func TestHCLTextInvariantNodeEditRejectsNonDigitsAndOtherLeaves(t *testing.T) {
+	lang := &Language{Name: "hcl", SymbolNames: []string{"", "template_literal", "numeric_lit", "identifier"}}
+	node := &Node{symbol: 1, startByte: 0, endByte: 6}
+	edit := InputEdit{StartByte: 1, OldEndByte: 2, NewEndByte: 2}
+	if hclTextInvariantNodeEdit([]byte("abbcde"), []byte("a1bcde"), node, edit, lang) {
+		t.Fatal("hclTextInvariantNodeEdit allowed non-digit template literal edit")
+	}
+
+	node = &Node{symbol: 3, startByte: 0, endByte: 8}
+	if hclTextInvariantNodeEdit([]byte("resource"), []byte("resourcf"), node, edit, lang) {
+		t.Fatal("hclTextInvariantNodeEdit allowed identifier edit")
+	}
+}
+
 func TestSnapshotTokenSourceStateRestoresDFATokenSource(t *testing.T) {
 	original := &dfaTokenSource{
 		state:                      42,

@@ -722,6 +722,92 @@ func TestPowerShellIncrementalEditTextInvariantLeafReuseIsCorrect(t *testing.T) 
 	}
 }
 
+func TestHCLIncrementalEditDigitLeafReuseIsCorrect(t *testing.T) {
+	gts.SetGLRForestEnabled(true)
+	defer gts.SetGLRForestEnabled(true)
+
+	lang := grm.HclLanguage()
+	src := []byte(`resource "aws_instance" "foo" {
+  count = "2"
+  cidr = "10.0.0.0/16"
+  priority = 1
+}
+`)
+	for _, tc := range []struct {
+		name        string
+		needle      string
+		oldByte     byte
+		replacement byte
+	}{
+		{name: "template literal", needle: "10.0.0.0/16", oldByte: '1', replacement: '2'},
+		{name: "numeric literal", needle: "priority = 1", oldByte: '1', replacement: '2'},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			offset := strings.Index(string(src), tc.needle)
+			if offset < 0 {
+				t.Fatalf("fixture missing %q", tc.needle)
+			}
+			for offset < len(src) && src[offset] != tc.oldByte {
+				offset++
+			}
+			if offset >= len(src) {
+				t.Fatalf("fixture missing byte %q in %q", tc.oldByte, tc.needle)
+			}
+			edited := append([]byte(nil), src...)
+			edited[offset] = tc.replacement
+			edit := gts.InputEdit{
+				StartByte:   uint32(offset),
+				OldEndByte:  uint32(offset + 1),
+				NewEndByte:  uint32(offset + 1),
+				StartPoint:  pointForOffset(src, offset),
+				OldEndPoint: pointForOffset(src, offset+1),
+				NewEndPoint: pointForOffset(edited, offset+1),
+			}
+
+			parser := gts.NewParser(lang)
+			oldTree, err := parser.Parse(src)
+			if err != nil {
+				t.Fatalf("initial parse: %v", err)
+			}
+			defer oldTree.Release()
+			if oldTree.RootNode().HasError() {
+				t.Fatalf("initial HCL parse has errors: %s", oldTree.RootNode().SExpr(lang))
+			}
+			oldTree.Edit(edit)
+
+			newTree, profile, err := parser.ParseIncrementalProfiled(edited, oldTree)
+			if err != nil {
+				t.Fatalf("incremental parse: %v", err)
+			}
+			defer newTree.Release()
+			if profile.ReuseUnsupported {
+				leaf := oldTree.RootNode().DescendantForByteRange(uint32(offset), uint32(offset+1))
+				leafType := "<nil>"
+				leafText := ""
+				if leaf != nil {
+					leafType = leaf.Type(lang)
+					leafText = leaf.Text(src)
+				}
+				t.Fatalf("hcl digit leaf edit fell back to fresh parse: %s leaf=%s text=%q", profile.ReuseUnsupportedReason, leafType, leafText)
+			}
+			if profile.ReparseNanos != 0 {
+				t.Fatalf("ReparseNanos = %d, want 0 for HCL digit leaf edit", profile.ReparseNanos)
+			}
+			if profile.ReusedSubtrees == 0 {
+				t.Fatalf("hcl digit leaf edit reused no subtrees: %+v", profile)
+			}
+			freshTree, err := parser.Parse(edited)
+			if err != nil {
+				t.Fatalf("fresh parse: %v", err)
+			}
+			defer freshTree.Release()
+			if got, want := newTree.RootNode().SExpr(lang), freshTree.RootNode().SExpr(lang); got != want {
+				t.Fatalf("incremental HCL tree diverged from fresh parse\n got: %s\nwant: %s", got, want)
+			}
+		})
+	}
+}
+
 // TestForestTreeIncrementalEditCMakeFreshFallbackIsCorrect: cmake was demoted
 // from languageAllowsForestIncrementalPath (TestForestIncrementalCorrectness
 // found its forest-incremental reuse produces wrong trees on some valid edits).

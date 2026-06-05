@@ -113,7 +113,7 @@ func (p *Parser) disabledOldTreeTokenInvariantLeafAllowed(source []byte, oldTree
 	if node == nil || !node.containsByteRange(edit.StartByte, edit.OldEndByte) {
 		node = root.DescendantForByteRange(edit.StartByte, edit.OldEndByte)
 	}
-	if (p.language.Name == "css" || p.language.Name == "scss") && p.canReuseLanguageTextInvariantNode(source, oldTree, node, edit) {
+	if (p.language.Name == "css" || p.language.Name == "scss" || p.language.Name == "hcl") && p.canReuseLanguageTextInvariantNode(source, oldTree, node, edit) {
 		return true
 	}
 	if !tokenInvariantLeafReusable(node) {

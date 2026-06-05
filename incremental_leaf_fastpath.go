@@ -112,6 +112,8 @@ func (p *Parser) canReuseLanguageTextInvariantNode(source []byte, oldTree *Tree,
 		return oldTree.forestFastPath && node.Type(p.language) == "identifier" &&
 			csharpTokenInvariantIdentifierText(oldTree.source, node) &&
 			csharpTokenInvariantIdentifierText(source, node)
+	case "hcl":
+		return hclTextInvariantNodeEdit(source, oldTree.source, node, edit, p.language)
 	case "powershell":
 		return powershellTextInvariantNodeEdit(source, oldTree.source, node, edit, p.language)
 	case "rust":
@@ -184,6 +186,23 @@ func cssTextInvariantIntegerValueEdit(source, oldSource []byte, edit InputEdit) 
 
 func asciiDigit(b byte) bool {
 	return b >= '0' && b <= '9'
+}
+
+func hclTextInvariantNodeEdit(source, oldSource []byte, node *Node, edit InputEdit, lang *Language) bool {
+	if !sameLengthEditWithinNode(source, oldSource, node, edit) {
+		return false
+	}
+	switch node.Type(lang) {
+	case "numeric_lit", "template_literal":
+		for i := edit.StartByte; i < edit.OldEndByte; i++ {
+			if !asciiDigit(oldSource[i]) || !asciiDigit(source[i]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func powershellTextInvariantNodeEdit(source, oldSource []byte, node *Node, edit InputEdit, lang *Language) bool {
