@@ -415,6 +415,47 @@ func TestNormalizeRustRecoveredFunctionItems(t *testing.T) {
 	}
 }
 
+func TestNormalizeRustRecoveredPatternStatementsRetagsCleanTopLevelRoot(t *testing.T) {
+	lang := &Language{
+		Name: "rust",
+		SymbolNames: []string{
+			"",
+			"source_file",
+			"line_comment",
+			"use_declaration",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Named: true},
+			{Named: true},
+			{Named: true},
+		},
+	}
+	parser := &Parser{language: lang}
+	arena := acquireNodeArena(arenaClassFull)
+	source := []byte("// doc\nuse foo;\n")
+	comment := newLeafNodeInArena(arena, 2, true, 0, 6, Point{}, Point{Column: 6})
+	useDecl := newLeafNodeInArena(arena, 3, true, 7, 15, Point{Row: 1}, Point{Row: 1, Column: 8})
+	root := newParentNodeInArena(arena, errorSymbol, true, []*Node{comment, useDecl}, nil, 0)
+	root.startByte = 0
+	root.endByte = uint32(len(source))
+
+	normalizeRustRecoveredPatternStatementsRoot(root, source, parser)
+
+	if got, want := root.Type(lang), "source_file"; got != want {
+		t.Fatalf("root type = %q, want %q", got, want)
+	}
+	if root.HasError() {
+		t.Fatalf("root has error after top-level retag: %s", root.SExpr(lang))
+	}
+	if got, want := root.ChildCount(), 2; got != want {
+		t.Fatalf("root child count = %d, want %d", got, want)
+	}
+	if root.Child(0) != comment || root.Child(1) != useDecl {
+		t.Fatalf("retag should preserve existing top-level children: %s", root.SExpr(lang))
+	}
+}
+
 func TestRustCompatibilitySourceFlags(t *testing.T) {
 	if flags := rustCompatibilitySourceFlagsFor([]byte("let x = 1\n")); flags.collapsedNamedLeafChildren || flags.dotRangeExpressions || flags.docCommentRanges || flags.tokenBindingPatterns || flags.recoveredFunctionItems {
 		t.Fatalf("unexpected Rust compatibility flags for plain binding: %+v", flags)

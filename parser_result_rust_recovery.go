@@ -356,6 +356,9 @@ func normalizeRustRecoveredPatternStatementsRoot(root *Node, source []byte, p *P
 	if root == nil || p == nil || p.language == nil || p.language.Name != "rust" || p.skipRecoveryReparse || root.Type(p.language) != "ERROR" || len(source) == 0 {
 		return
 	}
+	if rustRetagCleanTopLevelErrorRoot(root, source, p.language) {
+		return
+	}
 	if rustRecoverSplitTopLevelImplItems(root, source, p) && rustRootLooksLikeTopLevel(root, p.language) {
 		sourceFileSym, ok := symbolByName(p.language, "source_file")
 		if !ok {
@@ -381,6 +384,29 @@ func normalizeRustRecoveredPatternStatementsRoot(root *Node, source []byte, p *P
 	if root.endByte < uint32(len(source)) && bytesAreTrivia(source[root.endByte:]) {
 		extendNodeEndTo(root, uint32(len(source)), source)
 	}
+}
+
+func rustRetagCleanTopLevelErrorRoot(root *Node, source []byte, lang *Language) bool {
+	if root == nil || lang == nil || len(source) == 0 || !rustRootLooksLikeTopLevel(root, lang) {
+		return false
+	}
+	for _, child := range root.children {
+		if child != nil && child.hasError() {
+			return false
+		}
+	}
+	sourceFileSym, ok := symbolByName(lang, "source_file")
+	if !ok {
+		return false
+	}
+	retagResultRootAndRefreshError(root, sourceFileSym, rustNamedForSymbol(lang, sourceFileSym))
+	if root.hasError() {
+		return false
+	}
+	if root.endByte < uint32(len(source)) && bytesAreTrivia(source[root.endByte:]) {
+		extendNodeEndTo(root, uint32(len(source)), source)
+	}
+	return true
 }
 
 func rustRecoverSplitTopLevelImplItems(root *Node, source []byte, p *Parser) bool {
