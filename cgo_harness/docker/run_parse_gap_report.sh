@@ -24,6 +24,7 @@ ALLOW_PARITY_FAIL=0
 TIME_PARITY_FAILURES=0
 REQUIRE_PARITY_LANGS=""
 GATE_ONLY=0
+PARSE_ONLY_GATE=0
 BUILD_IMAGE=1
 ARENA_BREAKDOWN=0
 PHASE_TIMING=0
@@ -59,9 +60,10 @@ Options:
   --timeout <dur>           Alias for --report-timeout
   --allow-parity-fail       Write rows for parity-blocked samples and exit zero unless modes fail
   --require-parity-langs <list>
-                            Comma-separated languages that must pass parity even with --allow-parity-fail
+                            Comma-separated languages that must pass the selected parity gate even with --allow-parity-fail
   --time-parity-failures    Also run timing modes for parity-blocked samples
   --gate-only               Run parse/highlight/query correctness gates only
+  --parse-only-gate         Run only parse tree parity in correctness gates; skip highlight/query parity
   --arena-breakdown         Enable detailed gotreesitter arena breakdown in report rows
   --phase-timing            Enable parser phase/subphase timing in report rows
   --hot-shapes <n>          Include top-N GLR fork/reduce/merge hot-shape rows in runtime JSON
@@ -101,6 +103,7 @@ while [[ $# -gt 0 ]]; do
     --require-parity-langs) REQUIRE_PARITY_LANGS="$2"; shift 2 ;;
     --time-parity-failures) TIME_PARITY_FAILURES=1; shift ;;
     --gate-only) GATE_ONLY=1; shift ;;
+    --parse-only-gate) PARSE_ONLY_GATE=1; shift ;;
     --arena-breakdown) ARENA_BREAKDOWN=1; shift ;;
     --phase-timing) PHASE_TIMING=1; shift ;;
     --hot-shapes) HOT_SHAPES="$2"; shift 2 ;;
@@ -197,6 +200,7 @@ PARSE_NODE_LIMIT_SCALE="${GOT_PARSE_NODE_LIMIT_SCALE-}"
   echo "require_parity_langs=$REQUIRE_PARITY_LANGS"
   echo "time_parity_failures=$TIME_PARITY_FAILURES"
   echo "gate_only=$GATE_ONLY"
+  echo "parse_only_gate=$PARSE_ONLY_GATE"
   echo "arena_breakdown=$ARENA_BREAKDOWN"
   echo "phase_timing=$PHASE_TIMING"
   echo "hot_shapes=$HOT_SHAPES"
@@ -225,6 +229,10 @@ fi
 gate_only_arg_text=""
 if [[ "$GATE_ONLY" == "1" ]]; then
   gate_only_arg_text="--gate-only"
+fi
+parse_only_gate_arg_text=""
+if [[ "$PARSE_ONLY_GATE" == "1" ]]; then
+  parse_only_gate_arg_text="--parse-only-gate"
 fi
 arena_breakdown_arg_text=""
 if [[ "$ARENA_BREAKDOWN" == "1" ]]; then
@@ -314,6 +322,7 @@ env \
     $require_parity_arg_text \
     $time_parity_arg_text \
     $gate_only_arg_text \
+    $parse_only_gate_arg_text \
     $arena_breakdown_arg_text \
     $phase_timing_arg_text \
     $hot_shapes_arg_text \

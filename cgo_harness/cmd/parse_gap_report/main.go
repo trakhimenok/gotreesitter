@@ -536,6 +536,7 @@ type metadata struct {
 	RequiredParityFails int               `json:"required_parity_failures,omitempty"`
 	ModeFailures        int               `json:"mode_failures"`
 	UnsupportedSamples  int               `json:"unsupported_samples"`
+	ParseOnlyGate       bool              `json:"parse_only_gate,omitempty"`
 }
 
 func main() {
@@ -552,6 +553,7 @@ func main() {
 		allowParityFail   bool
 		timeParityFails   bool
 		gateOnly          bool
+		parseOnlyGate     bool
 		arenaBreakdown    bool
 		phaseTiming       bool
 		hotShapeLimit     int
@@ -567,11 +569,12 @@ func main() {
 	flag.StringVar(&editFlag, "edits", "cgo_harness/edit_fixtures.json", "edit fixture manifest path")
 	flag.StringVar(&outFlag, "out", "harness_out/parse_gap/latest", "output directory")
 	flag.StringVar(&repoRootFlag, "repo-root", "", "repository root; autodetected when empty")
-	flag.StringVar(&requireParityFlag, "require-parity-langs", "", "comma-separated languages that must pass parse/highlight/query parity even when --allow-parity-fail is set")
+	flag.StringVar(&requireParityFlag, "require-parity-langs", "", "comma-separated languages that must pass the selected parity gate even when --allow-parity-fail is set")
 	flag.IntVar(&countFlag, "count", 10, "iterations per sample/mode")
 	flag.BoolVar(&allowParityFail, "allow-parity-fail", false, "write parity failures but exit zero")
 	flag.BoolVar(&timeParityFails, "time-parity-failures", false, "run timing modes even when correctness gates fail")
 	flag.BoolVar(&gateOnly, "gate-only", false, "run only parse/highlight/query correctness gates and skip timing modes")
+	flag.BoolVar(&parseOnlyGate, "parse-only-gate", false, "run only parse tree parity in correctness gates; skip highlight/query parity")
 	flag.BoolVar(&arenaBreakdown, "arena-breakdown", false, "enable detailed gotreesitter arena breakdown while measuring")
 	flag.BoolVar(&phaseTiming, "phase-timing", false, "enable gotreesitter parser phase timing while measuring")
 	flag.IntVar(&hotShapeLimit, "hot-shapes", 0, "include top-N GLR fork/reduce/merge hot-shape rows in runtime JSON")
@@ -696,7 +699,7 @@ func main() {
 			_ = enc.Encode(row)
 			continue
 		}
-		parity := computeParity(r, s.Source, queryByLang[s.Language])
+		parity := computeParity(r, s.Source, queryByLang[s.Language], parseOnlyGate)
 		if gateOnly {
 			if parity.Error != "" {
 				parityFailures++
@@ -780,6 +783,7 @@ func main() {
 		RequiredParityFails: requiredParityFailures,
 		ModeFailures:        modeFailures,
 		UnsupportedSamples:  unsupportedSamples,
+		ParseOnlyGate:       parseOnlyGate,
 	}
 	if err := writeJSON(filepath.Join(outDir, "metadata.json"), meta); err != nil {
 		fatalf("write metadata: %v", err)
@@ -902,7 +906,7 @@ func (r *runner) close() {
 	}
 }
 
-func computeParity(r *runner, source []byte, queries []querySpec) paritySummary {
+func computeParity(r *runner, source []byte, queries []querySpec, parseOnlyGate bool) paritySummary {
 	cTree := r.c.Parse(source, nil)
 	if cTree == nil || cTree.RootNode() == nil {
 		return paritySummary{Error: "c_parse: C parser returned nil tree"}
@@ -937,6 +941,9 @@ func computeParity(r *runner, source []byte, queries []querySpec) paritySummary 
 		summary.Error = fmt.Sprintf("deep_%s at %s: go=%s c=%s", diff.Category, diff.Path, diff.GoValue, diff.CValue)
 	}
 	if summary.Error != "" {
+		return summary
+	}
+	if parseOnlyGate {
 		return summary
 	}
 	if strings.TrimSpace(r.entry.HighlightQuery) != "" {
