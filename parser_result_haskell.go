@@ -1,6 +1,7 @@
 package gotreesitter
 
 func normalizeHaskellCompatibility(root *Node, source []byte, lang *Language) {
+	normalizeHaskellCollapsedNamedLeafChildren(root, source, lang)
 	normalizeHaskellImportsSpan(root, source, lang)
 	normalizeHaskellZeroWidthTokens(root, lang)
 	normalizeHaskellRootImportField(root, lang)
@@ -8,6 +9,70 @@ func normalizeHaskellCompatibility(root *Node, source []byte, lang *Language) {
 	normalizeHaskellLocalBindsStarts(root, source, lang)
 	normalizeHaskellQuasiquoteStarts(root, source, lang)
 }
+
+func normalizeHaskellCollapsedNamedLeafChildren(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "haskell" || len(source) == 0 {
+		return
+	}
+	parentRules, childNamed := haskellCollapsedNamedLeafSymbols(lang)
+	if len(parentRules) == 0 {
+		return
+	}
+	walkResultTree(root, func(n *Node) {
+		childSyms := parentRules[n.symbol]
+		if len(childSyms) == 0 || resultChildCount(n) != 0 || int(n.startByte) > len(source) || int(n.endByte) > len(source) || n.startByte > n.endByte {
+			return
+		}
+		childSym, ok := childSyms[string(source[n.startByte:n.endByte])]
+		if !ok {
+			return
+		}
+		child := newLeafNodeInArena(n.ownerArena, childSym, childNamed[childSym], n.startByte, n.endByte, n.startPoint, n.endPoint)
+		child.parent = n
+		child.childIndex = 0
+		n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
+	})
+}
+
+var haskellCollapsedNamedLeafChildren = map[string][]string{
+	"deriving_strategy": {"stock", "anyclass", "via"},
+	"wildcard":          {"_"},
+}
+
+func haskellCollapsedNamedLeafSymbols(lang *Language) (map[Symbol]map[string]Symbol, map[Symbol]bool) {
+	if lang == nil {
+		return nil, nil
+	}
+	anonymousSymbols := make(map[string]Symbol)
+	childNamed := make(map[Symbol]bool)
+	for i, meta := range lang.SymbolMetadata {
+		if !meta.Named {
+			sym := Symbol(i)
+			anonymousSymbols[meta.Name] = sym
+			childNamed[sym] = meta.Named
+		}
+	}
+	parentRules := make(map[Symbol]map[string]Symbol)
+	for parentName, childNames := range haskellCollapsedNamedLeafChildren {
+		childSyms := make(map[string]Symbol, len(childNames))
+		for _, childName := range childNames {
+			childSym, ok := anonymousSymbols[childName]
+			if ok {
+				childSyms[childName] = childSym
+			}
+		}
+		if len(childSyms) == 0 {
+			continue
+		}
+		for i, meta := range lang.SymbolMetadata {
+			if meta.Name == parentName && meta.Named {
+				parentRules[Symbol(i)] = childSyms
+			}
+		}
+	}
+	return parentRules, childNamed
+}
+
 func normalizeHaskellImportsSpan(root *Node, source []byte, lang *Language) {
 	childCount := resultChildCount(root)
 	if root == nil || childCount < 2 || len(source) == 0 || lang == nil || lang.Name != "haskell" {

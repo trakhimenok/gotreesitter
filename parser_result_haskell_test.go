@@ -2,6 +2,54 @@ package gotreesitter
 
 import "testing"
 
+func TestNormalizeHaskellCollapsedNamedLeafChildren(t *testing.T) {
+	lang := &Language{
+		Name: "haskell",
+		SymbolNames: []string{
+			"EOF",
+			"haskell",
+			"deriving_strategy",
+			"stock",
+			"anyclass",
+			"via",
+			"wildcard",
+			"_",
+			"wildcard",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF", Visible: false, Named: false},
+			{Name: "haskell", Visible: true, Named: true},
+			{Name: "deriving_strategy", Visible: true, Named: true},
+			{Name: "stock", Visible: true, Named: false},
+			{Name: "anyclass", Visible: true, Named: false},
+			{Name: "via", Visible: true, Named: false},
+			{Name: "wildcard", Visible: true, Named: true},
+			{Name: "_", Visible: true, Named: false},
+			{Name: "wildcard", Visible: true, Named: true},
+		},
+	}
+	source := []byte("stock anyclass via _ _ late")
+	arena := newNodeArena(arenaClassFull)
+	stockNode := newLeafNodeInArena(arena, 2, true, 0, 5, Point{}, Point{Column: 5})
+	anyclassNode := newLeafNodeInArena(arena, 2, true, 6, 14, Point{Column: 6}, Point{Column: 14})
+	viaNode := newLeafNodeInArena(arena, 2, true, 15, 18, Point{Column: 15}, Point{Column: 18})
+	wildcardA := newLeafNodeInArena(arena, 6, true, 19, 20, Point{Column: 19}, Point{Column: 20})
+	wildcardB := newLeafNodeInArena(arena, 8, true, 21, 22, Point{Column: 21}, Point{Column: 22})
+	lateNode := newLeafNodeInArena(arena, 2, true, 23, 27, Point{Column: 23}, Point{Column: 27})
+	root := newParentNodeInArena(arena, 1, true, []*Node{stockNode, anyclassNode, viaNode, wildcardA, wildcardB, lateNode}, nil, 0)
+
+	normalizeHaskellCollapsedNamedLeafChildren(root, source, lang)
+
+	assertCollapsedKeywordChild(t, stockNode, lang, "stock")
+	assertCollapsedKeywordChild(t, anyclassNode, lang, "anyclass")
+	assertCollapsedKeywordChild(t, viaNode, lang, "via")
+	assertCollapsedKeywordChild(t, wildcardA, lang, "_")
+	assertCollapsedKeywordChild(t, wildcardB, lang, "_")
+	if got := lateNode.ChildCount(); got != 0 {
+		t.Fatalf("non-matching deriving_strategy child count = %d, want 0", got)
+	}
+}
+
 func TestNormalizeHaskellZeroWidthTokensDropsEmptySeparators(t *testing.T) {
 	lang := &Language{
 		Name:        "haskell",
