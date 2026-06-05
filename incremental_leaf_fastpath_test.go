@@ -14,6 +14,64 @@ func TestSnapshotTokenSourceStateUnsupportedType(t *testing.T) {
 	}
 }
 
+func TestYAMLPlainScalarKind(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want yamlScalarKind
+	}{
+		{text: "actions/checkout@v4", want: yamlScalarString},
+		{text: "2001-11-23 15:01:42 -5", want: yamlScalarString},
+		{text: "0", want: yamlScalarInteger},
+		{text: "-19", want: yamlScalarInteger},
+		{text: "0o7", want: yamlScalarInteger},
+		{text: "0x3A", want: yamlScalarInteger},
+		{text: "0.", want: yamlScalarFloat},
+		{text: "+12e03", want: yamlScalarFloat},
+		{text: "-2E+05", want: yamlScalarFloat},
+		{text: ".inf", want: yamlScalarFloat},
+		{text: "-.Inf", want: yamlScalarFloat},
+		{text: "true", want: yamlScalarBoolean},
+		{text: "FALSE", want: yamlScalarBoolean},
+		{text: "null", want: yamlScalarNull},
+		{text: "~", want: yamlScalarNull},
+	} {
+		if got := yamlPlainScalarKind([]byte(tc.text)); got != tc.want {
+			t.Fatalf("yamlPlainScalarKind(%q) = %d, want %d", tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestYAMLPlainScalarStableEditRejectsKindChange(t *testing.T) {
+	oldSource := []byte("flag: truf\n")
+	source := []byte("flag: true\n")
+	node := &Node{startByte: 6, endByte: 10}
+	edit := InputEdit{StartByte: 9, OldEndByte: 10, NewEndByte: 10}
+	if yamlTextInvariantScalarEdit(source, oldSource, node, edit, "string_scalar") {
+		t.Fatal("yamlTextInvariantScalarEdit allowed string_scalar -> boolean_scalar")
+	}
+}
+
+func TestYAMLPlainScalarStableEditAllowsStringAndNumberScalars(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		oldText  string
+		newText  string
+		nodeType string
+		offset   uint32
+	}{
+		{name: "version string", oldText: "actions/checkout@v4", newText: "actions/checkout@v5", nodeType: "string_scalar", offset: 18},
+		{name: "timestamp string", oldText: "2001-11-23 15:01:42 -5", newText: "3001-11-23 15:01:42 -5", nodeType: "string_scalar", offset: 0},
+		{name: "integer", oldText: "0", newText: "1", nodeType: "integer_scalar", offset: 0},
+		{name: "float", oldText: "+12e03", newText: "+13e03", nodeType: "float_scalar", offset: 2},
+	} {
+		node := &Node{startByte: 0, endByte: uint32(len(tc.oldText))}
+		edit := InputEdit{StartByte: tc.offset, OldEndByte: tc.offset + 1, NewEndByte: tc.offset + 1}
+		if !yamlTextInvariantScalarEdit([]byte(tc.newText), []byte(tc.oldText), node, edit, tc.nodeType) {
+			t.Fatalf("%s: yamlTextInvariantScalarEdit rejected safe scalar edit", tc.name)
+		}
+	}
+}
+
 func TestSnapshotTokenSourceStateRestoresDFATokenSource(t *testing.T) {
 	original := &dfaTokenSource{
 		state:                      42,

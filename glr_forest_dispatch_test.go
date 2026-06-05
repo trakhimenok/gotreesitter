@@ -565,6 +565,82 @@ func TestForestTreeIncrementalEditSCSSTokenInvariantLeafReuseIsCorrect(t *testin
 	}
 }
 
+func TestYAMLIncrementalEditScalarTokenInvariantLeafReuseIsCorrect(t *testing.T) {
+	lang := grm.YamlLanguage()
+	src := []byte("uses: actions/checkout@v4\ncount: [0]\ntime: 2001-11-23 15:01:42 -5\n")
+	for _, tc := range []struct {
+		name        string
+		needle      string
+		oldByte     byte
+		replacement byte
+	}{
+		{name: "string version", needle: "v4", oldByte: '4', replacement: '5'},
+		{name: "integer scalar", needle: "[0]", oldByte: '0', replacement: '1'},
+		{name: "timestamp string", needle: "2001", oldByte: '2', replacement: '3'},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			offset := strings.Index(string(src), tc.needle)
+			if offset < 0 {
+				t.Fatalf("fixture missing %q", tc.needle)
+			}
+			for offset < len(src) && src[offset] != tc.oldByte {
+				offset++
+			}
+			if offset >= len(src) {
+				t.Fatalf("fixture missing byte %q in %q", tc.oldByte, tc.needle)
+			}
+			edited := append([]byte(nil), src...)
+			edited[offset] = tc.replacement
+			edit := gts.InputEdit{
+				StartByte:   uint32(offset),
+				OldEndByte:  uint32(offset + 1),
+				NewEndByte:  uint32(offset + 1),
+				StartPoint:  pointForOffset(src, offset),
+				OldEndPoint: pointForOffset(src, offset+1),
+				NewEndPoint: pointForOffset(edited, offset+1),
+			}
+
+			parser := gts.NewParser(lang)
+			oldTree, err := parser.Parse(src)
+			if err != nil {
+				t.Fatalf("initial parse: %v", err)
+			}
+			defer oldTree.Release()
+			oldTree.Edit(edit)
+
+			newTree, profile, err := parser.ParseIncrementalProfiled(edited, oldTree)
+			if err != nil {
+				t.Fatalf("incremental parse: %v", err)
+			}
+			defer newTree.Release()
+			if profile.ReuseUnsupported {
+				leaf := oldTree.RootNode().DescendantForByteRange(uint32(offset), uint32(offset+1))
+				leafType := "<nil>"
+				leafText := ""
+				if leaf != nil {
+					leafType = leaf.Type(lang)
+					leafText = leaf.Text(src)
+				}
+				t.Fatalf("yaml token-invariant leaf edit fell back to fresh parse: %s leaf=%s text=%q", profile.ReuseUnsupportedReason, leafType, leafText)
+			}
+			if profile.ReusedSubtrees == 0 {
+				t.Fatalf("yaml token-invariant leaf edit reused no subtrees: %+v", profile)
+			}
+			if got, want := newTree.RootNode().EndByte(), uint32(len(edited)); got != want {
+				t.Fatalf("incremental root end = %d, want %d", got, want)
+			}
+			freshTree, err := parser.Parse(edited)
+			if err != nil {
+				t.Fatalf("fresh parse: %v", err)
+			}
+			defer freshTree.Release()
+			if got, want := newTree.RootNode().SExpr(lang), freshTree.RootNode().SExpr(lang); got != want {
+				t.Fatalf("incremental YAML tree diverged from fresh parse\n got: %s\nwant: %s", got, want)
+			}
+		})
+	}
+}
+
 // TestForestTreeIncrementalEditCMakeFreshFallbackIsCorrect: cmake was demoted
 // from languageAllowsForestIncrementalPath (TestForestIncrementalCorrectness
 // found its forest-incremental reuse produces wrong trees on some valid edits).

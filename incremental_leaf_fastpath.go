@@ -114,6 +114,8 @@ func (p *Parser) canReuseLanguageTextInvariantNode(source []byte, oldTree *Tree,
 			csharpTokenInvariantIdentifierText(source, node)
 	case "rust":
 		return node.Type(p.language) == "line_comment" && rustLineCommentTextInvariantEdit(source, oldTree.source, node, edit)
+	case "yaml":
+		return yamlTextInvariantScalarEdit(source, oldTree.source, node, edit, node.Type(p.language))
 	default:
 		return false
 	}
@@ -180,6 +182,211 @@ func cssTextInvariantIntegerValueEdit(source, oldSource []byte, edit InputEdit) 
 
 func asciiDigit(b byte) bool {
 	return b >= '0' && b <= '9'
+}
+
+type yamlScalarKind uint8
+
+const (
+	yamlScalarString yamlScalarKind = iota
+	yamlScalarInteger
+	yamlScalarFloat
+	yamlScalarBoolean
+	yamlScalarNull
+)
+
+func yamlTextInvariantScalarEdit(source, oldSource []byte, node *Node, edit InputEdit, nodeType string) bool {
+	if !sameLengthEditWithinNode(source, oldSource, node, edit) {
+		return false
+	}
+	if !yamlSameLengthEditBytesStayInPlainScalar(source, oldSource, edit) {
+		return false
+	}
+	oldText := oldSource[node.startByte:node.endByte]
+	newText := source[node.startByte:node.endByte]
+	oldKind := yamlPlainScalarKind(oldText)
+	newKind := yamlPlainScalarKind(newText)
+	switch nodeType {
+	case "string_scalar":
+		return oldKind == yamlScalarString && newKind == yamlScalarString
+	case "integer_scalar":
+		return oldKind == yamlScalarInteger && newKind == yamlScalarInteger
+	case "float_scalar":
+		return oldKind == yamlScalarFloat && newKind == yamlScalarFloat
+	default:
+		return false
+	}
+}
+
+func yamlSameLengthEditBytesStayInPlainScalar(source, oldSource []byte, edit InputEdit) bool {
+	for i := edit.StartByte; i < edit.OldEndByte; i++ {
+		if int(i) >= len(oldSource) || int(i) >= len(source) {
+			return false
+		}
+		if !yamlPlainScalarStableEditByte(oldSource[i]) || !yamlPlainScalarStableEditByte(source[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func yamlPlainScalarStableEditByte(b byte) bool {
+	return (b >= '0' && b <= '9') ||
+		(b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		b == '_' ||
+		b == '-' ||
+		b == '.' ||
+		b == '/' ||
+		b == '@'
+}
+
+func yamlPlainScalarKind(text []byte) yamlScalarKind {
+	if len(text) == 0 {
+		return yamlScalarNull
+	}
+	if yamlPlainScalarIsNull(text) {
+		return yamlScalarNull
+	}
+	if yamlPlainScalarIsBoolean(text) {
+		return yamlScalarBoolean
+	}
+	if yamlPlainScalarIsInteger(text) {
+		return yamlScalarInteger
+	}
+	if yamlPlainScalarIsFloat(text) {
+		return yamlScalarFloat
+	}
+	return yamlScalarString
+}
+
+func yamlPlainScalarIsNull(text []byte) bool {
+	return bytesEqualFoldASCIIString(text, "null") || (len(text) == 1 && text[0] == '~')
+}
+
+func yamlPlainScalarIsBoolean(text []byte) bool {
+	return bytesEqualFoldASCIIString(text, "true") ||
+		bytesEqualFoldASCIIString(text, "false")
+}
+
+func yamlPlainScalarIsInteger(text []byte) bool {
+	if len(text) == 0 {
+		return false
+	}
+	i := 0
+	if text[i] == '+' || text[i] == '-' {
+		i++
+		if i == len(text) {
+			return false
+		}
+	}
+	if i+2 < len(text) && text[i] == '0' && (text[i+1] == 'x' || text[i+1] == 'X') {
+		return yamlAllBytes(text[i+2:], yamlHexDigitOrUnderscore)
+	}
+	if i+2 < len(text) && text[i] == '0' && (text[i+1] == 'o' || text[i+1] == 'O') {
+		return yamlAllBytes(text[i+2:], yamlOctalDigitOrUnderscore)
+	}
+	return yamlAllBytes(text[i:], yamlDecimalDigitOrUnderscore)
+}
+
+func yamlPlainScalarIsFloat(text []byte) bool {
+	if len(text) == 0 {
+		return false
+	}
+	i := 0
+	if text[i] == '+' || text[i] == '-' {
+		i++
+		if i == len(text) {
+			return false
+		}
+	}
+	if len(text)-i == 4 && text[i] == '.' && bytesEqualFoldASCIIString(text[i+1:], "inf") {
+		return true
+	}
+	if len(text)-i == 4 && text[i] == '.' && bytesEqualFoldASCIIString(text[i+1:], "nan") {
+		return true
+	}
+	hasDot := false
+	hasExp := false
+	digits := 0
+	expDigits := 0
+	inExp := false
+	for ; i < len(text); i++ {
+		b := text[i]
+		switch {
+		case b >= '0' && b <= '9':
+			if inExp {
+				expDigits++
+			} else {
+				digits++
+			}
+		case b == '_':
+			continue
+		case b == '.' && !hasDot && !inExp:
+			hasDot = true
+		case (b == 'e' || b == 'E') && !hasExp && digits > 0:
+			hasExp = true
+			inExp = true
+			if i+1 < len(text) && (text[i+1] == '+' || text[i+1] == '-') {
+				i++
+			}
+		default:
+			return false
+		}
+	}
+	if hasExp {
+		return expDigits > 0
+	}
+	return hasDot && digits > 0
+}
+
+func yamlAllBytes(text []byte, pred func(byte) bool) bool {
+	if len(text) == 0 {
+		return false
+	}
+	seenDigit := false
+	for _, b := range text {
+		if !pred(b) {
+			return false
+		}
+		if b != '_' {
+			seenDigit = true
+		}
+	}
+	return seenDigit
+}
+
+func yamlDecimalDigitOrUnderscore(b byte) bool {
+	return b == '_' || (b >= '0' && b <= '9')
+}
+
+func yamlOctalDigitOrUnderscore(b byte) bool {
+	return b == '_' || (b >= '0' && b <= '7')
+}
+
+func yamlHexDigitOrUnderscore(b byte) bool {
+	return b == '_' ||
+		(b >= '0' && b <= '9') ||
+		(b >= 'a' && b <= 'f') ||
+		(b >= 'A' && b <= 'F')
+}
+
+func bytesEqualFoldASCIIString(a []byte, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if asciiLower(a[i]) != asciiLower(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func asciiLower(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
 }
 
 func (p *Parser) tokenInvariantLeafEditCandidate(source []byte, oldTree *Tree) (*Node, InputEdit, bool) {
