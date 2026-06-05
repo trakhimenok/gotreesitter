@@ -380,12 +380,11 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 	switch lang.Name {
 	case "dart":
 		// Dart's generic/postfix ambiguity keeps redundant same-key survivors
-		// alive across full parses and large-source external-scanner fallback
-		// reparses. Four survivors preserve the current parse/highlight parity
-		// surface while reducing merge-equivalence churn; explicit env
-		// overrides stay available for grammar diagnosis.
-		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 4 {
-			return 4
+		// alive across full parses. Three survivors preserve the current
+		// parse/highlight parity surface while reducing merge-equivalence churn;
+		// explicit env overrides stay available for grammar diagnosis.
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 3 {
+			return 3
 		}
 	case "go":
 		// Go's full-tree path is false-equivalence heavy around expression/type

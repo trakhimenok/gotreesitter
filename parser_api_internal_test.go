@@ -1305,8 +1305,8 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "java"}, maxStacksPerMergeKey, false, javaTightMergeCapSourceLen); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(java, large default, full) = %d, want 1", got)
 	}
-	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, maxStacksPerMergeKey, false); got != 4 {
-		t.Fatalf("effectiveParseMergePerKeyCap(dart, default, full) = %d, want 4", got)
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "dart"}, maxStacksPerMergeKey, false); got != 3 {
+		t.Fatalf("effectiveParseMergePerKeyCap(dart, default, full) = %d, want 3", got)
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "c"}, maxStacksPerMergeKey, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(c, default, full) = %d, want 1", got)
