@@ -40,6 +40,8 @@ ORDER="path"
 BUILD_IMAGE=1
 EXTRA_ENV=()
 KEEP_GOING=1
+JOBS="1"
+ALLOW_HOST_OVERSUBSCRIBE=0
 
 usage() {
   cat <<'EOF'
@@ -74,6 +76,13 @@ Options:
   --min-bytes <n>         Export GTS_REAL_CORPUS_BENCH_MIN_BYTES
   --order <mode>          path|largest|smallest (default: path)
   --stop-on-failure       Stop after the first language failure
+  --jobs <n>              Concurrent per-language containers (default: 1).
+                          Keep at 1 for stable perf attribution; use >1 for
+                          coarse screening. Aggregate container memory is
+                          guarded against host MemAvailable by default.
+  --allow-host-oversubscribe
+                          Allow --jobs * --memory to exceed the host memory
+                          guard. Intended only for dedicated CI hosts.
   --no-build              Skip Docker image build in underlying runner
   --extra-env <K=V>       Append KEY=VALUE to the env prefix passed to go test
                           inside the container. May be supplied multiple times.
@@ -126,6 +135,8 @@ while [[ $# -gt 0 ]]; do
     --min-bytes) MIN_BYTES="$2"; shift 2 ;;
     --order) ORDER="$2"; shift 2 ;;
     --stop-on-failure) KEEP_GOING=0; shift ;;
+    --jobs) JOBS="$2"; shift 2 ;;
+    --allow-host-oversubscribe) ALLOW_HOST_OVERSUBSCRIBE=1; shift ;;
     --no-build) BUILD_IMAGE=0; shift ;;
     --extra-env) EXTRA_ENV+=("$2"); shift 2 ;;
     -h|--help)
@@ -155,6 +166,63 @@ case "$ORDER" in
     exit 2
     ;;
 esac
+
+require_positive_int() {
+  local name="$1"
+  local value="$2"
+  if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "$name must be a positive integer, got: $value" >&2
+    exit 2
+  fi
+}
+
+docker_memory_limit_to_bytes() {
+  local value="$1"
+  local number unit
+  if [[ "$value" =~ ^([0-9]+)([bBkKmMgG]?)$ ]]; then
+    number="${BASH_REMATCH[1]}"
+    unit="${BASH_REMATCH[2],,}"
+  else
+    return 1
+  fi
+  case "$unit" in
+    ""|b) printf '%s\n' "$number" ;;
+    k) printf '%s\n' "$((number * 1024))" ;;
+    m) printf '%s\n' "$((number * 1024 * 1024))" ;;
+    g) printf '%s\n' "$((number * 1024 * 1024 * 1024))" ;;
+    *) return 1 ;;
+  esac
+}
+
+host_mem_available_bytes() {
+  awk '/^MemAvailable:/ { printf "%.0f\n", $2 * 1024 }' /proc/meminfo 2>/dev/null
+}
+
+guard_parallel_memory_budget() {
+  if [[ "$JOBS" -le 1 || "$ALLOW_HOST_OVERSUBSCRIBE" == "1" ]]; then
+    return 0
+  fi
+  local limit_bytes available_bytes aggregate_bytes guard_bytes
+  limit_bytes="$(docker_memory_limit_to_bytes "$MEMORY_LIMIT" || true)"
+  available_bytes="$(host_mem_available_bytes || true)"
+  if [[ -z "$limit_bytes" || -z "$available_bytes" ]]; then
+    echo "warning: could not parse memory guard inputs; proceeding with --jobs=$JOBS memory=$MEMORY_LIMIT" >&2
+    return 0
+  fi
+  aggregate_bytes="$((limit_bytes * JOBS))"
+  guard_bytes="$((available_bytes * 80 / 100))"
+  if [[ "$aggregate_bytes" -gt "$guard_bytes" ]]; then
+    {
+      echo "refusing --jobs=$JOBS with --memory=$MEMORY_LIMIT: aggregate container memory exceeds 80% of host MemAvailable"
+      echo "aggregate_bytes=$aggregate_bytes memavailable_bytes=$available_bytes guard_bytes=$guard_bytes"
+      echo "lower --jobs/--memory or pass --allow-host-oversubscribe on a dedicated host"
+    } >&2
+    exit 2
+  fi
+}
+
+require_positive_int "--jobs" "$JOBS"
+guard_parallel_memory_budget
 
 OUT_ROOT="${OUT_ROOT/#\~/$HOME}"
 mkdir -p "$OUT_ROOT"
@@ -239,10 +307,14 @@ fi
   echo "min_bytes=$MIN_BYTES"
   echo "order=$ORDER"
   echo "keep_going=$KEEP_GOING"
+  echo "jobs=$JOBS"
+  echo "allow_host_oversubscribe=$ALLOW_HOST_OVERSUBSCRIBE"
   echo "extra_env=${EXTRA_ENV[*]:-}"
 } >"$RUN_DIR/matrix_metadata.txt"
 
-for lang in "${LANGS[@]}"; do
+run_language() {
+  local lang="$1"
+  local build_mode="$2"
   echo "==> real-corpus bench: $lang"
   env_prefix="$(bench_env_prefix "$lang")"
   inner_cmd="cd /workspace/cgo_harness && /usr/bin/time -v $env_prefix go test . -tags treesitter_c_parity -run '^$' -bench 'BenchmarkParityRealCorpusParse(Full|IncrementalSingleByteEdit|IncrementalNoEdit)$' -benchmem -count=$COUNT -benchtime=$BENCHTIME -cpu=$GOMAXPROCS_VALUE -timeout=$TEST_TIMEOUT"
@@ -258,19 +330,92 @@ for lang in "${LANGS[@]}"; do
   if [[ -n "$CPUSET_CPUS" ]]; then
     runner_args+=(--cpuset-cpus "$CPUSET_CPUS")
   fi
-  if [[ ${#build_flag[@]} -gt 0 ]]; then
-    runner_args+=("${build_flag[@]}")
+  if [[ "$build_mode" == "no-build" ]]; then
+    runner_args+=(--no-build)
   fi
-  if "$RUNNER" "${runner_args[@]}" -- "$inner_cmd" 2>&1 | tee "$RUN_DIR/$lang.runner.log"; then
+  "$RUNNER" "${runner_args[@]}" -- "$inner_cmd" 2>&1 | tee "$RUN_DIR/$lang.runner.log"
+}
+
+run_language_serial() {
+  local lang="$1"
+  local build_mode="$2"
+  if run_language "$lang" "$build_mode"; then
     :
   else
     failures+=("$lang")
     if [[ "$KEEP_GOING" == "0" ]]; then
-      break
+      return 1
     fi
   fi
-  build_flag=(--no-build)
-done
+  return 0
+}
+
+if [[ "$JOBS" -eq 1 || ${#LANGS[@]} -eq 1 ]]; then
+  for lang in "${LANGS[@]}"; do
+    build_mode="build"
+    if [[ ${#build_flag[@]} -gt 0 ]]; then
+      build_mode="no-build"
+    fi
+    if ! run_language_serial "$lang" "$build_mode" && [[ "$KEEP_GOING" == "0" ]]; then
+      break
+    fi
+    build_flag=(--no-build)
+  done
+else
+  start_index=0
+  if [[ "$BUILD_IMAGE" == "1" ]]; then
+    if ! run_language_serial "${LANGS[0]}" "build" && [[ "$KEEP_GOING" == "0" ]]; then
+      start_index=${#LANGS[@]}
+    else
+      start_index=1
+    fi
+  fi
+
+  declare -a pids=()
+  declare -a pid_langs=()
+  stop_scheduling=0
+
+  wait_for_one() {
+    local pid lang rc
+    if [[ ${#pids[@]} -eq 0 ]]; then
+      return 0
+    fi
+    pid="${pids[0]}"
+    lang="${pid_langs[0]}"
+    if wait "$pid"; then
+      rc=0
+    else
+      rc=$?
+    fi
+    echo "[done] real-corpus bench: $lang exit=$rc"
+    if [[ "$rc" -ne 0 ]]; then
+      failures+=("$lang")
+      if [[ "$KEEP_GOING" == "0" ]]; then
+        stop_scheduling=1
+      fi
+    fi
+    pids=("${pids[@]:1}")
+    pid_langs=("${pid_langs[@]:1}")
+  }
+
+  for ((i = start_index; i < ${#LANGS[@]}; i++)); do
+    while [[ ${#pids[@]} -ge "$JOBS" ]]; do
+      wait_for_one
+      if [[ "$stop_scheduling" == "1" ]]; then
+        break 2
+      fi
+    done
+    lang="${LANGS[$i]}"
+    echo "[start] real-corpus bench: $lang"
+    run_language "$lang" "no-build" &
+    pids+=("$!")
+    pid_langs+=("$lang")
+  done
+
+  while [[ ${#pids[@]} -gt 0 ]]; do
+    wait_for_one
+  done
+fi
 
 REPORT_FAILED=0
 if [[ -n "$(find "$DOCKER_OUT" -name container.log -type f -print -quit)" ]]; then
