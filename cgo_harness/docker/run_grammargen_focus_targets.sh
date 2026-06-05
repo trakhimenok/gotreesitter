@@ -260,38 +260,6 @@ host_mem_available_bytes() {
   awk '/^MemAvailable:/ { printf "%.0f\n", $2 * 1024 }' /proc/meminfo 2>/dev/null
 }
 
-guard_parallel_memory_budget() {
-  local target_count="${1:-0}"
-  local effective_jobs="$JOBS"
-  if [[ "$target_count" =~ ^[1-9][0-9]*$ && "$effective_jobs" -gt "$target_count" ]]; then
-    effective_jobs="$target_count"
-  fi
-  if [[ "$effective_jobs" -le 1 || "$ALLOW_HOST_OVERSUBSCRIBE" == "1" ]]; then
-    return 0
-  fi
-  local limit_bytes available_bytes aggregate_bytes guard_bytes
-  limit_bytes="$(docker_memory_limit_to_bytes "$MEMORY_LIMIT" || true)"
-  available_bytes="$(host_mem_available_bytes || true)"
-  if [[ -z "$limit_bytes" || -z "$available_bytes" ]]; then
-    echo "warning: could not parse memory guard inputs; proceeding with --jobs=$JOBS memory=$MEMORY_LIMIT" >&2
-    return 0
-  fi
-  aggregate_bytes="$((limit_bytes * effective_jobs))"
-  guard_bytes="$((available_bytes * 80 / 100))"
-  if [[ "$aggregate_bytes" -gt "$guard_bytes" ]]; then
-    {
-      echo "refusing --jobs=$JOBS with --memory=$MEMORY_LIMIT: aggregate container memory exceeds 80% of host MemAvailable"
-      echo "effective_jobs=$effective_jobs"
-      echo "aggregate_bytes=$aggregate_bytes memavailable_bytes=$available_bytes guard_bytes=$guard_bytes"
-      echo "lower --jobs/--memory or pass --allow-host-oversubscribe on a dedicated host"
-    } >&2
-    exit 2
-  fi
-}
-
-require_positive_int "--jobs" "$JOBS"
-guard_parallel_memory_budget "${#TARGET_LANGS[@]}"
-
 resolve_fortran_real_corpus_setting() {
   local lang="$1"
   local current="$2"
@@ -305,6 +273,133 @@ resolve_fortran_real_corpus_setting() {
 
   echo "$current"
 }
+
+effective_real_corpus_memory_limit() {
+  local lang="$1"
+  resolve_fortran_real_corpus_setting "$lang" "$MEMORY_LIMIT" "$MEMORY_SET" "$FORTRAN_SAFE_MEMORY_LIMIT"
+}
+
+max_parallel_memory_budget_bytes() {
+  local effective_jobs="$1"
+  local phase="$2"
+  shift 2
+
+  local lang limit limit_bytes
+  local -a ranked_limits=()
+  for lang in "$@"; do
+    case "$phase" in
+      real-corpus)
+        limit="$(effective_real_corpus_memory_limit "$lang")"
+        ;;
+      cgo)
+        if ! supports_cgo_parity "$lang"; then
+          continue
+        fi
+        limit="$MEMORY_LIMIT"
+        ;;
+      *)
+        echo "internal error: unknown memory guard phase: $phase" >&2
+        exit 2
+        ;;
+    esac
+    limit_bytes="$(docker_memory_limit_to_bytes "$limit" || true)"
+    if [[ -z "$limit_bytes" ]]; then
+      echo "warning: could not parse $phase memory limit for $lang: $limit" >&2
+      return 1
+    fi
+    ranked_limits+=("$limit_bytes|$lang|$limit")
+  done
+
+  if [[ "${#ranked_limits[@]}" -eq 0 ]]; then
+    printf '0|\n'
+    return 0
+  fi
+
+  local aggregate_bytes=0
+  local count=0
+  local entry detail lang_name limit_text
+  local -a selected_limits=()
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    limit_bytes="${entry%%|*}"
+    detail="${entry#*|}"
+    lang_name="${detail%%|*}"
+    limit_text="${detail#*|}"
+    aggregate_bytes="$((aggregate_bytes + limit_bytes))"
+    selected_limits+=("$lang_name=$limit_text")
+    ((count+=1))
+    if [[ "$count" -ge "$effective_jobs" ]]; then
+      break
+    fi
+  done < <(printf '%s\n' "${ranked_limits[@]}" | sort -t '|' -k1,1nr)
+
+  printf '%s|%s\n' "$aggregate_bytes" "${selected_limits[*]}"
+}
+
+guard_parallel_memory_budget() {
+  local target_count="${1:-0}"
+  local effective_jobs="$JOBS"
+  if [[ "$target_count" =~ ^[1-9][0-9]*$ && "$effective_jobs" -gt "$target_count" ]]; then
+    effective_jobs="$target_count"
+  fi
+  if [[ "$effective_jobs" -le 1 || "$ALLOW_HOST_OVERSUBSCRIBE" == "1" ]]; then
+    return 0
+  fi
+  local available_bytes aggregate_bytes guard_bytes
+  available_bytes="$(host_mem_available_bytes || true)"
+  if [[ -z "$available_bytes" ]]; then
+    echo "warning: could not read host MemAvailable; proceeding with --jobs=$JOBS memory=$MEMORY_LIMIT" >&2
+    return 0
+  fi
+
+  local phase_result phase_bytes phase_details
+  local max_phase="selected"
+  local selected_limits=""
+  aggregate_bytes=0
+  if [[ "$MODE" == "all" || "$MODE" == "real-corpus" ]]; then
+    phase_result="$(max_parallel_memory_budget_bytes "$effective_jobs" real-corpus "${TARGET_LANGS[@]}" || true)"
+    if [[ -z "$phase_result" ]]; then
+      echo "warning: could not calculate real-corpus memory guard; proceeding with --jobs=$JOBS" >&2
+      return 0
+    fi
+    phase_bytes="${phase_result%%|*}"
+    phase_details="${phase_result#*|}"
+    if [[ "$phase_bytes" -gt "$aggregate_bytes" ]]; then
+      aggregate_bytes="$phase_bytes"
+      max_phase="real-corpus"
+      selected_limits="$phase_details"
+    fi
+  fi
+  if [[ "$MODE" == "all" || "$MODE" == "cgo" ]]; then
+    phase_result="$(max_parallel_memory_budget_bytes "$effective_jobs" cgo "${TARGET_LANGS[@]}" || true)"
+    if [[ -z "$phase_result" ]]; then
+      echo "warning: could not calculate cgo memory guard; proceeding with --jobs=$JOBS" >&2
+      return 0
+    fi
+    phase_bytes="${phase_result%%|*}"
+    phase_details="${phase_result#*|}"
+    if [[ "$phase_bytes" -gt "$aggregate_bytes" ]]; then
+      aggregate_bytes="$phase_bytes"
+      max_phase="cgo"
+      selected_limits="$phase_details"
+    fi
+  fi
+
+  guard_bytes="$((available_bytes * 80 / 100))"
+  if [[ "$aggregate_bytes" -gt "$guard_bytes" ]]; then
+    {
+      echo "refusing --jobs=$JOBS: aggregate effective container memory exceeds 80% of host MemAvailable"
+      echo "effective_jobs=$effective_jobs"
+      echo "phase=$max_phase aggregate_bytes=$aggregate_bytes memavailable_bytes=$available_bytes guard_bytes=$guard_bytes"
+      echo "selected_limits=$selected_limits"
+      echo "lower --jobs/--memory or pass --allow-host-oversubscribe on a dedicated host"
+    } >&2
+    exit 2
+  fi
+}
+
+require_positive_int "--jobs" "$JOBS"
+guard_parallel_memory_budget "${#TARGET_LANGS[@]}"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 REAL_REPORT_DIR="$REPORT_ROOT/$STAMP/real_corpus"

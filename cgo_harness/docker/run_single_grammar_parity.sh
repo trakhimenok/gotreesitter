@@ -376,8 +376,28 @@ host_mem_available_bytes() {
   awk '/^MemAvailable:/ { printf "%.0f\n", $2 * 1024 }' /proc/meminfo 2>/dev/null
 }
 
+resolve_fortran_setting() {
+  local grammar="$1"
+  local current="$2"
+  local was_set="$3"
+  local safe_default="$4"
+
+  if [[ "$grammar" == "fortran" && "$FORTRAN_SAFE_DEFAULTS" == "1" && "$was_set" == "0" ]]; then
+    echo "$safe_default"
+    return
+  fi
+
+  echo "$current"
+}
+
+effective_grammar_memory_limit() {
+  local grammar="$1"
+  resolve_fortran_setting "$grammar" "$MEMORY_LIMIT" "$MEMORY_SET" "$FORTRAN_SAFE_MEMORY_LIMIT"
+}
+
 guard_parallel_memory_budget() {
-  local target_count="${1:-0}"
+  local -a targets=("$@")
+  local target_count="${#targets[@]}"
   local effective_jobs="$JOBS"
   if [[ "$target_count" =~ ^[1-9][0-9]*$ && "$effective_jobs" -gt "$target_count" ]]; then
     effective_jobs="$target_count"
@@ -385,20 +405,49 @@ guard_parallel_memory_budget() {
   if [[ "$effective_jobs" -le 1 || "$ALLOW_HOST_OVERSUBSCRIBE" == "1" ]]; then
     return 0
   fi
-  local limit_bytes available_bytes aggregate_bytes guard_bytes
-  limit_bytes="$(docker_memory_limit_to_bytes "$MEMORY_LIMIT" || true)"
+  local available_bytes aggregate_bytes guard_bytes
   available_bytes="$(host_mem_available_bytes || true)"
-  if [[ -z "$limit_bytes" || -z "$available_bytes" ]]; then
-    echo "warning: could not parse memory guard inputs; proceeding with --jobs=$JOBS memory=$MEMORY_LIMIT" >&2
+  if [[ -z "$available_bytes" ]]; then
+    echo "warning: could not read host MemAvailable; proceeding with --jobs=$JOBS memory=$MEMORY_LIMIT" >&2
     return 0
   fi
-  aggregate_bytes="$((limit_bytes * effective_jobs))"
+
+  local grammar limit_bytes limit
+  local -a ranked_limits=()
+  for grammar in "${targets[@]}"; do
+    limit="$(effective_grammar_memory_limit "$grammar")"
+    limit_bytes="$(docker_memory_limit_to_bytes "$limit" || true)"
+    if [[ -z "$limit_bytes" ]]; then
+      echo "warning: could not parse memory limit for $grammar: $limit; proceeding with --jobs=$JOBS" >&2
+      return 0
+    fi
+    ranked_limits+=("$limit_bytes|$grammar|$limit")
+  done
+
+  local count=0 entry detail grammar_name limit_text
+  local -a selected_limits=()
+  aggregate_bytes=0
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    limit_bytes="${entry%%|*}"
+    detail="${entry#*|}"
+    grammar_name="${detail%%|*}"
+    limit_text="${detail#*|}"
+    aggregate_bytes="$((aggregate_bytes + limit_bytes))"
+    selected_limits+=("$grammar_name=$limit_text")
+    ((count+=1))
+    if [[ "$count" -ge "$effective_jobs" ]]; then
+      break
+    fi
+  done < <(printf '%s\n' "${ranked_limits[@]}" | sort -t '|' -k1,1nr)
+
   guard_bytes="$((available_bytes * 80 / 100))"
   if [[ "$aggregate_bytes" -gt "$guard_bytes" ]]; then
     {
-      echo "refusing --jobs=$JOBS with --memory=$MEMORY_LIMIT: aggregate container memory exceeds 80% of host MemAvailable"
+      echo "refusing --jobs=$JOBS: aggregate effective container memory exceeds 80% of host MemAvailable"
       echo "effective_jobs=$effective_jobs"
       echo "aggregate_bytes=$aggregate_bytes memavailable_bytes=$available_bytes guard_bytes=$guard_bytes"
+      echo "selected_limits=${selected_limits[*]}"
       echo "lower --jobs/--memory or pass --allow-host-oversubscribe on a dedicated host"
     } >&2
     exit 2
@@ -448,7 +497,7 @@ case "$MODE" in
     ;;
 esac
 
-guard_parallel_memory_budget "${#GRAMMARS[@]}"
+guard_parallel_memory_budget "${GRAMMARS[@]}"
 
 # Build image once.
 if [[ "$BUILD_IMAGE" == "1" ]]; then
@@ -573,20 +622,6 @@ elif [[ ! -d "/tmp/grammar_parity/$repo_name" ]]; then
   git clone --depth=1 "$url" "/tmp/grammar_parity/$repo_name" || echo "WARN: clone failed for $grammar"
 fi
 CLONE_EOF
-}
-
-resolve_fortran_setting() {
-  local grammar="$1"
-  local current="$2"
-  local was_set="$3"
-  local safe_default="$4"
-
-  if [[ "$grammar" == "fortran" && "$FORTRAN_SAFE_DEFAULTS" == "1" && "$was_set" == "0" ]]; then
-    echo "$safe_default"
-    return
-  fi
-
-  echo "$current"
 }
 
 docker_memory_limit_to_gomemlimit() {
