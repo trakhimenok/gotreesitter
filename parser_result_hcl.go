@@ -1,8 +1,12 @@
 package gotreesitter
 
-func normalizeHCLConfigFileRoot(root *Node, lang *Language) {
+func normalizeHCLConfigFileRoot(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "hcl" || root.Type(lang) != "config_file" {
+		return
+	}
+	normalizeHCLCollapsedNamedLeafChildren(root, source, lang)
 	childCount := resultChildCount(root)
-	if root == nil || lang == nil || lang.Name != "hcl" || root.Type(lang) != "config_file" || childCount == 0 {
+	if childCount == 0 {
 		return
 	}
 	whitespaceSym, hasWhitespaceSym := symbolByName(lang, "_whitespace")
@@ -48,6 +52,74 @@ func normalizeHCLConfigFileRoot(root *Node, lang *Language) {
 		}
 		snapHCLBodyBounds(child)
 	}
+}
+
+type hclCollapsedNamedLeafRule struct {
+	parentName string
+	childNames []string
+}
+
+var hclCollapsedNamedLeafRules = []hclCollapsedNamedLeafRule{
+	{parentName: "block_start", childNames: []string{"{"}},
+	{parentName: "block_end", childNames: []string{"}"}},
+	{parentName: "bool_lit", childNames: []string{"true", "false"}},
+	{parentName: "tuple_start", childNames: []string{"["}},
+	{parentName: "tuple_end", childNames: []string{"]"}},
+	{parentName: "object_start", childNames: []string{"{"}},
+	{parentName: "object_end", childNames: []string{"}"}},
+}
+
+type hclCollapsedNamedLeafChild struct {
+	sym   Symbol
+	named bool
+}
+
+func normalizeHCLCollapsedNamedLeafChildren(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || len(source) == 0 {
+		return
+	}
+	rules := make(map[Symbol]map[string]hclCollapsedNamedLeafChild, len(hclCollapsedNamedLeafRules))
+	for _, rule := range hclCollapsedNamedLeafRules {
+		parentSym, ok := lang.symbolByNameAndNamed(rule.parentName, true)
+		if !ok {
+			parentSym, ok = symbolByName(lang, rule.parentName)
+		}
+		if !ok {
+			continue
+		}
+		children := rules[parentSym]
+		if children == nil {
+			children = make(map[string]hclCollapsedNamedLeafChild, len(rule.childNames))
+			rules[parentSym] = children
+		}
+		for _, childName := range rule.childNames {
+			childSym, ok := lang.symbolByNameAndNamed(childName, false)
+			if !ok {
+				childSym, ok = symbolByName(lang, childName)
+			}
+			if !ok {
+				continue
+			}
+			children[childName] = hclCollapsedNamedLeafChild{sym: childSym, named: symbolIsNamed(lang, childSym)}
+		}
+	}
+	if len(rules) == 0 {
+		return
+	}
+	walkResultTree(root, func(n *Node) {
+		children, ok := rules[n.symbol]
+		if !ok || resultChildCount(n) != 0 || int(n.startByte) > len(source) || int(n.endByte) > len(source) || n.startByte > n.endByte {
+			return
+		}
+		childRule, ok := children[string(source[n.startByte:n.endByte])]
+		if !ok {
+			return
+		}
+		child := newLeafNodeInArena(n.ownerArena, childRule.sym, childRule.named, n.startByte, n.endByte, n.startPoint, n.endPoint)
+		child.parent = n
+		child.childIndex = 0
+		n.children = cloneNodeSliceInArena(n.ownerArena, []*Node{child})
+	})
 }
 
 func snapHCLBodyBounds(body *Node) {

@@ -64,7 +64,7 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 	case "haskell":
 		normalizeHaskellCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "hcl":
-		normalizeHCLConfigFileRoot(ctx.root, ctx.lang)
+		normalizeHCLConfigFileRoot(ctx.root, ctx.source, ctx.lang)
 	case "html":
 		normalizeHTMLCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "ini":

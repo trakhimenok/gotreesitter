@@ -95,7 +95,7 @@ func TestNormalizeHCLConfigFileRootDropsTopLevelWhitespace(t *testing.T) {
 	ws2 := newLeafNodeInArena(arena, 3, false, 9, 10, Point{Row: 1, Column: 4}, Point{Row: 2})
 	root := newParentNodeInArena(arena, 1, true, []*Node{comment, ws1, body, ws2}, nil, 0)
 
-	normalizeHCLConfigFileRoot(root, lang)
+	normalizeHCLConfigFileRoot(root, nil, lang)
 
 	if got, want := len(root.children), 2; got != want {
 		t.Fatalf("len(root.children) = %d, want %d", got, want)
@@ -138,7 +138,7 @@ func TestNormalizeHCLConfigFileRootFiltersFinalRefsWithoutDrain(t *testing.T) {
 	entry := newStackEntryPendingParent(parent.parseState, parent)
 	root := materializeStackEntryPendingParent(arena, &entry, pendingParentMaterializeForFinalTree)
 
-	normalizeHCLConfigFileRoot(root, lang)
+	normalizeHCLConfigFileRoot(root, nil, lang)
 
 	if got := arena.finalChildRefsMaterializedParents; got != 0 {
 		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
@@ -180,7 +180,7 @@ func TestNormalizeHCLConfigFileRootSnapsBodyToStructuralChildren(t *testing.T) {
 	body.endPoint = Point{Row: 4}
 	root := newParentNodeInArena(arena, 1, true, []*Node{body}, nil, 0)
 
-	normalizeHCLConfigFileRoot(root, lang)
+	normalizeHCLConfigFileRoot(root, nil, lang)
 
 	if got, want := body.startByte, uint32(10); got != want {
 		t.Fatalf("body.startByte = %d, want %d", got, want)
@@ -193,6 +193,89 @@ func TestNormalizeHCLConfigFileRootSnapsBodyToStructuralChildren(t *testing.T) {
 	}
 	if got, want := body.endPoint, (Point{Row: 2, Column: 8}); got != want {
 		t.Fatalf("body.endPoint = %#v, want %#v", got, want)
+	}
+}
+
+func TestNormalizeHCLConfigFileRootRestoresCollapsedNamedLeafChildren(t *testing.T) {
+	lang := &Language{
+		Name: "hcl",
+		SymbolNames: []string{
+			"EOF", "config_file", "body", "block_start", "block_end", "bool_lit",
+			"tuple_start", "tuple_end", "object_start", "object_end",
+			"{", "}", "true", "false", "[", "]",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{Name: "EOF", Visible: false, Named: false},
+			{Name: "config_file", Visible: true, Named: true},
+			{Name: "body", Visible: true, Named: true},
+			{Name: "block_start", Visible: true, Named: true},
+			{Name: "block_end", Visible: true, Named: true},
+			{Name: "bool_lit", Visible: true, Named: true},
+			{Name: "tuple_start", Visible: true, Named: true},
+			{Name: "tuple_end", Visible: true, Named: true},
+			{Name: "object_start", Visible: true, Named: true},
+			{Name: "object_end", Visible: true, Named: true},
+			{Name: "{", Visible: true, Named: false},
+			{Name: "}", Visible: true, Named: false},
+			{Name: "true", Visible: true, Named: false},
+			{Name: "false", Visible: true, Named: false},
+			{Name: "[", Visible: true, Named: false},
+			{Name: "]", Visible: true, Named: false},
+		},
+	}
+
+	source := []byte("{}truefalse[]{}")
+	arena := newNodeArena(arenaClassFull)
+	cases := []struct {
+		name       string
+		sym        Symbol
+		start, end uint32
+		want       string
+	}{
+		{name: "block_start", sym: 3, start: 0, end: 1, want: "{"},
+		{name: "block_end", sym: 4, start: 1, end: 2, want: "}"},
+		{name: "bool_lit_true", sym: 5, start: 2, end: 6, want: "true"},
+		{name: "bool_lit_false", sym: 5, start: 6, end: 11, want: "false"},
+		{name: "tuple_start", sym: 6, start: 11, end: 12, want: "["},
+		{name: "tuple_end", sym: 7, start: 12, end: 13, want: "]"},
+		{name: "object_start", sym: 8, start: 13, end: 14, want: "{"},
+		{name: "object_end", sym: 9, start: 14, end: 15, want: "}"},
+	}
+	nodes := make([]*Node, 0, len(cases))
+	for _, tt := range cases {
+		nodes = append(nodes, newLeafNodeInArena(arena, tt.sym, true, tt.start, tt.end, Point{Column: tt.start}, Point{Column: tt.end}))
+	}
+	body := newParentNodeInArena(arena, 2, true, nodes, nil, 0)
+	root := newParentNodeInArena(arena, 1, true, []*Node{body}, nil, 0)
+
+	normalizeHCLConfigFileRoot(root, source, lang)
+
+	for i, tt := range cases {
+		node := nodes[i]
+		t.Run(tt.name, func(t *testing.T) {
+			if got := node.ChildCount(); got != 1 {
+				t.Fatalf("child count = %d, want 1", got)
+			}
+			child := node.Child(0)
+			if child == nil {
+				t.Fatal("child = nil")
+			}
+			if got := child.Type(lang); got != tt.want {
+				t.Fatalf("child type = %q, want %q", got, tt.want)
+			}
+			if child.IsNamed() {
+				t.Fatal("child is named, want anonymous")
+			}
+			if got, want := child.StartByte(), tt.start; got != want {
+				t.Fatalf("child start byte = %d, want %d", got, want)
+			}
+			if got, want := child.EndByte(), tt.end; got != want {
+				t.Fatalf("child end byte = %d, want %d", got, want)
+			}
+			if child.parent != node {
+				t.Fatal("child parent was not restored")
+			}
+		})
 	}
 }
 
