@@ -102,6 +102,8 @@ func (p *Parser) canReuseLanguageTextInvariantNode(source []byte, oldTree *Tree,
 		return false
 	}
 	switch p.language.Name {
+	case "clojure":
+		return clojureTextInvariantNodeEdit(source, oldTree.source, node, edit, p.language)
 	case "cmake":
 		return oldTree.forestFastPath && node.Type(p.language) == "unquoted_argument" &&
 			cmakeTextInvariantEdit(source, oldTree.source, edit)
@@ -478,6 +480,88 @@ func bytesEqualFoldASCIIString(a []byte, b string) bool {
 		}
 	}
 	return true
+}
+
+func clojureTextInvariantNodeEdit(source, oldSource []byte, node *Node, edit InputEdit, lang *Language) bool {
+	if !sameLengthEditWithinNode(source, oldSource, node, edit) {
+		return false
+	}
+	switch node.Type(lang) {
+	case "sym_name":
+		start := int(node.startByte)
+		end := int(node.endByte)
+		return start >= 0 && end <= len(source) && clojureStableSymbolName(source[start:end])
+	case "str_lit":
+		return clojureStableStringLiteralEdit(source, node, edit)
+	default:
+		return false
+	}
+}
+
+func clojureStableStringLiteralEdit(source []byte, node *Node, edit InputEdit) bool {
+	if node == nil || node.endByte <= node.startByte+1 {
+		return false
+	}
+	start := node.startByte
+	end := node.endByte
+	if edit.StartByte <= start || edit.OldEndByte >= end || edit.NewEndByte >= end {
+		return false
+	}
+	if int(end) > len(source) || source[start] != '"' || source[end-1] != '"' {
+		return false
+	}
+	for i := edit.StartByte; i < edit.NewEndByte; i++ {
+		if int(i) >= len(source) || clojureStringDelimiterByte(source[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func clojureStringDelimiterByte(b byte) bool {
+	return b == '"' || b == '\\' || b == '\n' || b == '\r'
+}
+
+func clojureStableSymbolName(text []byte) bool {
+	if len(text) == 0 || !clojureSymbolStartByte(text[0]) {
+		return false
+	}
+	for _, b := range text[1:] {
+		if !clojureSymbolContinueByte(b) {
+			return false
+		}
+	}
+	switch string(text) {
+	case "nil", "true", "false":
+		return false
+	default:
+		return true
+	}
+}
+
+func clojureSymbolStartByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		b == '_' ||
+		b == '*' ||
+		b == '+' ||
+		b == '-' ||
+		b == '!' ||
+		b == '?' ||
+		b == '<' ||
+		b == '>' ||
+		b == '=' ||
+		b == '$' ||
+		b == '%' ||
+		b == '&'
+}
+
+func clojureSymbolContinueByte(b byte) bool {
+	return clojureSymbolStartByte(b) ||
+		(b >= '0' && b <= '9') ||
+		b == '.' ||
+		b == '/' ||
+		b == '\''
 }
 
 func asciiLower(b byte) byte {

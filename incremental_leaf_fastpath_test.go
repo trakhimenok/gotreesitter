@@ -72,6 +72,65 @@ func TestYAMLPlainScalarStableEditAllowsStringAndNumberScalars(t *testing.T) {
 	}
 }
 
+func TestClojureTextInvariantSymbolEdit(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"sym_name"}}
+	oldSource := []byte("metabase.util.i18n")
+	source := []byte("metabase.util.i19n")
+	node := &Node{symbol: 0, startByte: 0, endByte: uint32(len(oldSource))}
+	edit := InputEdit{StartByte: 16, OldEndByte: 17, NewEndByte: 17}
+	if !clojureTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("clojureTextInvariantNodeEdit rejected stable sym_name edit")
+	}
+}
+
+func TestClojureTextInvariantSymbolEditRejectsTokenClassChanges(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"sym_name"}}
+	for _, tc := range []struct {
+		name   string
+		source string
+		offset uint32
+	}{
+		{name: "leading digit", source: "1etabase.util.i18n", offset: 0},
+		{name: "reserved nil", source: "nil", offset: 0},
+		{name: "colon keyword", source: ":etabase.util.i18n", offset: 0},
+	} {
+		node := &Node{symbol: 0, startByte: 0, endByte: uint32(len(tc.source))}
+		edit := InputEdit{StartByte: tc.offset, OldEndByte: tc.offset + 1, NewEndByte: tc.offset + 1}
+		if clojureTextInvariantNodeEdit([]byte(tc.source), []byte("metabase.util.i18n")[:len(tc.source)], node, edit, lang) {
+			t.Fatalf("%s: clojureTextInvariantNodeEdit allowed token-class-changing sym_name edit", tc.name)
+		}
+	}
+}
+
+func TestClojureTextInvariantStringEdit(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"str_lit"}}
+	oldSource := []byte("\"MBQL Lib v2\"")
+	source := []byte("\"MBQL Lib v3\"")
+	node := &Node{symbol: 0, startByte: 0, endByte: uint32(len(oldSource))}
+	edit := InputEdit{StartByte: 11, OldEndByte: 12, NewEndByte: 12}
+	if !clojureTextInvariantNodeEdit(source, oldSource, node, edit, lang) {
+		t.Fatal("clojureTextInvariantNodeEdit rejected stable str_lit edit")
+	}
+
+	source = []byte("\"MBQL Lib \\2\"")
+	escapeEdit := InputEdit{StartByte: 10, OldEndByte: 11, NewEndByte: 11}
+	if clojureTextInvariantNodeEdit(source, oldSource, node, escapeEdit, lang) {
+		t.Fatal("clojureTextInvariantNodeEdit allowed string escape delimiter edit")
+	}
+
+	source = []byte("xMBQL Lib v2\"")
+	openQuoteEdit := InputEdit{StartByte: 0, OldEndByte: 1, NewEndByte: 1}
+	if clojureTextInvariantNodeEdit(source, oldSource, node, openQuoteEdit, lang) {
+		t.Fatal("clojureTextInvariantNodeEdit allowed opening quote edit")
+	}
+
+	source = []byte("\"MBQL Lib v2x")
+	closeQuoteEdit := InputEdit{StartByte: 12, OldEndByte: 13, NewEndByte: 13}
+	if clojureTextInvariantNodeEdit(source, oldSource, node, closeQuoteEdit, lang) {
+		t.Fatal("clojureTextInvariantNodeEdit allowed closing quote edit")
+	}
+}
+
 func TestPowerShellCommentTextInvariantEdit(t *testing.T) {
 	oldSource := []byte("# note 1\n")
 	source := []byte("# note 2\n")
