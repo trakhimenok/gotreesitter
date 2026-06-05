@@ -1117,6 +1117,9 @@ func TestEffectiveFullParseInitialMaxStacks(t *testing.T) {
 	if got := effectiveFullParseInitialMaxStacks(&Language{Name: "tsx"}, maxGLRStacks); got != 6 {
 		t.Fatalf("effectiveFullParseInitialMaxStacks(tsx) = %d, want 6", got)
 	}
+	if got := effectiveFullParseInitialMaxStacks(&Language{Name: "dart"}, maxGLRStacks); got != 6 {
+		t.Fatalf("effectiveFullParseInitialMaxStacks(dart) = %d, want 6", got)
+	}
 	if got := effectiveFullParseInitialMaxStacks(&Language{Name: "python"}, maxGLRStacks); got != 2 {
 		t.Fatalf("effectiveFullParseInitialMaxStacks(python) = %d, want 2", got)
 	}
@@ -1146,6 +1149,9 @@ func TestEffectiveFullParseInitialMaxStacks(t *testing.T) {
 	}
 	if got := effectiveFullParseInitialMaxStacks(&Language{Name: "tsx"}, 16); got != 16 {
 		t.Fatalf("effectiveFullParseInitialMaxStacks(tsx, explicit override) = %d, want 16", got)
+	}
+	if got := effectiveFullParseInitialMaxStacks(&Language{Name: "dart"}, 16); got != 16 {
+		t.Fatalf("effectiveFullParseInitialMaxStacks(dart, explicit override) = %d, want 16", got)
 	}
 	if got := effectiveFullParseInitialMaxStacks(&Language{Name: "rust"}, 16); got != 16 {
 		t.Fatalf("effectiveFullParseInitialMaxStacks(rust, explicit override) = %d, want 16", got)

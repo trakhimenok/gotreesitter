@@ -277,6 +277,15 @@ func effectiveFullParseInitialMaxStacks(lang *Language, initialMaxStacks int) in
 		if initialMaxStacks == maxGLRStacks {
 			initialMaxStacks = 6
 		}
+	case "dart":
+		// Dart's generic-call/relational ambiguity needs at least six survivors
+		// on real-world extension bodies; caps of two or four drop the branch C
+		// selects. The default cap of eight preserves parity but keeps redundant
+		// GLR frontiers alive through the large-source fallback path, so start at
+		// the minimum safe width while preserving explicit diagnostic overrides.
+		if initialMaxStacks == maxGLRStacks {
+			initialMaxStacks = 6
+		}
 	case "typescript":
 		// TypeScript benefits from a tighter steady-state survivor budget than
 		// JavaScript/TSX on both synthetic full parses and real-corpus files.
