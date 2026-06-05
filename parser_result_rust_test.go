@@ -414,3 +414,21 @@ func TestNormalizeRustRecoveredFunctionItems(t *testing.T) {
 		t.Fatalf("recovered Rust SExpr mismatch\nGOT:  %s\nWANT: %s", got, want)
 	}
 }
+
+func TestRustCompatibilitySourceFlags(t *testing.T) {
+	if flags := rustCompatibilitySourceFlagsFor([]byte("let x = 1\n")); flags.collapsedNamedLeafChildren || flags.dotRangeExpressions || flags.docCommentRanges || flags.tokenBindingPatterns || flags.recoveredFunctionItems {
+		t.Fatalf("unexpected Rust compatibility flags for plain binding: %+v", flags)
+	}
+	if flags := rustCompatibilitySourceFlagsFor([]byte("let x = true;")); !flags.collapsedNamedLeafChildren {
+		t.Fatalf("expected collapsed leaf flag for true/semicolon source: %+v", flags)
+	}
+	if flags := rustCompatibilitySourceFlagsFor([]byte("let r = 1..=3;")); !flags.dotRangeExpressions || !flags.collapsedNamedLeafChildren {
+		t.Fatalf("expected dot range and collapsed leaf flags for range source: %+v", flags)
+	}
+	if flags := rustCompatibilitySourceFlagsFor([]byte("/// docs\nfn f() {}\n")); !flags.docCommentRanges || !flags.recoveredFunctionItems {
+		t.Fatalf("expected doc comment and recovered function flags: %+v", flags)
+	}
+	if flags := rustCompatibilitySourceFlagsFor([]byte("macro_rules! m { ($e:expr) => {} }")); !flags.tokenBindingPatterns {
+		t.Fatalf("expected token binding flag for macro metavariable source: %+v", flags)
+	}
+}

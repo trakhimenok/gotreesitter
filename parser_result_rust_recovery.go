@@ -1,15 +1,53 @@
 package gotreesitter
 
+import "bytes"
+
+type rustCompatibilitySourceFlags struct {
+	collapsedNamedLeafChildren bool
+	dotRangeExpressions        bool
+	docCommentRanges           bool
+	tokenBindingPatterns       bool
+	recoveredFunctionItems     bool
+}
+
 func normalizeRustCompatibility(root *Node, source []byte, p *Parser, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "rust" || len(source) == 0 {
+		return
+	}
+	flags := rustCompatibilitySourceFlagsFor(source)
 	normalizeRustSourceFileRoot(root, source, lang)
 	normalizeRustRecoveredPatternStatementsRoot(root, source, p)
-	normalizeRustRecoveredFunctionItems(root, source, lang)
+	if flags.recoveredFunctionItems {
+		normalizeRustRecoveredFunctionItems(root, source, lang)
+	}
 	normalizeRustRecoveredStructExpressionRoot(root, source, lang)
-	normalizeRustDotRangeExpressions(root, source, lang)
-	normalizeRustTokenBindingPatternsAndRecoveredTokenTrees(root, source, lang)
+	if flags.dotRangeExpressions {
+		normalizeRustDotRangeExpressions(root, source, lang)
+	}
+	if flags.tokenBindingPatterns || root.HasError() {
+		normalizeRustTokenBindingPatternsAndRecoveredTokenTrees(root, source, lang)
+	}
 	normalizeRustSourceFileRoot(root, source, lang)
-	normalizeRustDocCommentRanges(root, source, lang)
-	normalizeRustCollapsedNamedLeafChildren(root, source, lang)
+	if flags.docCommentRanges {
+		normalizeRustDocCommentRanges(root, source, lang)
+	}
+	if flags.collapsedNamedLeafChildren {
+		normalizeRustCollapsedNamedLeafChildren(root, source, lang)
+	}
+}
+
+func rustCompatibilitySourceFlagsFor(source []byte) rustCompatibilitySourceFlags {
+	hasDotDot := bytes.Contains(source, []byte(".."))
+	return rustCompatibilitySourceFlags{
+		collapsedNamedLeafChildren: bytes.Contains(source, []byte("true")) ||
+			bytes.Contains(source, []byte("false")) ||
+			hasDotDot ||
+			bytes.IndexByte(source, ';') >= 0,
+		dotRangeExpressions:    hasDotDot,
+		docCommentRanges:       bytes.Contains(source, []byte("///")) || bytes.Contains(source, []byte("//!")),
+		tokenBindingPatterns:   bytes.IndexByte(source, '$') >= 0,
+		recoveredFunctionItems: bytes.Contains(source, []byte("fn")),
+	}
 }
 
 func normalizeRustCollapsedNamedLeafChildren(root *Node, source []byte, lang *Language) {
