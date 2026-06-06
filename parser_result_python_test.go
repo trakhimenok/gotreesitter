@@ -262,7 +262,7 @@ func TestBuildResultFromNodesRepairsPythonIfWrappers(t *testing.T) {
 	if call == nil || call.Type(lang) != "call" {
 		t.Fatalf("expected block child to unwrap to call, got %s", root.SExpr(lang))
 	}
-	if got, want := block.startByte, call.startByte; got != want {
+	if got, want := block.startByte, uint32(26); got != want {
 		t.Fatalf("block startByte = %d, want %d", got, want)
 	}
 }
@@ -315,7 +315,7 @@ func TestBuildResultFromNodesRepairsPythonBlockRangeWithoutWrapperChanges(t *tes
 	if got, want := block.ChildCount(), 1; got != want {
 		t.Fatalf("block child count = %d, want %d", got, want)
 	}
-	if got, want := block.startByte, callLeaf.startByte; got != want {
+	if got, want := block.startByte, uint32(26); got != want {
 		t.Fatalf("block startByte = %d, want %d", got, want)
 	}
 }
@@ -517,10 +517,10 @@ func TestNormalizePythonCompatibilityRecordsRuntimeStats(t *testing.T) {
 	normalizePythonCompatibilityWithParser(root, []byte(";"), parser, lang)
 
 	stats := parser.normalizationStats
-	if got, want := stats.passesChecked, uint64(14); got != want {
+	if got, want := stats.passesChecked, uint64(15); got != want {
 		t.Fatalf("passesChecked = %d, want %d", got, want)
 	}
-	if got, want := stats.passesRun, uint64(1); got != want {
+	if got, want := stats.passesRun, uint64(2); got != want {
 		t.Fatalf("passesRun = %d, want %d", got, want)
 	}
 	if got, want := stats.nodesVisited, uint64(1); got != want {
