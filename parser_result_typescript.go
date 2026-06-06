@@ -94,6 +94,8 @@ type typeScriptNormalizationContext struct {
 	enumAssignmentSym          Symbol
 	importSym                  Symbol
 	hasImportSym               bool
+	dynamicImportSym           Symbol
+	hasDynamicImportSym        bool
 	typeQuerySym               Symbol
 	nameFieldID                FieldID
 	typeParametersFieldID      FieldID
@@ -117,6 +119,10 @@ func normalizeTypeScriptCompatibility(root *Node, source []byte, lang *Language)
 		case ctx.importSym:
 			if ctx.hasImportSym {
 				normalizeTypeScriptImportKeywordNamedness(n, &ctx)
+			}
+		case ctx.dynamicImportSym:
+			if ctx.hasDynamicImportSym {
+				normalizeTypeScriptDynamicImportLeaf(n, &ctx)
 			}
 		case ctx.methodDefinitionSym, ctx.methodSignatureSym, ctx.abstractMethodSignatureSym, ctx.propertySignatureSym, ctx.publicFieldDefinitionSym:
 			if ctx.accessibilityModSym != 0 {
@@ -187,6 +193,16 @@ func normalizeTypeScriptCompatibilityWithStats(root *Node, source []byte, lang *
 				before := n.isNamed()
 				normalizeTypeScriptImportKeywordNamedness(n, &ctx)
 				if n.isNamed() != before {
+					stats.importKeywords.nodesRewritten++
+					stats.total.nodesRewritten++
+				}
+			}
+		case ctx.dynamicImportSym:
+			if ctx.hasDynamicImportSym {
+				stats.importKeywords.nodesVisited++
+				beforeCC := resultChildCount(n)
+				normalizeTypeScriptDynamicImportLeaf(n, &ctx)
+				if resultChildCount(n) != beforeCC {
 					stats.importKeywords.nodesRewritten++
 					stats.total.nodesRewritten++
 				}
@@ -455,13 +471,27 @@ func normalizeTypeScriptImportKeywordNamedness(node *Node, ctx *typeScriptNormal
 	if node == nil || ctx == nil || !ctx.hasImportSym || node.symbol != ctx.importSym {
 		return
 	}
-	if typeScriptNextNonspaceByte(ctx.source, node.endByte) == '(' {
-		node.setNamed(true)
-		return
-	}
+	// Dynamic import expressions (import(...)) are handled by
+	// normalizeTypeScriptDynamicImportLeaf for the named import symbol
+	// (dynamicImportSym). The anonymous import keyword (importSym)
+	// should stay anonymous — C tree-sitter keeps it as an anonymous
+	// child of the named import node.
 	node.setNamed(false)
 }
 
+// normalizeTypeScriptDynamicImportLeaf adds a collapsed-leaf child to the
+// named import node in dynamic import() expressions. C tree-sitter produces
+// a 1-child structure with an anonymous "import" keyword token.
+func normalizeTypeScriptDynamicImportLeaf(node *Node, ctx *typeScriptNormalizationContext) {
+	if node == nil || ctx == nil || !ctx.hasDynamicImportSym || node.symbol != ctx.dynamicImportSym {
+		return
+	}
+	if resultChildCount(node) == 0 && node.endByte > node.startByte {
+		// Use the anonymous import symbol (ctx.importSym, sym 14) as the child.
+		child := newLeafNodeInArena(node.ownerArena, ctx.importSym, false, node.startByte, node.endByte, node.startPoint, node.endPoint)
+		replaceNodeChildrenUnfielded(node, cloneNodeSliceInArena(node.ownerArena, []*Node{child}))
+	}
+}
 func normalizeTypeScriptRecoveredNamespaceRoot(root *Node, source []byte, lang *Language) {
 	if root == nil || lang == nil || len(root.children) < 4 {
 		return
@@ -843,6 +873,8 @@ func newTypeScriptNormalizationContext(source []byte, lang *Language) (typeScrip
 		}
 	}
 	ctx.importSym, ctx.hasImportSym = lang.SymbolByName("import")
+	// Dynamic import() uses a separate named 'import' symbol (e.g. sym 173).
+	ctx.dynamicImportSym, ctx.hasDynamicImportSym = lang.symbolByNameAndNamed("import", true)
 	ctx.typeQuerySym, _ = lang.SymbolByName("type_query")
 
 	if syms, ok := visibleLanguageSymbols(lang, true,
