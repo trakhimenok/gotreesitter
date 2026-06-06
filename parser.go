@@ -2679,6 +2679,10 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 						if next, ok := hclRepetitionShiftConflictChoice(p.language, currentState, actions); ok {
 							chosen, choice = next, true
 						}
+					case "haskell":
+						if next, ok := haskellRepeatBoundaryConflictChoice(p.language, currentState, actions); ok {
+							chosen, choice = next, true
+						}
 					case "make":
 						if next, ok := makeRepetitionShiftConflictChoice(p.language, currentState, actions); ok {
 							chosen, choice = next, true
@@ -3966,6 +3970,30 @@ func hclRepetitionShiftConflictChoice(lang *Language, state StateID, actions []P
 		return ParseAction{}, false
 	}
 	return repetitionShiftConflictChoice(actions)
+}
+
+// haskellRepeatBoundaryConflictChoice collapses the two profiled Haskell
+// repeat-boundary forks that dominate large real-corpus parsing. Layout
+// declaration lists (state 9609) and export lists (state 10984) both offer a
+// reduce of the current repeat alongside a repetition shift; reducing here
+// matches C tree-sitter's boundary choice for the real-corpus cases.
+func haskellRepeatBoundaryConflictChoice(lang *Language, state StateID, actions []ParseAction) (ParseAction, bool) {
+	if lang == nil {
+		return ParseAction{}, false
+	}
+	switch state {
+	case 9609:
+		if !allReducesHaveSymbol(lang, actions, "declarations_repeat1") {
+			return ParseAction{}, false
+		}
+	case 10984:
+		if !allReducesHaveSymbol(lang, actions, "exports_repeat1") {
+			return ParseAction{}, false
+		}
+	default:
+		return ParseAction{}, false
+	}
+	return singleReduceAgainstRepetitionShiftConflictChoice(actions)
 }
 
 // makeRepetitionShiftConflictChoice collapses Makefile repeat-continuation

@@ -356,6 +356,53 @@ func TestHCLRepetitionShiftConflictChoiceRejectsOtherBodyReduce(t *testing.T) {
 	}
 }
 
+func TestHaskellRepeatBoundaryConflictChoiceAllowsHotRepeats(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "_cond_layout_semicolon", ",", "declarations_repeat1", "exports_repeat1"}}
+	for _, tc := range []struct {
+		name         string
+		state        StateID
+		reduceSymbol Symbol
+		shiftState   StateID
+	}{
+		{name: "declarations", state: 9609, reduceSymbol: 3, shiftState: 21},
+		{name: "exports", state: 10984, reduceSymbol: 4, shiftState: 7942},
+	} {
+		actions := []ParseAction{
+			{Type: ParseActionReduce, Symbol: tc.reduceSymbol, ChildCount: 2},
+			{Type: ParseActionShift, State: tc.shiftState, Repetition: true},
+		}
+		chosen, ok := haskellRepeatBoundaryConflictChoice(lang, tc.state, actions)
+		if !ok {
+			t.Fatalf("haskellRepeatBoundaryConflictChoice(%s) = false, want true", tc.name)
+		}
+		if chosen.Type != ParseActionReduce || chosen.Symbol != tc.reduceSymbol || chosen.Repetition {
+			t.Fatalf("haskellRepeatBoundaryConflictChoice(%s) picked %+v, want repeat reduce", tc.name, chosen)
+		}
+	}
+}
+
+func TestHaskellRepeatBoundaryConflictChoiceRejectsOtherRepeat(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "declarations_repeat1", "other_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 2, ChildCount: 2},
+		{Type: ParseActionShift, State: 21, Repetition: true},
+	}
+	if _, ok := haskellRepeatBoundaryConflictChoice(lang, 9609, actions); ok {
+		t.Fatal("haskellRepeatBoundaryConflictChoice = true, want false for wrong repeat symbol")
+	}
+}
+
+func TestHaskellRepeatBoundaryConflictChoiceRejectsOtherState(t *testing.T) {
+	lang := &Language{SymbolNames: []string{"end", "declarations_repeat1"}}
+	actions := []ParseAction{
+		{Type: ParseActionReduce, Symbol: 1, ChildCount: 2},
+		{Type: ParseActionShift, State: 21, Repetition: true},
+	}
+	if _, ok := haskellRepeatBoundaryConflictChoice(lang, 9610, actions); ok {
+		t.Fatal("haskellRepeatBoundaryConflictChoice = true, want false for wrong state")
+	}
+}
+
 func TestSwiftBraceTypeExpressionConflictChoiceAllowsHotRR(t *testing.T) {
 	lang := &Language{SymbolNames: []string{"end", "{", "_simple_user_type", "_expression"}}
 	actions := []ParseAction{
