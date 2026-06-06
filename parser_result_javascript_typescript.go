@@ -854,28 +854,27 @@ func normalizeJavaScriptTypeScriptOptionalChainLeaves(root *Node, source []byte,
 	if !ok {
 		return
 	}
-	optionalChainTokenSym, ok := symbolByName(lang, "?.")
-	if !ok {
-		return
-	}
 
 	walkResultTreeDenseFirst(root, func(n *Node) {
-		if n.symbol != optionalChainSym || len(n.children) != 0 {
+		if n.symbol != optionalChainSym || len(n.children) != 1 {
 			return
 		}
-		if n.endByte <= n.startByte || int(n.endByte) > len(source) || !bytes.Equal(source[n.startByte:n.endByte], []byte("?.")) {
+		// The C reference parser emits optional_chain as a 0-child leaf.
+		// The Go parser sometimes materializes a "?." anonymous token as
+		// a child. Strip it to match C's structure.
+		child := n.children[0]
+		if child == nil {
 			return
 		}
-		child := newLeafNodeInArena(n.ownerArena, optionalChainTokenSym, symbolIsNamed(lang, optionalChainTokenSym), n.startByte, n.endByte, n.startPoint, n.endPoint)
-		children := phpAllocChildren(n.ownerArena, 1)
-		children[0] = child
-		n.children = children
+		if child.endByte <= child.startByte || int(child.endByte) > len(source) || !bytes.Equal(source[child.startByte:child.endByte], []byte("?.")) {
+			return
+		}
+		n.children = nil
 		n.fieldIDs = nil
 		n.fieldSources = nil
 		if n.ownerArena != nil {
 			n.ownerArena.clearFinalChildRefs(n)
 		}
-		populateParentNode(n, n.children)
 	})
 }
 
@@ -1188,18 +1187,17 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 			if normalizeJavaScriptTypeScriptStatementKeywordLeafWithSymbolChanged(n, source, "while", whileSym, whileNamed, closeBraceSym, hasCloseBrace) {
 				index.statementKeyword.nodesRewritten++
 			}
-		} else if enableOptionalChain && n.symbol == optionalChainSym && len(n.children) == 0 {
-			if n.endByte > n.startByte && int(n.endByte) <= len(source) && bytes.Equal(source[n.startByte:n.endByte], []byte("?.")) {
-				child := newLeafNodeInArena(n.ownerArena, optionalChainTokenSym, optionalChainTokenNamed, n.startByte, n.endByte, n.startPoint, n.endPoint)
-				children := phpAllocChildren(n.ownerArena, 1)
-				children[0] = child
-				n.children = children
+		} else if enableOptionalChain && n.symbol == optionalChainSym && len(n.children) == 1 {
+			// The C reference parser emits optional_chain as a 0-child leaf.
+			// Strip the materialized "?." child to match C.
+			child := n.children[0]
+			if child != nil && child.endByte > child.startByte && int(child.endByte) <= len(source) && bytes.Equal(source[child.startByte:child.endByte], []byte("?.")) {
+				n.children = nil
 				n.fieldIDs = nil
 				n.fieldSources = nil
 				if n.ownerArena != nil {
 					n.ownerArena.clearFinalChildRefs(n)
 				}
-				populateParentNode(n, n.children)
 			}
 		}
 
