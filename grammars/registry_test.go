@@ -1,6 +1,7 @@
 package grammars
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/odvcencio/gotreesitter"
@@ -278,6 +279,45 @@ func TestInferredTagsQueryCoverage(t *testing.T) {
 	// Core set (9) is explicit. Inference should expand this materially.
 	if withTags < 30 {
 		t.Fatalf("expected inferred tags query coverage to be >=30 languages, got %d", withTags)
+	}
+}
+
+func TestInferredGoTagsQuerySkipsReturnTypes(t *testing.T) {
+	entry := lookupByName("go")
+	if entry == nil {
+		t.Fatal("expected go language entry")
+	}
+	query := ResolveTagsQuery(*entry)
+	if query == "" {
+		t.Fatal("expected inferred Go tags query")
+	}
+	if strings.Contains(query, "(function_declaration (type_identifier)") {
+		t.Fatalf("Go inferred tags query should not capture return type identifiers as functions:\n%s", query)
+	}
+
+	tagger, err := gotreesitter.NewTagger(entry.Language(), query)
+	if err != nil {
+		t.Fatalf("NewTagger: %v", err)
+	}
+	src := []byte(`package p
+
+func levelFromKind(kind string) int {
+	return 2
+}
+
+func InitDB() error {
+	return nil
+}
+`)
+	tags := tagger.Tag(src)
+	var functions []string
+	for _, tag := range tags {
+		if tag.Kind == "definition.function" {
+			functions = append(functions, tag.Name)
+		}
+	}
+	if got, want := strings.Join(functions, ","), "levelFromKind,InitDB"; got != want {
+		t.Fatalf("definition.function names = %q, want %q; tags=%+v", got, want, tags)
 	}
 }
 

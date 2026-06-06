@@ -14,6 +14,15 @@ var (
 	inferredTagsQueryCache sync.Map // map[string]string
 )
 
+var inferredTagsQueryOverrides = map[string]string{
+	"go": strings.Join([]string{
+		"(function_declaration name: (identifier) @name) @definition.function",
+		"(method_declaration name: (field_identifier) @name) @definition.method",
+		"(call_expression function: (identifier) @name) @reference.call",
+		"(call_expression function: (selector_expression field: (field_identifier) @name)) @reference.call",
+	}, "\n"),
+}
+
 var inferredTagsQueryPatterns = []tagsQueryPattern{
 	// Common definitions.
 	{Query: "(function_declaration (identifier) @name) @definition.function", Symbols: []string{"function_declaration", "identifier"}},
@@ -72,6 +81,11 @@ func inferredTagsQuery(entry LangEntry) string {
 
 	if cached, ok := inferredTagsQueryCache.Load(name); ok {
 		return cached.(string)
+	}
+
+	if query := inferredTagsQueryOverrides[name]; strings.TrimSpace(query) != "" {
+		inferredTagsQueryCache.Store(name, query)
+		return query
 	}
 
 	if entry.Language == nil {
