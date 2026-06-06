@@ -65,6 +65,29 @@ func TestCSharpCJKPartialClassesStayBounded(t *testing.T) {
 	}
 }
 
+func TestCSharpNamespaceRecoveryStaysBoundedDottedBitorArg(t *testing.T) {
+	src := []byte(`namespace N { class C { void M(string n) { F(n, E.A | E.B); } } }`)
+	parser := gotreesitter.NewParser(grammars.CSharpLanguage())
+	parser.SetTimeoutMicros(500_000)
+
+	tree, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	defer tree.Release()
+
+	rt := tree.ParseRuntime()
+	if got, want := rt.StopReason, gotreesitter.ParseStopAccepted; got != want {
+		t.Fatalf("StopReason = %s, want %s (%s)", got, want, rt.Summary())
+	}
+	if tree.ParseStoppedEarly() {
+		t.Fatalf("ParseStoppedEarly = true (%s)", rt.Summary())
+	}
+	if got, want := tree.RootNode().EndByte(), uint32(len(src)); got != want {
+		t.Fatalf("root end = %d, want %d (%s)", got, want, rt.Summary())
+	}
+}
+
 func csharpSyntheticDesignerSource(fields int) []byte {
 	var b strings.Builder
 	b.WriteString("namespace Station.UI {\n")
