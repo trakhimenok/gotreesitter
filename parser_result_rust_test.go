@@ -456,6 +456,66 @@ func TestNormalizeRustRecoveredPatternStatementsRetagsCleanTopLevelRoot(t *testi
 	}
 }
 
+func TestRustRetagCleanTopLevelErrorRootKeepsFinalChildRefsLazy(t *testing.T) {
+	lang := &Language{
+		Name: "rust",
+		SymbolNames: []string{
+			"",
+			"source_file",
+			"function_item",
+			"identifier",
+		},
+		SymbolMetadata: []SymbolMetadata{
+			{},
+			{Named: true},
+			{Named: true},
+			{Named: true},
+		},
+	}
+	arena := newNodeArena(arenaClassFull)
+	arena.finalChildRefs = true
+	ident := newCompactFullLeafInArena(arena, 3, true, 3, 4, Point{Column: 3}, Point{Column: 4})
+	ident.parseState = 12
+	fnParent := newPendingParentInArena(arena, 2, true, 0, []stackEntry{
+		newStackEntryCompactFullLeaf(ident.parseState, ident),
+	}, 0, 9, Point{}, Point{Column: 9}, false)
+	fnParent.parseState = 13
+	fnEntry := newStackEntryPendingParent(fnParent.parseState, fnParent)
+	fn := materializeStackEntryPendingParent(arena, &fnEntry, pendingParentMaterializeForFinalTree)
+	if fn == nil || !nodeHasFinalChildRefs(fn) {
+		t.Fatal("function_item did not retain final child refs")
+	}
+	root := newParentNodeInArena(arena, errorSymbol, true, []*Node{fn}, nil, 0)
+	root.startByte = 0
+	root.endByte = 9
+	root.startPoint = Point{}
+	root.endPoint = Point{Column: 9}
+
+	arena.finalChildRefsMaterializedParents = 0
+	arena.finalChildRefsMaterializedChildren = 0
+	arena.finalChildRefsSingleChildAccesses = 0
+	arena.finalChildRefsSingleChildMaterializedChildren = 0
+
+	if !rustRetagCleanTopLevelErrorRoot(root, []byte("fn f() {}"), lang) {
+		t.Fatal("rustRetagCleanTopLevelErrorRoot returned false")
+	}
+	if got, want := root.Type(lang), "source_file"; got != want {
+		t.Fatalf("root type = %q, want %q", got, want)
+	}
+	if root.HasError() {
+		t.Fatal("root has error after clean retag")
+	}
+	if !nodeHasFinalChildRefs(fn) {
+		t.Fatal("clean retag materialized function_item final child refs")
+	}
+	if got := arena.finalChildRefsMaterializedParents; got != 0 {
+		t.Fatalf("final child ref range materialized parents = %d, want 0", got)
+	}
+	if got := arena.finalChildRefsSingleChildMaterializedChildren; got != 0 {
+		t.Fatalf("final child ref single children materialized = %d, want 0", got)
+	}
+}
+
 func TestRustCompatibilitySourceFlags(t *testing.T) {
 	if flags := rustCompatibilitySourceFlagsFor([]byte("let x = 1\n")); flags.collapsedNamedLeafChildren || flags.dotRangeExpressions || flags.docCommentRanges || flags.tokenBindingPatterns || flags.recoveredFunctionItems {
 		t.Fatalf("unexpected Rust compatibility flags for plain binding: %+v", flags)

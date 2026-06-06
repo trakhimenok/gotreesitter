@@ -399,10 +399,8 @@ func rustRetagCleanTopLevelErrorRoot(root *Node, source []byte, lang *Language) 
 	if !ok {
 		return false
 	}
-	retagResultRootAndRefreshError(root, sourceFileSym, rustNamedForSymbol(lang, sourceFileSym))
-	if root.hasError() {
-		return false
-	}
+	retagResultRoot(root, sourceFileSym, rustNamedForSymbol(lang, sourceFileSym))
+	root.setHasError(false)
 	if root.endByte < uint32(len(source)) && bytesAreTrivia(source[root.endByte:]) {
 		extendNodeEndTo(root, uint32(len(source)), source)
 	}
