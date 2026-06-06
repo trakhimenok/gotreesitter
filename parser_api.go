@@ -135,6 +135,8 @@ func (p *Parser) parseForRecovery(source []byte) (*Tree, error) {
 		p.recoveryParser = parser
 	}
 	parser.skipRecoveryReparse = true
+	parser.timeoutMicros = p.timeoutMicros
+	parser.cancellationFlag = p.cancellationFlag
 	if p.reparseFactory != nil {
 		ts, err := p.reparseFactory(source)
 		if err != nil {
