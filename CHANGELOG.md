@@ -9,6 +9,61 @@ for tags and release notes while still in `0.x`.
 
 - Nothing yet.
 
+## [0.20.2] - 2026-06-06
+
+Patch release for the post-0.20 parser reliability and code-understanding
+surface fixes. This tagged release references the issue fixes merged after
+v0.20.1.
+
+### Fixed
+
+- C# namespace recovery now routes recursive recovery snippets through the
+  guarded recovery parser path, preventing the v0.20.0-rc3 namespace OOM case
+  and propagating timeout/cancellation guardrails into recovery parses
+  (#98, #106).
+- Swift license-header and top-level declaration recovery now preserves
+  `import Foundation` followed by declarations, covering the real-world Swift
+  misparse report while avoiding recursive recovery (#99, #107).
+- Inferred Go tags no longer capture return type identifiers such as `int` or
+  `error` as `definition.function` tags (#100, #109).
+- JavaScript/TypeScript optional-chain, TypeScript dynamic-import, and Python
+  `case _:`/block-start normalization now match the C tree-sitter shapes used
+  by the parity harness (#101, #102, #103, #108).
+
+### Testing
+
+- Added a small multi-language structural corpus parity gate for Go, Java,
+  JavaScript, Python, and TypeScript (#104).
+- Validated the patch train with focused Docker parity/unit gates plus green
+  CI build, freshness, cgo parity smoke, and perf-regression checks on the
+  merged fix PRs.
+
+## [0.20.1] - 2026-06-06
+
+Taproot stable release.
+
+### Added
+
+- Taproot blob-loading helpers and stable parser harness coverage for the
+  extracted Taproot DSL surface.
+
+## [0.20.0] - 2026-06-03
+
+GLR parser-core release after the 0.20 release-candidate line.
+
+### Fixed
+
+- Fixed an infinite spin on repeated zero-width external tokens in
+  `markdown_inline`.
+
+## [0.20.0-rc4] - 2026-06-03
+
+Fourth 0.20 release candidate.
+
+### Added
+
+- Extracted Taproot as a reusable DSL parsing harness with diagnostics.
+
 ## [0.20.0-rc3] - 2026-05-30
 
 Third release candidate on the 0.20 line. Parser-core GLR performance wins —
@@ -781,7 +836,12 @@ Warm-reuse throughput ~10 % higher. 206-grammar parity green under `GTS_PARITY_M
 - Initial standalone pure-Go runtime module.
 - External scanner VM foundation and base parser/lexer/tree infrastructure.
 
-[Unreleased]: https://github.com/odvcencio/gotreesitter/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/odvcencio/gotreesitter/compare/v0.20.2...HEAD
+[0.20.2]: https://github.com/odvcencio/gotreesitter/compare/v0.20.1...v0.20.2
+[0.20.1]: https://github.com/odvcencio/gotreesitter/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/odvcencio/gotreesitter/compare/v0.20.0-rc4...v0.20.0
+[0.20.0-rc4]: https://github.com/odvcencio/gotreesitter/compare/v0.20.0-rc3...v0.20.0-rc4
+[0.20.0-rc3]: https://github.com/odvcencio/gotreesitter/compare/v0.19.1...v0.20.0-rc3
 [0.19.1]: https://github.com/odvcencio/gotreesitter/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/odvcencio/gotreesitter/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/odvcencio/gotreesitter/compare/v0.17.4...v0.18.0
