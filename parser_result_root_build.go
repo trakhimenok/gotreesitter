@@ -123,6 +123,9 @@ func (b *resultRootBuild) syntheticRootSymbol(originalNodes, rootChildren []*Nod
 	if b.isLanguage("dart") && dartProgramChildrenLookComplete(originalNodes, b.lang) {
 		return b.expectedRootSymbol
 	}
+	if b.isLanguage("proto") && protoSourceFileChildrenLookComplete(rootChildren, b.lang) {
+		return b.expectedRootSymbol
+	}
 	if b.isLanguage("sql") {
 		return b.expectedRootSymbol
 	}
@@ -139,6 +142,15 @@ func (b *resultRootBuild) syntheticRootSymbol(originalNodes, rootChildren []*Nod
 		// pieces and would otherwise synthesize an ERROR root, diverging from C.
 		// Keeping `makefile` here restores byte-faithful root parity (HasError is
 		// still set on the root via buildSyntheticRootTree, matching C).
+		return b.expectedRootSymbol
+	}
+	// cpon's start rule is document = _value (a single value). A file with
+	// multiple top-level values (e.g. the Sublime syntax-test corpus) cannot
+	// reduce to one document, so the synthetic-root path runs with errors.
+	// tree-sitter C still labels the root `document` and nests the recovered
+	// spans as ERROR children — the root never becomes ERROR. Match that
+	// invariant here, mirroring the sql/swift cases above.
+	if b.isLanguage("cpon") {
 		return b.expectedRootSymbol
 	}
 	return errorSymbol

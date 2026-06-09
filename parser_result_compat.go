@@ -122,6 +122,8 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeRubyTopLevelModuleBounds(ctx.root, ctx.source, ctx.lang)
 	case "scala":
 		normalizeScalaCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "scheme":
+		normalizeSchemeCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "sql":
 		normalizeSQLRecoveredSelectRoot(ctx.root, ctx.lang)
 		normalizeSQLTrailingSelectListError(ctx.root, ctx.lang)
