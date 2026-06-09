@@ -3,7 +3,147 @@ package gotreesitter
 func normalizePHPCompatibility(root *Node, source []byte, parser *Parser, lang *Language) {
 	normalizePHPCollapsedModifierChildren(root, source, lang)
 	normalizePHPSingletonTypeWrappers(root, lang)
+	normalizePHPListLiteralDestructuringTargets(root, lang)
 	normalizePHPStaticFunctionFragments(root, source, parser, lang)
+}
+
+// normalizePHPListLiteralDestructuringTargets retypes array_creation_expression
+// nodes that sit in destructuring-target positions into list_literal, matching
+// tree-sitter-c.
+//
+// In the C grammar the assignment_expression `left` field and the foreach value
+// position only accept `_variable | list_literal`; an array literal there is
+// always parsed as `_array_destructing` (aliased `list_literal`) with its
+// elements as bare children. Go's GLR keeps the array_creation_expression /
+// array_element_initializer interpretation for some of these inputs (notably
+// `key => value` and pair-valued foreach elements), so retype + unwrap to match
+// C byte-for-byte.
+func normalizePHPListLiteralDestructuringTargets(root *Node, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "php" {
+		return
+	}
+	arraySym, arrayOK := symbolByName(lang, "array_creation_expression")
+	listSym, listNamed, listOK := symbolMeta(lang, "list_literal")
+	initSym, initOK := symbolByName(lang, "array_element_initializer")
+	asSym, asOK := phpAnonymousSymbol(lang, "as")
+	if !arrayOK || !listOK || !initOK || !asOK {
+		return
+	}
+
+	retype := func(arr *Node) {
+		if arr == nil || arr.symbol != arraySym {
+			return
+		}
+		phpRetypeArrayToListLiteral(arr, listSym, listNamed, initSym, lang)
+	}
+
+	walkResultTree(root, func(n *Node) {
+		switch n.Type(lang) {
+		case "assignment_expression":
+			retype(phpAssignmentLeft(n, lang))
+		case "foreach_statement":
+			value := phpForeachValueChild(n, asSym)
+			if value == nil {
+				return
+			}
+			if value.Type(lang) == "pair" {
+				retype(phpPairValue(value))
+				return
+			}
+			retype(value)
+		}
+	})
+}
+
+// phpAssignmentLeft returns the child of an assignment_expression carrying the
+// `left` field.
+func phpAssignmentLeft(n *Node, lang *Language) *Node {
+	if n == nil {
+		return nil
+	}
+	leftField, ok := lang.FieldByName("left")
+	if !ok {
+		return nil
+	}
+	count := resultChildCount(n)
+	children := resultChildSliceForMutation(n)
+	for i := 0; i < count && i < len(n.fieldIDs); i++ {
+		if n.fieldIDs[i] == leftField && i < len(children) {
+			return children[i]
+		}
+	}
+	return nil
+}
+
+// phpForeachValueChild returns the named child of a foreach_statement that holds
+// the loop value, i.e. the first named child following the anonymous `as` token.
+func phpForeachValueChild(n *Node, asSym Symbol) *Node {
+	if n == nil {
+		return nil
+	}
+	count := resultChildCount(n)
+	sawAs := false
+	for i := 0; i < count; i++ {
+		child := resultChildAt(n, i)
+		if child == nil {
+			continue
+		}
+		if !sawAs {
+			if child.symbol == asSym {
+				sawAs = true
+			}
+			continue
+		}
+		if child.IsNamed() {
+			return child
+		}
+	}
+	return nil
+}
+
+// phpPairValue returns the value side (last named child) of a foreach `pair`.
+func phpPairValue(pair *Node) *Node {
+	if pair == nil {
+		return nil
+	}
+	count := resultChildCount(pair)
+	for i := count - 1; i >= 0; i-- {
+		child := resultChildAt(pair, i)
+		if child != nil && child.IsNamed() {
+			return child
+		}
+	}
+	return nil
+}
+
+// phpRetypeArrayToListLiteral converts an array_creation_expression node into a
+// list_literal in place, unwrapping each array_element_initializer child so its
+// inner nodes become direct children (matching C's _array_destructing shape).
+func phpRetypeArrayToListLiteral(arr *Node, listSym Symbol, listNamed bool, initSym Symbol, lang *Language) {
+	if arr == nil {
+		return
+	}
+	children := resultChildSliceForMutation(arr)
+	out := make([]*Node, 0, len(children))
+	unwrapped := false
+	for _, child := range children {
+		if child == nil {
+			out = append(out, child)
+			continue
+		}
+		if child.symbol == initSym {
+			inner := resultChildSliceForMutation(child)
+			out = append(out, inner...)
+			unwrapped = true
+			continue
+		}
+		out = append(out, child)
+	}
+	arr.symbol = listSym
+	arr.setNamed(listNamed)
+	if unwrapped {
+		replaceNodeChildrenUnfielded(arr, cloneNodeSliceInArena(arr.ownerArena, out))
+	}
 }
 
 func normalizePHPCollapsedModifierChildren(root *Node, source []byte, lang *Language) {

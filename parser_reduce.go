@@ -732,11 +732,31 @@ func (p *Parser) pushOrExtendErrorNode(s *glrStack, state StateID, tok Token, no
 	if perfCountersEnabled {
 		perfRecordErrorNode()
 	}
-	errNode.parseState = state
-	p.pushStackNode(s, state, errNode, entryScratch, gssScratch)
+	pushState := p.schemeErrorRecoveryState(state)
+	errNode.parseState = pushState
+	p.pushStackNode(s, pushState, errNode, entryScratch, gssScratch)
 	if nodeCount != nil {
 		*nodeCount = *nodeCount + 1
 	}
+}
+
+// schemeErrorRecoveryState returns the state an error node should be pushed in
+// for tree-sitter-scheme. When a datum fails inside a list that has not yet
+// shifted a datum (e.g. immediately after "("), the error must be recovered as
+// a `_datum` so the list keeps its opening delimiter, matching tree-sitter C's
+// `(list "(" (ERROR) ...)`. We follow the grammar's own GOTO on `_datum`; if it
+// leaves the state unchanged (the list is already in its datum-repeat state) or
+// no GOTO exists, the state is returned unchanged so non-list contexts and the
+// common mid-list case are untouched.
+func (p *Parser) schemeErrorRecoveryState(state StateID) StateID {
+	if p == nil || !p.isScheme || !p.schemeHasDatumSymbol {
+		return state
+	}
+	gotoState := p.lookupGoto(state, p.schemeDatumSymbol)
+	if gotoState == 0 || gotoState == state {
+		return state
+	}
+	return gotoState
 }
 
 // Resync recovery status codes returned by tryResyncErrorRecovery.

@@ -40,6 +40,7 @@ type dfaTokenSource struct {
 	isBashGenerated            bool
 	isComment                  bool
 	isFortran                  bool
+	isScheme                   bool
 	hasZeroWidthTokens         bool
 	hasZeroWidthStartAccept    bool
 
@@ -122,6 +123,7 @@ func initDFATokenSource(ts *dfaTokenSource, lexer *Lexer, language *Language, lo
 		ts.isBashGenerated = ts.isBash && language.GeneratedByGrammargen
 		ts.isComment = language.Name == "comment"
 		ts.isFortran = language.Name == "fortran"
+		ts.isScheme = language.Name == "scheme"
 		ts.hasZeroWidthTokens = languageHasZeroWidthTokens(language)
 		ts.hasZeroWidthStartAccept = languageHasZeroWidthStartAccept(language)
 	}
@@ -484,6 +486,82 @@ func (d *dfaTokenSource) nextDFAToken() Token {
 	return tok
 }
 
+// schemeIsErrorRunBoundary reports whether r terminates an error-recovery run
+// in tree-sitter-scheme. The run that C wraps into an ERROR node stops at
+// whitespace and the structural delimiters that begin their own datum
+// ( "(" ")" string/quote/quasiquote/unquote and comments ). All other bytes —
+// including "[" "]" "{" "}" "|" "#" and "\" — are consumed into the run.
+func schemeIsErrorRunBoundary(r rune) bool {
+	switch r {
+	case ' ', '\t', '\n', '\r', '\f', '\v',
+		'(', ')', '"', '\'', '`', ',', ';':
+		return true
+	}
+	return unicode.IsSpace(r)
+}
+
+// schemeErrorRunToken detects bytes the DFA silently skipped while lexing the
+// token tok (a character with no valid token start). When such a skip is
+// found, it returns an errorSymbol token spanning the unlexable run starting at
+// iterStartPos, matching tree-sitter C's behavior of consuming the run into an
+// ERROR node. The run extends from iterStartPos to the next boundary character
+// (see schemeIsErrorRunBoundary), which mirrors how C's error recovery absorbs
+// any otherwise-lexable trailing token (e.g. "make-accessors" in
+// "\#make-accessors") up to the next delimiter.
+func (d *dfaTokenSource) schemeErrorRunToken(iterStartPos int, iterStartRow, iterStartCol uint32, tok Token) (Token, bool) {
+	if d == nil || d.lexer == nil {
+		return Token{}, false
+	}
+	src := d.lexer.source
+	if iterStartPos < 0 || iterStartPos >= len(src) {
+		return Token{}, false
+	}
+	// A silent skip happened iff the lexer consumed bytes at iterStartPos
+	// without emitting a token starting there: either the produced token starts
+	// later than iterStartPos, or it is EOF/no-token while bytes remain.
+	skipped := false
+	if tok.Symbol == 0 {
+		// EOF or no accepting state at all while input remains.
+		skipped = true
+	} else if int(tok.StartByte) > iterStartPos {
+		skipped = true
+	}
+	if !skipped {
+		return Token{}, false
+	}
+	// The first byte at iterStartPos must itself be a non-boundary,
+	// non-whitespace character that the DFA could not begin a token with.
+	// Boundary characters here would have been lexed normally, so a skip over
+	// one indicates a different code path we should not touch.
+	firstRune, _ := utf8.DecodeRune(src[iterStartPos:])
+	if schemeIsErrorRunBoundary(firstRune) {
+		return Token{}, false
+	}
+
+	pos := iterStartPos
+	row := iterStartRow
+	col := iterStartCol
+	for pos < len(src) {
+		r, size := utf8.DecodeRune(src[pos:])
+		if schemeIsErrorRunBoundary(r) {
+			break
+		}
+		pos += size
+		col += uint32(size)
+	}
+	if pos <= iterStartPos {
+		return Token{}, false
+	}
+	return Token{
+		Symbol:     errorSymbol,
+		Text:       bytesToStringNoCopy(src[iterStartPos:pos]),
+		StartByte:  uint32(iterStartPos),
+		EndByte:    uint32(pos),
+		StartPoint: Point{Row: iterStartRow, Column: iterStartCol},
+		EndPoint:   Point{Row: row, Column: col},
+	}, true
+}
+
 func (d *dfaTokenSource) shouldForceEOFLookahead() bool {
 	if d == nil || d.language == nil {
 		return false
@@ -696,6 +774,18 @@ func (d *dfaTokenSource) scanDFATokenForState(state StateID, lexState uint32) (T
 
 	d.state = state
 	tok := d.nextTokenForLexState(lexState)
+	if d.isScheme {
+		if errTok, ok := d.schemeErrorRunToken(savedPos, savedRow, savedCol, tok); ok {
+			d.lexer.pos = savedPos
+			d.lexer.row = savedRow
+			d.lexer.col = savedCol
+			d.state = savedState
+			if DebugDFA.Load() {
+				fmt.Printf("  SCHEME-ERR run %d-%d state=%d\n", errTok.StartByte, errTok.EndByte, state)
+			}
+			return errTok, int(errTok.EndByte), errTok.EndPoint.Row, errTok.EndPoint.Column
+		}
+	}
 	if d.hasZeroWidthStartAccept {
 		if zeroTok, ok := d.preferZeroWidthStartAcceptForState(state, lexState, tok, savedPos, savedRow, savedCol); ok {
 			tok = zeroTok

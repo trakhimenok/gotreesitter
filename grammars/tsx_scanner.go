@@ -102,6 +102,11 @@ func tsxScanTemplateChars(lexer *gotreesitter.ExternalLexer) bool {
 			if lexer.Lookahead() == '{' {
 				return hasContent
 			}
+			// The '$' was consumed and is not the start of a substitution, so it
+			// counts as fragment content. C's scan_template_chars sets
+			// has_content = true via the for-loop post-statement on every
+			// iteration after the first, so the surviving '$' must mark content.
+			hasContent = true
 		case '\\':
 			return hasContent
 		default:

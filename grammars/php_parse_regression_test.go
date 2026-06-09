@@ -93,6 +93,66 @@ func TestPHPTopLevelStaticAnonymousFunctionRecovery(t *testing.T) {
 	}
 }
 
+// TestPHPListLiteralDestructuringTargetsMatchC pins the parity fix for
+// destructuring targets. tree-sitter-c only accepts `_variable | list_literal`
+// on the assignment LHS and in the foreach value position, so an array literal
+// there is parsed as list_literal with bare children (no
+// array_element_initializer). Go's GLR previously kept
+// array_creation_expression/array_element_initializer for key=>value and
+// pair-valued foreach forms; assert the C-faithful shape, and that genuine
+// array literals (RHS positions) stay array_creation_expression.
+func TestPHPListLiteralDestructuringTargetsMatchC(t *testing.T) {
+	lang := PhpLanguage()
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "foreach_value_keyed",
+			src:  "<?php foreach ($x as ['a' => $v]) {}",
+			want: "(program (php_tag) (foreach_statement (variable_name (name)) (list_literal (string (string_content)) (variable_name (name))) (compound_statement)))",
+		},
+		{
+			name: "foreach_pair_value_list",
+			src:  "<?php foreach ($x as $k => [$a, $b]) {}",
+			want: "(program (php_tag) (foreach_statement (variable_name (name)) (pair (variable_name (name)) (list_literal (variable_name (name)) (variable_name (name)))) (compound_statement)))",
+		},
+		{
+			name: "assignment_keyed_destructure",
+			src:  "<?php ['a' => $x, 'b' => $y] = $arr;",
+			want: "(program (php_tag) (expression_statement (assignment_expression (list_literal (string (string_content)) (variable_name (name)) (string (string_content)) (variable_name (name))) (variable_name (name)))))",
+		},
+		{
+			name: "rhs_array_literal_unchanged",
+			src:  "<?php $arr = ['a' => 1, 'b' => 2];",
+			want: "(program (php_tag) (expression_statement (assignment_expression (variable_name (name)) (array_creation_expression (array_element_initializer (string (string_content)) (integer)) (array_element_initializer (string (string_content)) (integer))))))",
+		},
+		{
+			name: "mixed_lhs_list_rhs_array",
+			src:  "<?php [$a, $b] = [$c, $d];",
+			want: "(program (php_tag) (expression_statement (assignment_expression (list_literal (variable_name (name)) (variable_name (name))) (array_creation_expression (array_element_initializer (variable_name (name))) (array_element_initializer (variable_name (name)))))))",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parser := ts.NewParser(lang)
+			tree, err := parser.Parse([]byte(tc.src))
+			if err != nil {
+				t.Fatalf("parse failed: %v", err)
+			}
+			defer tree.Release()
+			root := tree.RootNode()
+			if root == nil {
+				t.Fatal("missing root node")
+			}
+			if got := root.SExpr(lang); got != tc.want {
+				t.Fatalf("sexpr mismatch\n got=%s\nwant=%s", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPHPTopLevelStaticNamedFunctionRecovery(t *testing.T) {
 	src := []byte("<?php\nstatic function a() {}\n")
 	parser := ts.NewParser(PhpLanguage())

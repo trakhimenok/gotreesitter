@@ -1843,6 +1843,38 @@ func isCAssignmentOperatorToken(tok string) bool {
 	}
 }
 
+// normalizeArduinoBuiltinPrimitiveTypes promotes type_identifier leaves whose
+// text is a builtin C primitive type name (e.g. void, int, char) into
+// primitive_type nodes. The Arduino grammar is a superset of C and inherits the
+// same primitive_type token set, but in a handful of syntactic positions (most
+// notably the explicit empty parameter list `(void)`) the parser tags the
+// keyword as a user type_identifier. tree-sitter-c performs the same promotion;
+// applying it here keeps Arduino byte-faithful to the C oracle without routing
+// Arduino through the heavier C recovery passes.
+func normalizeArduinoBuiltinPrimitiveTypes(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil {
+		return
+	}
+	primitiveTypeSym, ok := lang.SymbolByName("primitive_type")
+	if !ok {
+		return
+	}
+	typeIdentifierSym, ok := lang.SymbolByName("type_identifier")
+	if !ok {
+		return
+	}
+	primitiveTypeNamed := symbolIsNamed(lang, primitiveTypeSym)
+	walkResultTree(root, func(n *Node) {
+		if n.symbol != typeIdentifierSym {
+			return
+		}
+		if isCBuiltinPrimitiveTypeName(canonicalCTypeName(n.Text(source))) {
+			n.symbol = primitiveTypeSym
+			n.setNamed(primitiveTypeNamed)
+		}
+	})
+}
+
 func isCBuiltinPrimitiveTypeName(name string) bool {
 	switch name {
 	case "char", "int", "float", "double", "void", "_Bool", "_Complex", "bool", "__int128",

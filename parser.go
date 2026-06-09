@@ -44,7 +44,14 @@ type Parser struct {
 	typeScriptHasPropertyIdentifier     bool
 	typeScriptHasIdentifier             bool
 	typeScriptContextualPropertyKeyword map[string]Symbol
-	forceRawSpanAll                     bool
+	// Scheme error-recovery: a datum that fails to lex (e.g. a bare backslash)
+	// must be recovered as a `_datum` so the enclosing list keeps its opening
+	// delimiter. schemeDatumSymbol is the `_datum` nonterminal used to take the
+	// correct GOTO when an error node is pushed in a list that has no datum yet.
+	isScheme             bool
+	schemeDatumSymbol    Symbol
+	schemeHasDatumSymbol bool
+	forceRawSpanAll      bool
 	// leafInternByLang enables canonical leaf interning for this language even
 	// when the global GOT_PARSE_INTERN_LEAVES_SUBSTITUTE flag is off. Limited to
 	// languages whose GLR parses keep hundreds of stacks alive (bash, swift),
@@ -377,6 +384,7 @@ func NewParser(lang *Language) *Parser {
 		p.hasKeywordState = buildKeywordStates(lang)
 		p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols = buildInvisibleSpanSymbolTables(lang.SymbolNames)
 		p.initTypeScriptContextualKeywordSymbols(lang)
+		p.initSchemeErrorRecoverySymbols(lang)
 		p.rootSymbol, p.hasRootSymbol = p.inferRootSymbol()
 		p.maxConflictWidth = computeMaxConflictWidth(lang)
 	}
@@ -4082,6 +4090,14 @@ func tsxRepetitionReduceConflictChoice(lang *Language, tok Token, state StateID,
 		return ParseAction{}, false
 	}
 	return reduce, true
+}
+
+func (p *Parser) initSchemeErrorRecoverySymbols(lang *Language) {
+	if p == nil || lang == nil || lang.Name != "scheme" {
+		return
+	}
+	p.isScheme = true
+	p.schemeDatumSymbol, p.schemeHasDatumSymbol = lang.SymbolByName("_datum")
 }
 
 func (p *Parser) initTypeScriptContextualKeywordSymbols(lang *Language) {
