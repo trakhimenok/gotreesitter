@@ -252,6 +252,14 @@ func effectiveFullParseInitialMaxStacks(lang *Language, initialMaxStacks int) in
 		if initialMaxStacks == maxGLRStacks {
 			initialMaxStacks = 2
 		}
+	case "elisp":
+		// Wide survivor budgets multiply elisp's huge quoted data lists across
+		// equivalent stacks until the per-parse arena budget kills the parse
+		// mid-file (authors.el and the leuven/manoj theme files truncate at
+		// the default cap). Cap 2 parses them all byte-identical to C.
+		if initialMaxStacks == maxGLRStacks {
+			initialMaxStacks = 2
+		}
 	case "javascript":
 		// Large JavaScript UMD/runtime bundles need enough survivors to keep the
 		// outer call-expression branch alive through long function arguments.
