@@ -813,6 +813,114 @@ func (p *Parser) schemeErrorRecoveryState(state StateID) StateID {
 	return gotoState
 }
 
+// nearestActionRecoveryLanguage reports whether in-context recovery
+// (tryNearestActionStateRecovery) is enabled for the active grammar. This is
+// the C ts_parser__recover candidate rule — pop to the nearest stack state
+// that has an action on the current lookahead, wrap only the popped
+// fragments into an ERROR, and resume in context — without C's multi-version
+// cost competition. It is enabled per-grammar only after real-corpus
+// verification against the C oracle, because without cost competition a
+// stray delimiter (e.g. '}') can resync into a deep wrong context in
+// grammars with reusable delimiters.
+func (p *Parser) nearestActionRecoveryLanguage() bool {
+	if p == nil || p.language == nil {
+		return false
+	}
+	switch p.language.Name {
+	case "jq":
+		// jq's real corpus (src/builtin.jq) uses control expressions
+		// (`if … end`) directly as object-pair values, which the grammar
+		// rejects. C pops the failed value fragments to the state where `}`
+		// can act, wraps them in a nested ERROR inside the pair, and the
+		// surrounding function_definition completes cleanly. Verified
+		// byte-faithful on the jq corpus.
+		return true
+	}
+	return false
+}
+
+// nearestActionRecoveryMaxPop bounds how many stack entries the in-context
+// recovery may pop. C's cost competition naturally prefers shallow pops; this
+// bound is the cheap stand-in that keeps a stray delimiter from unwinding a
+// deep, otherwise-healthy spine.
+const nearestActionRecoveryMaxPop = 8
+
+// tryNearestActionStateRecovery mirrors C ts_parser__recover's candidate
+// rule for the no-action fall-through: walk the stack from the top looking
+// for the nearest state (within nearestActionRecoveryMaxPop) that has an
+// action on the current lookahead, pop the entries above it, wrap them into
+// a single extra (arity-transparent) ERROR node pushed at that state, and
+// retry the lookahead there. Returns true when it recovered.
+func (p *Parser) tryNearestActionStateRecovery(s *glrStack, tok Token, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, trackChildErrors *bool) bool {
+	if p == nil || s == nil || arena == nil || tok.Symbol == 0 || tok.Symbol == errorSymbol {
+		return false
+	}
+	if p.noTreeBenchmarkOnly || !p.nearestActionRecoveryLanguage() {
+		return false
+	}
+	s.ensureGSS(gssScratch)
+	depth := s.depth()
+	if depth < 2 {
+		return false
+	}
+	entries := make([]stackEntry, 0, depth)
+	for n := s.gss.head; n != nil; n = n.prev {
+		entries = append(entries, n.entry)
+	}
+	// entries[0] is the top. The top state itself has no action (that is why
+	// we are here); scan below it, bounded.
+	recoverIdx := -1
+	maxIdx := nearestActionRecoveryMaxPop
+	if maxIdx >= len(entries) {
+		maxIdx = len(entries) - 1
+	}
+	for i := 1; i <= maxIdx; i++ {
+		if p.lookupActionIndex(entries[i].state, tok.Symbol) != 0 {
+			recoverIdx = i
+			break
+		}
+	}
+	if recoverIdx < 0 {
+		return false
+	}
+	// Materialize the popped fragments (entries above the recovery state) in
+	// stack order (base-most first); they become the ERROR node's children.
+	popped := entries[:recoverIdx]
+	errChildren := make([]*Node, 0, len(popped))
+	for i := len(popped) - 1; i >= 0; i-- {
+		node, _ := materializeStackEntryPayloadEntryWithParser(p, arena, popped[i], materializeForRecovery, materializeForRecovery)
+		if node == nil {
+			return false
+		}
+		errChildren = append(errChildren, node)
+	}
+	recoverState := entries[recoverIdx].state
+	if !s.truncate(depth - recoverIdx) {
+		return false
+	}
+	errNode := newParentNodeInArena(arena, errorSymbol, true, errChildren, nil, 0)
+	errNode.setHasError(true)
+	errNode.setExtra(true)
+	nodeBumpEquivVersion(errNode)
+	if perfCountersEnabled {
+		perfRecordErrorNode()
+	}
+	if trackChildErrors != nil {
+		*trackChildErrors = true
+	}
+	errNode.preGotoState = recoverState
+	errNode.parseState = recoverState
+	p.pushStackNode(s, recoverState, errNode, entryScratch, gssScratch)
+	if nodeCount != nil {
+		*nodeCount = *nodeCount + 1
+	}
+	if p.glrTrace {
+		fmt.Printf("      -> NEAREST-RECOVER tok=%d state=%d popped=%d depth=%d\n",
+			tok.Symbol, recoverState, len(errChildren), s.depth())
+	}
+	return true
+}
+
 // Resync recovery status codes returned by tryResyncErrorRecovery.
 const (
 	resyncNone    = 0 // not handled; caller falls back to pushOrExtendErrorNode
