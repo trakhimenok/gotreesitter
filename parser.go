@@ -96,6 +96,10 @@ type Parser struct {
 	normalizationStats                  normalizationStats
 	materializationTiming               *parseMaterializationTiming
 	reduceTiming                        *parseMaterializationTiming
+	// forestConflictChoice backs forestSingletonActions: a single-element scratch
+	// slice the GSS-forest path reuses when a scoped conflict rule collapses a
+	// multi-action set to one C-preferred action, avoiding a per-node allocation.
+	forestConflictChoice [1]ParseAction
 }
 
 var snippetParserPools sync.Map
@@ -2474,6 +2478,30 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 					}
 					return finalize(stacks, ParseStopNoStacksAlive)
 				}
+				// Panic-mode resync (mirrors C ts_parser__recover): before
+				// appending a flat ERROR leaf at this dead-end state, try to pop
+				// down to the grammar's top-level (initial) state, wrap the failed
+				// region into one localized ERROR node (preserving any already
+				// completed valid top-level siblings), and resume there. This keeps
+				// subsequent valid top-level constructs nested under the real root
+				// instead of shredding the rest of the file into flat fragments.
+				switch p.tryResyncErrorRecovery(s, tok, &nodeCount, arena, &scratch.entries, &scratch.gss, &trackChildErrors) {
+				case resyncRetry:
+					currentState = s.top().state
+					needToken = false
+					if actionTiming != nil {
+						ns := recordNoActionTiming()
+						actionTiming.actionNoActionRecoverNanos += ns
+					}
+					goto retryAction
+				case resyncAdvance:
+					needToken = true
+					if actionTiming != nil {
+						ns := recordNoActionTiming()
+						actionTiming.actionNoActionRecoverNanos += ns
+					}
+					continue
+				}
 				p.pushOrExtendErrorNode(s, currentState, tok, &nodeCount, arena, &scratch.entries, &scratch.gss, &trackChildErrors)
 				needToken = true
 				if actionTiming != nil {
@@ -2563,6 +2591,10 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 						}
 					case "kotlin":
 						if next, ok := kotlinObjectLiteralConflictChoice(p.language, actions); ok {
+							chosen, choice = next, true
+						}
+					case "erlang":
+						if next, ok := erlangMacroCallExprConflictChoice(p.language, actions); ok {
 							chosen, choice = next, true
 						}
 					}
@@ -3202,6 +3234,36 @@ func (p *Parser) actionsForParseState(state StateID, symbol Symbol, parseActions
 		return nil
 	}
 	return parseActions[actionIdx].Actions
+}
+
+// forestResolveConflict applies the same deterministic conflict tie-breaks the
+// production GLR loop uses (the `switch p.language.Name` block) to the GSS-forest
+// fast path. The forest disambiguates surviving alternatives purely by subtree
+// score (dynamic precedence); when two interpretations tie at score 0 the forest
+// keeps whichever coalesced first, which does not always match C tree-sitter's
+// associativity-driven resolution. For the conflicts that C resolves at table
+// generation via prec/associativity (not a runtime dynamic-precedence number),
+// we collapse the action set to the single C-preferred action so the forest
+// builds the matching shape. When no scoped rule applies, the full action set is
+// returned unchanged and the forest's normal multi-action handling proceeds.
+func (p *Parser) forestResolveConflict(actions []ParseAction) []ParseAction {
+	if p == nil || p.language == nil || len(actions) < 2 {
+		return actions
+	}
+	switch p.language.Name {
+	case "erlang":
+		if chosen, ok := erlangMacroCallExprConflictChoice(p.language, actions); ok {
+			return p.forestSingletonActions(chosen)
+		}
+	}
+	return actions
+}
+
+// forestSingletonActions returns a reusable one-element action slice holding the
+// chosen action, avoiding a per-call allocation in the forest hot loop.
+func (p *Parser) forestSingletonActions(act ParseAction) []ParseAction {
+	p.forestConflictChoice[0] = act
+	return p.forestConflictChoice[:1]
 }
 
 func (p *Parser) traceStackActions(stackIndex int, state StateID, symbol Symbol, actions []ParseAction) {
@@ -3899,6 +3961,50 @@ func awkRepetitionShiftConflictChoice(lang *Language, state StateID, actions []P
 		return ParseAction{}, false
 	}
 	return repetitionShiftConflictChoice(actions)
+}
+
+// erlangMacroCallExprConflictChoice resolves the `?Name(...)` macro-invocation
+// fork in favor of the shift, matching C tree-sitter. Upstream declares
+// `macro_call_expr: prec.right(seq('?', name, optional(macro_call_args)))` and a
+// conflict between `macro_call_expr` and `macro_call_none` (`? name` with no
+// args). After `? name`, with `(` lookahead, the table offers reduce(s) to the
+// bare two-child macro_call_expr/macro_call_none plus a shift into
+// macro_call_args. The prec.right associativity makes C take the shift, yielding
+// a single three-child macro_call_expr (`?`, name, args). Without this, the GLR
+// cull picks the reduce path, producing `(call (macro_call_expr) (expr_args))`.
+//
+// Scoped strictly by action shape: every conflict reduce must be a two-child
+// macro_call_expr / macro_call_none, accompanied by exactly one non-repetition
+// shift. The erlang table has exactly three such entries (the `?Name(` states),
+// all matching this shape, so the choice is unambiguous.
+func erlangMacroCallExprConflictChoice(lang *Language, actions []ParseAction) (ParseAction, bool) {
+	if lang == nil || len(actions) < 2 {
+		return ParseAction{}, false
+	}
+	var shift ParseAction
+	haveShift := false
+	haveReduce := false
+	for _, act := range actions {
+		switch act.Type {
+		case ParseActionShift:
+			if haveShift || act.Repetition {
+				return ParseAction{}, false
+			}
+			shift = act
+			haveShift = true
+		case ParseActionReduce:
+			if act.ChildCount != 2 || !symbolHasName(lang, act.Symbol, "macro_call_expr") {
+				return ParseAction{}, false
+			}
+			haveReduce = true
+		default:
+			return ParseAction{}, false
+		}
+	}
+	if !haveShift || !haveReduce {
+		return ParseAction{}, false
+	}
+	return shift, true
 }
 
 func singleReduceAgainstRepetitionShiftConflictChoice(actions []ParseAction) (ParseAction, bool) {

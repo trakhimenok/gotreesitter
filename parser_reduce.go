@@ -369,7 +369,218 @@ func buildSingleTokenWrapperSymbols(lang *Language) []bool {
 	if !any {
 		return nil
 	}
+
+	// Tighten the heuristic: a named+visible symbol is only a single-token
+	// wrapper when it reduces over exactly ONE distinct child TOKEN. Choice
+	// rules like `bool_lit: choice('true','false')` reduce over 2+ distinct
+	// tokens; C tree-sitter keeps the matched anonymous token as a visible
+	// child (ChildCount==1), so the collapse must be skipped for them.
+	//
+	// ts2go collapses all single-child productions to ProductionID 0, so the
+	// reduce metadata alone cannot distinguish a genuine single-token rule
+	// from a multi-alternative choice. We therefore inspect the parse table:
+	// only FLIP a flag to false when we positively determine the distinct
+	// child-token set has size >= 2. If the table provides no usable signal,
+	// leave the existing decision unchanged (so the synthetic-Language unit
+	// test with no parse table still passes).
+	tokenSetSizes := singleTokenWrapperChildTokenSetSizes(lang, out)
+	for sym, size := range tokenSetSizes {
+		if size >= 2 && sym < len(out) {
+			out[sym] = false
+		}
+	}
+
+	any = false
+	for _, v := range out {
+		if v {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return nil
+	}
 	return out
+}
+
+// singleTokenWrapperChildTokenSetSizes computes, for each candidate wrapper
+// symbol (those with candidates[sym]==true), the number of distinct terminal
+// tokens that can become its single child. It returns a map from symbol index
+// to that count; symbols absent from the map (or with count 0) have no usable
+// table signal and must keep their existing flag.
+//
+// The signal is the set of "no-goto exclusive reduce states": a state whose
+// action entry contains reduce(sym, cc==1), contains NO other reduce symbol,
+// and contains NO goto (no shift keyed by a nonterminal symbol). For each such
+// state S, the distinct child tokens are the terminal symbols X such that some
+// state has a Shift action on X targeting state S. The union of X across all
+// such states is the distinct child-token set for sym.
+func singleTokenWrapperChildTokenSetSizes(lang *Language, candidates []bool) map[int]int {
+	if lang == nil {
+		return nil
+	}
+	if len(lang.ParseTable) == 0 && len(lang.SmallParseTableMap) == 0 {
+		return nil
+	}
+
+	denseLimit := int(lang.LargeStateCount)
+	if denseLimit == 0 {
+		denseLimit = len(lang.ParseTable)
+	}
+	smallBase := int(lang.LargeStateCount)
+	tokenCount := int(lang.TokenCount)
+
+	stateCount := denseLimit
+	if n := smallBase + len(lang.SmallParseTableMap); n > stateCount {
+		stateCount = n
+	}
+
+	// First pass over all (state, symbol) cells:
+	//  - reduceState[state]: the single reduce-sym (cc==1) if this state is a
+	//    candidate exclusive reduce state, else -1. Marked invalid (-2) when a
+	//    state has another reduce symbol or any goto.
+	//  - shiftTargets: map target state -> set of terminal tokens shifting in.
+	const (
+		stateNone    = -1
+		stateInvalid = -2
+	)
+	reduceState := make([]int, stateCount)
+	for i := range reduceState {
+		reduceState[i] = stateNone
+	}
+	hasGoto := make([]bool, stateCount)
+	shiftTargets := make(map[int]map[int]struct{})
+
+	visit := func(state int, sym int, act ParseAction) {
+		switch act.Type {
+		case ParseActionShift:
+			if sym < tokenCount {
+				tgt := int(act.State)
+				set := shiftTargets[tgt]
+				if set == nil {
+					set = map[int]struct{}{}
+					shiftTargets[tgt] = set
+				}
+				set[sym] = struct{}{}
+			} else {
+				// Shift keyed by a nonterminal symbol == goto.
+				if state < len(hasGoto) {
+					hasGoto[state] = true
+				}
+			}
+		case ParseActionReduce:
+			if state >= len(reduceState) {
+				return
+			}
+			rsym := int(act.Symbol)
+			if act.ChildCount == 1 && rsym >= 0 && rsym < len(candidates) && candidates[rsym] {
+				switch reduceState[state] {
+				case stateNone:
+					reduceState[state] = rsym
+				case stateInvalid:
+					// already invalid
+				default:
+					if reduceState[state] != rsym {
+						reduceState[state] = stateInvalid
+					}
+				}
+			} else {
+				// Any reduce that is not a cc==1 candidate disqualifies the
+				// state as an exclusive single-token reduce state.
+				reduceState[state] = stateInvalid
+			}
+		}
+	}
+
+	forEachStateAction(lang, denseLimit, smallBase, func(state, sym int, act ParseAction) {
+		visit(state, sym, act)
+	})
+
+	// Account for gotos discovered after a reduce was recorded: a state with a
+	// goto cannot be an exclusive reduce state.
+	for state := range reduceState {
+		if state < len(hasGoto) && hasGoto[state] {
+			reduceState[state] = stateInvalid
+		}
+	}
+
+	// Collect, per candidate symbol, the union of terminal tokens shifting into
+	// any of its exclusive reduce states.
+	childTokens := make(map[int]map[int]struct{})
+	for state, rsym := range reduceState {
+		if rsym < 0 {
+			continue
+		}
+		set := shiftTargets[state]
+		if len(set) == 0 {
+			continue
+		}
+		dst := childTokens[rsym]
+		if dst == nil {
+			dst = map[int]struct{}{}
+			childTokens[rsym] = dst
+		}
+		for tok := range set {
+			dst[tok] = struct{}{}
+		}
+	}
+
+	out := make(map[int]int, len(childTokens))
+	for sym, set := range childTokens {
+		out[sym] = len(set)
+	}
+	return out
+}
+
+// forEachStateAction iterates every (state, symbol) -> ParseAction across both
+// the dense and small (sparse) parse tables, invoking fn for each action of the
+// resolved action entry. Action index 0 is the no-action/error entry.
+func forEachStateAction(lang *Language, denseLimit, smallBase int, fn func(state, sym int, act ParseAction)) {
+	resolve := func(state, sym int, idx uint16) {
+		if idx == 0 || int(idx) >= len(lang.ParseActions) {
+			return
+		}
+		for _, act := range lang.ParseActions[idx].Actions {
+			fn(state, sym, act)
+		}
+	}
+
+	for state := 0; state < denseLimit && state < len(lang.ParseTable); state++ {
+		row := lang.ParseTable[state]
+		for sym, idx := range row {
+			if idx == 0 {
+				continue
+			}
+			resolve(state, sym, idx)
+		}
+	}
+
+	table := lang.SmallParseTable
+	for smallIdx, offset := range lang.SmallParseTableMap {
+		state := smallBase + smallIdx
+		pos := int(offset)
+		if pos >= len(table) {
+			continue
+		}
+		groupCount := table[pos]
+		pos++
+		for i := uint16(0); i < groupCount; i++ {
+			if pos+1 >= len(table) {
+				break
+			}
+			sectionValue := table[pos]
+			symbolCount := table[pos+1]
+			pos += 2
+			for j := uint16(0); j < symbolCount; j++ {
+				if pos >= len(table) {
+					break
+				}
+				sym := int(table[pos])
+				resolve(state, sym, sectionValue)
+				pos++
+			}
+		}
+	}
 }
 
 func (p *Parser) applyActionWithReduceChain(s *glrStack, act ParseAction, tok Token, anyReduced *bool, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, tmpEntries *[]stackEntry, deferParentLinks bool, trackChildErrors *bool) bool {
@@ -421,6 +632,230 @@ func (p *Parser) pushOrExtendErrorNode(s *glrStack, state StateID, tok Token, no
 	if nodeCount != nil {
 		*nodeCount = *nodeCount + 1
 	}
+}
+
+// Resync recovery status codes returned by tryResyncErrorRecovery.
+const (
+	resyncNone    = 0 // not handled; caller falls back to pushOrExtendErrorNode
+	resyncRetry   = 1 // resynced; caller retries the action at the same token
+	resyncAdvance = 2 // resynced and consumed the token; caller reads the next token
+)
+
+// resyncTopLevelLanguage reports whether the top-level panic-mode resync
+// (tryResyncErrorRecovery) is enabled for the active grammar. It is currently
+// scoped to plain C, whose start symbol is a flat translation_unit repeat for
+// which initial-state resync is validated to localize errors without regressing
+// other recoveries. Broadening this (e.g. to cpp/objc or other flat-top-level
+// grammars) is safe only after verifying that grammar's language-specific
+// recovery tests against the resync behavior; cpp in particular has recovery
+// tests that lock in the existing leaf-path output, so it is intentionally
+// excluded here.
+func (p *Parser) resyncTopLevelLanguage() bool {
+	if p == nil || p.language == nil {
+		return false
+	}
+	return p.language.Name == "c"
+}
+
+// tryResyncErrorRecovery implements the panic-mode resync that mirrors C
+// tree-sitter's ts_parser__recover for the no-action fall-through. When the
+// current top state has no action for the lookahead, the parser is stuck: the
+// previous behavior (pushOrExtendErrorNode at the same dead-end state) appended
+// a flat ERROR leaf and kept reading at that non-progressing state, so every
+// following token shredded into another top-level fragment.
+//
+// Instead, we pop DOWN to the grammar's top-level (initial) state, wrap the
+// failed region into a SINGLE localized ERROR node while PRESERVING any
+// already-completed valid top-level siblings, and resume there. The lookahead
+// then has an action at (or just after) that state, so subsequent valid
+// top-level constructs parse with proper nesting under the real root and the
+// damage is contained to one ERROR subtree.
+//
+// Returns:
+//   - resyncNone: no top-level frame can act on the lookahead; caller falls
+//     back to pushOrExtendErrorNode (accumulate token, re-test next token).
+//   - resyncRetry: resynced; caller retries the action at the same token.
+//   - resyncAdvance: resynced and folded the current token into the ERROR;
+//     caller advances to the next token.
+func (p *Parser) tryResyncErrorRecovery(s *glrStack, tok Token, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, trackChildErrors *bool) int {
+	if p == nil || s == nil || arena == nil || tok.Symbol == 0 {
+		return resyncNone
+	}
+	// Only meaningful for full-tree parsing; no-tree benchmark stacks carry
+	// noTreeNode payloads that this path does not reconstruct.
+	if p.noTreeBenchmarkOnly {
+		return resyncNone
+	}
+	// Scope: this top-level resync is currently enabled only for the C family
+	// (c/cpp/objc), whose start symbol is a flat translation_unit repeat for
+	// which the initial-state resync is well-behaved and validated. Other
+	// grammars (e.g. authzed, java, php) drive their own language-specific
+	// recovery post-processing tuned against the existing leaf path; enabling
+	// the resync for them changes those well-localized outputs, so we leave them
+	// on the proven path. See resyncTopLevelLanguage.
+	if !p.resyncTopLevelLanguage() {
+		return resyncNone
+	}
+
+	// Materialize the stack entries top-to-bottom so we can both probe states
+	// and collect the popped subtrees. The stack may be in either the dense
+	// entries form or the GSS form.
+	s.ensureGSS(gssScratch)
+	depth := s.depth()
+	if depth < 2 {
+		return resyncNone
+	}
+	entries := make([]stackEntry, 0, depth)
+	for n := s.gss.head; n != nil; n = n.prev {
+		entries = append(entries, n.entry)
+	}
+
+	// entries[0] is the top; entries[len-1] is the base. We resync to a genuine
+	// top-level recovery context: an ancestor whose state is the grammar's
+	// initial state (the start-symbol repeat, e.g. translation_unit / program /
+	// source_file). Resyncing there wraps the failed region into ONE localized
+	// ERROR and resumes parsing the next valid top-level construct with proper
+	// nesting under the real root.
+	//
+	// We deliberately do NOT resync to an arbitrary mid-stack state that merely
+	// happens to accept the lookahead (e.g. a stray '}' or ',' that a deep
+	// initializer/block production can shift): those resync into the wrong
+	// context and keep the parse fragmented. Scanning from the base upward
+	// selects the deepest top-level frame, containing the most damage in a
+	// single ERROR subtree.
+	initialState := p.language.InitialState
+	recoverIdx := -1
+	for i := len(entries) - 1; i >= 1; i-- {
+		if entries[i].state == initialState {
+			recoverIdx = i
+			break
+		}
+	}
+	if recoverIdx < 0 {
+		return resyncNone
+	}
+	recoverState := entries[recoverIdx].state
+
+	// Materialize the popped subtrees (entries above the recovered top-level
+	// frame), in stack order (base-most popped first). These are zero or more
+	// ALREADY-COMPLETED valid top-level siblings (e.g. a function_definition that
+	// reduced before the failing construct began) followed by the partial/failed
+	// construct that triggered the no-action.
+	popped := entries[:recoverIdx] // top-first: top .. recoverIdx-1
+	poppedNodes := make([]*Node, 0, len(popped))
+	for i := len(popped) - 1; i >= 0; i-- { // stack order: base-most first
+		node, _ := materializeStackEntryPayloadEntryWithParser(p, arena, popped[i], materializeForRecovery, materializeForRecovery)
+		if node == nil {
+			// A non-Node payload (no-tree leaf) slipped in; abort and let the
+			// conservative fallback handle this token.
+			return resyncNone
+		}
+		poppedNodes = append(poppedNodes, node)
+	}
+
+	// Split the popped span: keep the leading run of COMPLETED valid top-level
+	// items as preserved siblings, and wrap the trailing failed construct into
+	// ONE localized ERROR. A completed top-level item is an error-free node that
+	// (a) the running top-level state has a GOTO for, and (b) lands in a state
+	// from which the parse could legally end (i.e. that state can act on the
+	// EOF/end symbol). Condition (b) is what distinguishes a fully reduced
+	// top-level item (after which translation_unit may accept) from a partial
+	// construct's internal entries (which also have GOTOs but cannot end the
+	// file). Without (b) the loop would greedily follow the failed construct's
+	// own GOTO chain and land right back at the stuck state.
+	endSym := Symbol(0)
+	preservedEnd := 0
+	gotoState := recoverState
+	for preservedEnd < len(poppedNodes) {
+		n := poppedNodes[preservedEnd]
+		if n.hasError() {
+			break
+		}
+		next := p.lookupGoto(gotoState, n.symbol)
+		if next == 0 {
+			break
+		}
+		if p.lookupActionIndex(next, endSym) == 0 {
+			break
+		}
+		gotoState = next
+		preservedEnd++
+	}
+	if preservedEnd >= len(poppedNodes) {
+		// Everything popped was valid (no failed suffix to wrap). This should
+		// not happen on the no-action path; bail rather than push an empty ERROR.
+		return resyncNone
+	}
+
+	// Decide how to handle the current lookahead. If the post-sibling top-level
+	// state can act on it, we resync and RETRY the action there (the common
+	// case: the lookahead starts the next valid construct). If it cannot (e.g.
+	// the lookahead is the failed construct's own terminator like ';' or '}'),
+	// fold the current token into the ERROR as well and ADVANCE; the next
+	// construct-starting token will then shift cleanly at the preserved
+	// top-level frame. Either way the prior valid siblings are preserved.
+	status := resyncRetry
+	if p.lookupActionIndex(gotoState, tok.Symbol) == 0 {
+		status = resyncAdvance
+	}
+
+	errChildren := make([]*Node, 0, len(poppedNodes)-preservedEnd+1)
+	errChildren = append(errChildren, poppedNodes[preservedEnd:]...)
+	if status == resyncAdvance {
+		// Fold the unparseable current token into the ERROR span.
+		tokLeaf := newLeafNodeInArena(arena, tok.Symbol, p.isNamedSymbol(tok.Symbol),
+			tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
+		tokLeaf.setHasError(true)
+		errChildren = append(errChildren, tokLeaf)
+	}
+	errNode := newParentNodeInArena(arena, errorSymbol, true, errChildren, nil, 0)
+	errNode.setHasError(true)
+	nodeBumpEquivVersion(errNode)
+	if perfCountersEnabled {
+		perfRecordErrorNode()
+	}
+	if trackChildErrors != nil {
+		*trackChildErrors = true
+	}
+
+	// Pop everything ABOVE the recovered state. entries is top-first, so the
+	// recovered state at top-first index recoverIdx sits at 1-based stack depth
+	// len(entries)-recoverIdx; truncating to that depth keeps the recovered
+	// state and everything below it and discards the popped span above it.
+	keepDepth := len(entries) - recoverIdx
+	if !s.truncate(keepDepth) {
+		return resyncNone
+	}
+	// Re-push the preserved valid top-level siblings, advancing the state via
+	// GOTO exactly as the original parse did.
+	pushState := recoverState
+	for i := 0; i < preservedEnd; i++ {
+		n := poppedNodes[i]
+		next := p.lookupGoto(pushState, n.symbol)
+		if next == 0 {
+			// Defensive: should not happen given the preservation loop above.
+			return resyncNone
+		}
+		n.preGotoState = pushState
+		n.parseState = next
+		nodeBumpEquivVersion(n)
+		pushState = next
+		p.pushStackNode(s, next, n, entryScratch, gssScratch)
+	}
+	// Push the ERROR node, keeping pushState as the top state so the lookahead
+	// has an action on the next dispatch (resyncRetry) or so the next token
+	// shifts cleanly (resyncAdvance).
+	errNode.preGotoState = pushState
+	errNode.parseState = pushState
+	p.pushStackNode(s, pushState, errNode, entryScratch, gssScratch)
+	if nodeCount != nil {
+		*nodeCount = *nodeCount + 1
+	}
+	if p.glrTrace {
+		fmt.Printf("      -> RESYNC tok=%d status=%d recover_state=%d preserved=%d wrapped=%d depth=%d\n",
+			tok.Symbol, status, recoverState, preservedEnd, len(errChildren), s.depth())
+	}
+	return status
 }
 
 func reduceChainSignatureFor(state StateID, depth int, act ParseAction) reduceChainSignature {
@@ -4848,6 +5283,9 @@ func (p *Parser) collapseUnaryLeafRule(act ParseAction, childSym Symbol) collaps
 		if p.shouldPreserveVisibleUnaryTokenWrapper(act.Symbol) {
 			return collapseUnaryRuleNone
 		}
+		if p.wrapsSameNamedAnonymousToken(act.Symbol, childSym) {
+			return collapseUnaryRuleNone
+		}
 		if !p.isSingleTokenWrapperSymbol(act.Symbol) && !p.sameSymbolName(act.Symbol, childSym) {
 			return collapseUnaryRuleNone
 		}
@@ -4864,7 +5302,7 @@ func (p *Parser) canCollapseInvisibleUnaryWrapperSymbol(parentSym Symbol) bool {
 	if int(parentSym) >= len(meta) {
 		return false
 	}
-	return !meta[parentSym].Visible
+	return invisibleUnaryWrapperCollapsible(meta[parentSym])
 }
 
 func (p *Parser) collapsibleRawUnarySelfReduction(act ParseAction, tok Token, arena *nodeArena, entries []stackEntry, start, reducedEnd int) *Node {
@@ -4990,6 +5428,9 @@ func (p *Parser) collapseUnaryChildForReductionWithRule(act ParseAction, arena *
 		if p.shouldPreserveVisibleUnaryTokenWrapper(act.Symbol) {
 			return nil, collapseUnaryRuleNone
 		}
+		if p.wrapsSameNamedAnonymousToken(act.Symbol, child.symbol) {
+			return nil, collapseUnaryRuleNone
+		}
 		if !p.isSingleTokenWrapperSymbol(act.Symbol) && !p.sameSymbolName(act.Symbol, child.symbol) {
 			return nil, collapseUnaryRuleNone
 		}
@@ -5006,7 +5447,24 @@ func (p *Parser) canCollapseInvisibleUnaryWrapper(parentSym Symbol, child *Node)
 	if int(parentSym) >= len(meta) {
 		return false
 	}
-	return !meta[parentSym].Visible
+	return invisibleUnaryWrapperCollapsible(meta[parentSym])
+}
+
+// invisibleUnaryWrapperCollapsible reports whether an invisible unary wrapper
+// symbol may be collapsed (renamed-through to its lone child) during reduction.
+// Only anonymous (invisible AND unnamed) wrappers are collapsible. A wrapper
+// that is invisible AND named is a hidden named nonterminal -- e.g. twig's
+// $._expression which is aliased to the visible $.argument_value. Upstream
+// tree-sitter NESTS such a wrapper under its alias instead of renaming-through
+// to the lone visible child, so it must not be collapsed away here; leaving the
+// hidden named wrapper in place routes the alias through
+// flattenedVisibleAliasTarget/materializeHiddenNodeForAlias, which build the
+// proper single-child nesting.
+func invisibleUnaryWrapperCollapsible(meta SymbolMetadata) bool {
+	if meta.Visible {
+		return false
+	}
+	return !meta.Named
 }
 
 func (p *Parser) shouldPreserveVisibleUnaryTokenWrapper(parentSym Symbol) bool {
@@ -5022,6 +5480,39 @@ func (p *Parser) shouldPreserveVisibleUnaryTokenWrapper(parentSym Symbol) bool {
 	default:
 		return false
 	}
+}
+
+// wrapsSameNamedAnonymousToken reports whether parentSym is a visible named rule
+// whose single unary child is a distinct anonymous token that shares the parent's
+// name (e.g. the LLVM rule `dso_local: choice("dso_local", ...)` produces both a
+// named `dso_local` rule symbol and an anonymous `dso_local` token symbol). In C
+// tree-sitter this child token is kept as a child rather than collapsed away, so
+// the node retains ChildCount()==1. This is unlike single-token wrappers where the
+// token name differs from the rule (those collapse to a childless leaf).
+func (p *Parser) wrapsSameNamedAnonymousToken(parentSym, childSym Symbol) bool {
+	if p == nil || p.language == nil || parentSym == childSym {
+		return false
+	}
+	meta := p.language.SymbolMetadata
+	if int(parentSym) < 0 || int(parentSym) >= len(meta) ||
+		int(childSym) < 0 || int(childSym) >= len(meta) {
+		return false
+	}
+	// Scoped to llvm: the same-named-anonymous-token keep-the-child shape is
+	// verified to match C for llvm (dso_local, unnamed_addr, …). Other grammars
+	// (e.g. go) have same-named-anon-token rules that C COLLAPSES, so this is an
+	// opt-in per-language signal, not a universal rule. Broaden only after
+	// per-grammar verification against the C oracle.
+	if p.language.Name != "llvm" {
+		return false
+	}
+	parent := meta[parentSym]
+	child := meta[childSym]
+	// Parent must be a visible named rule; child must be a visible anonymous token.
+	if !parent.Visible || !parent.Named || !child.Visible || child.Named {
+		return false
+	}
+	return p.sameSymbolName(parentSym, childSym)
 }
 
 func (p *Parser) isVisibleSymbol(sym Symbol) bool {

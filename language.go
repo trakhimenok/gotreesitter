@@ -404,39 +404,74 @@ func (l *Language) buildKeywordLexPrefilter() keywordLexPrefilter {
 	if l == nil || len(l.KeywordLexStates) == 0 {
 		return keywordLexPrefilter{allowAll: true}
 	}
+	// Derive the first-character and accepted-length sets directly from the
+	// keyword lex DFA rather than from symbol names. Keyword literals are not
+	// always equal to their symbol names (e.g. bass maps the literal "_" to the
+	// "ignore" symbol), so a name-based prefilter would wrongly reject the
+	// literal and block keyword promotion. The keyword DFA, which actually
+	// recognizes the literals, is the authoritative source.
+	//
+	// The DFA always starts at state 0 (see lexKeywordSource). We BFS by depth:
+	// the byte ranges leaving state 0 give the valid first characters, and the
+	// depth at which any accept state is reached gives a valid length. If the
+	// DFA uses constructs we cannot bound conservatively (default transitions,
+	// non-ASCII ranges), fall back to allowAll so we never produce a false
+	// negative.
+	states := l.KeywordLexStates
+	const maxLen = 255
 	var filter keywordLexPrefilter
-	for _, state := range l.KeywordLexStates {
-		sym := state.AcceptToken
-		if sym == 0 {
+
+	type frame struct {
+		state int
+		depth int
+	}
+	visited := make(map[frame]bool)
+	queue := []frame{{state: 0, depth: 0}}
+	for len(queue) > 0 {
+		f := queue[0]
+		queue = queue[1:]
+		if f.state < 0 || f.state >= len(states) {
+			return keywordLexPrefilter{allowAll: true}
+		}
+		if visited[f] {
 			continue
 		}
-		idx := int(sym)
-		if idx < 0 || idx >= len(l.SymbolNames) {
+		visited[f] = true
+		if f.depth > maxLen {
 			return keywordLexPrefilter{allowAll: true}
 		}
-		name := l.SymbolNames[idx]
-		if name == "" || len(name) >= 256 {
+
+		st := states[f.state]
+		if st.AcceptToken != 0 && f.depth > 0 {
+			filter.hasAny = true
+			filter.lengths[f.depth/64] |= uint64(1) << uint(f.depth%64)
+		}
+		// A default transition can be taken by any byte, which would make the
+		// first-character set unbounded; bail out conservatively.
+		if st.Default >= 0 {
 			return keywordLexPrefilter{allowAll: true}
 		}
-		if !isPlainKeywordSymbolName(name) {
-			return keywordLexPrefilter{allowAll: true}
+		for _, tr := range st.Transitions {
+			if tr.NextState < 0 {
+				continue
+			}
+			if tr.Lo < 0 || tr.Hi > 0x7F || tr.Hi < tr.Lo {
+				// Non-ASCII (or malformed) ranges cannot be represented in the
+				// 256-bit first set without risking a false negative.
+				return keywordLexPrefilter{allowAll: true}
+			}
+			if f.depth == 0 {
+				for c := tr.Lo; c <= tr.Hi; c++ {
+					filter.first[c/64] |= uint64(1) << uint(c%64)
+				}
+			}
+			queue = append(queue, frame{state: tr.NextState, depth: f.depth + 1})
 		}
-		filter.hasAny = true
-		filter.first[name[0]/64] |= uint64(1) << uint(name[0]%64)
-		filter.lengths[len(name)/64] |= uint64(1) << uint(len(name)%64)
+	}
+	if !filter.hasAny {
+		return keywordLexPrefilter{allowAll: true}
 	}
 	return filter
-}
-
-func isPlainKeywordSymbolName(name string) bool {
-	for i := 0; i < len(name); i++ {
-		ch := name[i]
-		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') {
-			continue
-		}
-		return false
-	}
-	return true
 }
 
 func (l *Language) LexModeStarts() []lexModeStart {

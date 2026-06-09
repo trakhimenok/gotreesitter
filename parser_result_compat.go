@@ -34,6 +34,10 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 	}
 
 	switch ctx.lang.Name {
+	case "authzed":
+		normalizeAuthzedCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "awk":
+		normalizeAwkCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "bash":
 		normalizeBashProgramVariableAssignments(ctx.root, ctx.lang)
 		normalizeBashGeneratedCommandAssignments(ctx.root, ctx.source, ctx.lang)
@@ -48,12 +52,16 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeCommentTrailingExtraTrivia(ctx.root, ctx.source, ctx.lang)
 	case "cooklang":
 		normalizeCooklangTrailingStepTail(ctx.root, ctx.source, ctx.lang)
+	case "cpon":
+		normalizeCPONCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "d":
 		normalizeDCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "dart":
 		normalizeDartCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "elixir":
 		normalizeElixirCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "ebnf":
+		normalizeEBNFCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "erlang":
 		normalizeErlangSourceFileForms(ctx.root, ctx.lang)
 	case "fortran":
@@ -61,6 +69,10 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeTopLevelTrailingLineBreakSpan(ctx.root, ctx.source, ctx.lang)
 	case "go":
 		normalizeGoReturnedTreeCompatibility(ctx.root, ctx.source, ctx.parser, ctx.lang)
+	case "git_rebase":
+		normalizeGitRebaseCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "hack":
+		normalizeHackCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "haskell":
 		normalizeHaskellCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "hcl":
@@ -79,6 +91,8 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeLuaChunkLocalDeclarationFields(ctx.root, ctx.source, ctx.lang)
 	case "make":
 		normalizeMakeConditionalConsequenceFields(ctx.root, ctx.lang)
+	case "nickel":
+		normalizeNickelCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "nginx":
 		normalizeNginxAttributeLineBreaks(ctx.root, ctx.source, ctx.lang)
 	case "nim":
@@ -113,6 +127,8 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 			normalizeSQLRecoveredTopLevelSelectStatements(ctx.root, ctx.source, ctx.parser, ctx.lang)
 		}
 		normalizeSQLSelectClauseBodyIntoFields(ctx.root, ctx.lang)
+	case "squirrel":
+		normalizeSquirrelCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "svelte":
 		normalizeSvelteTrailingExtraTrivia(ctx.root, ctx.source, ctx.lang)
 	case "swift":
