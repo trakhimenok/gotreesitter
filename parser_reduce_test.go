@@ -123,7 +123,12 @@ func TestCanCollapseNamedLeafWrapperSingleAnonymousToken(t *testing.T) {
 	}
 }
 
-func TestCollapsibleUnarySelfReductionAliasesSingleAnonymousLeaf(t *testing.T) {
+// A named rule wrapping a DIFFERENT-named visible anonymous token (e.g.
+// optional_chain over "?.") must NOT collapse to a childless leaf: C tree-sitter
+// keeps the anonymous token as a visible child (childCount==1). The unary
+// self-reduction collapse must therefore decline (return nil) so the normal
+// reduce keeps the child.
+func TestCollapsibleUnarySelfReductionKeepsDifferentNamedAnonChild(t *testing.T) {
 	lang := &Language{
 		SymbolMetadata: []SymbolMetadata{
 			{Name: "EOF"},
@@ -131,34 +136,18 @@ func TestCollapsibleUnarySelfReductionAliasesSingleAnonymousLeaf(t *testing.T) {
 			{Name: "?.", Visible: true, Named: false},
 		},
 	}
-	p := &Parser{
-		language:                 lang,
-		singleTokenWrapperSymbol: []bool{false, true, false},
-	}
+	p := &Parser{language: lang}
 	arena := newNodeArena(arenaClassFull)
 	child := newLeafNodeInArena(arena, 2, false, 1, 3, Point{Column: 1}, Point{Column: 3})
 	entries := []stackEntry{newStackEntryNode(0, child)}
 	act := ParseAction{Symbol: 1, ChildCount: 1}
 
-	got := p.collapsibleUnarySelfReduction(act, Token{}, arena, entries, 0, 1, []*Node{child}, nil)
-	if got == nil {
-		t.Fatal("expected unary single-token reduction to collapse to named leaf")
-	}
-	if got.Symbol() != 1 {
-		t.Fatalf("collapsed symbol = %d, want %d", got.Symbol(), 1)
-	}
-	if !got.IsNamed() {
-		t.Fatal("collapsed node should be named")
-	}
-	if got.ChildCount() != 0 {
-		t.Fatalf("collapsed child count = %d, want 0", got.ChildCount())
-	}
-	if got.StartByte() != 1 || got.EndByte() != 3 {
-		t.Fatalf("collapsed span = [%d,%d), want [1,3)", got.StartByte(), got.EndByte())
+	if got := p.collapsibleUnarySelfReduction(act, Token{}, arena, entries, 0, 1, []*Node{child}, nil); got != nil {
+		t.Fatalf("expected different-named visible anon child to be kept (no collapse), got node with cc=%d", got.ChildCount())
 	}
 }
 
-func TestCollapsibleRawUnarySelfReductionAliasesSingleAnonymousLeaf(t *testing.T) {
+func TestCollapsibleRawUnarySelfReductionKeepsDifferentNamedAnonChild(t *testing.T) {
 	lang := &Language{
 		SymbolMetadata: []SymbolMetadata{
 			{Name: "EOF"},
@@ -166,27 +155,14 @@ func TestCollapsibleRawUnarySelfReductionAliasesSingleAnonymousLeaf(t *testing.T
 			{Name: "?.", Visible: true, Named: false},
 		},
 	}
-	p := &Parser{
-		language:                 lang,
-		singleTokenWrapperSymbol: []bool{false, true, false},
-	}
+	p := &Parser{language: lang}
 	arena := newNodeArena(arenaClassFull)
 	child := newLeafNodeInArena(arena, 2, false, 1, 3, Point{Column: 1}, Point{Column: 3})
 	entries := []stackEntry{newStackEntryNode(0, child)}
 	act := ParseAction{Symbol: 1, ChildCount: 1}
 
-	got := p.collapsibleRawUnarySelfReduction(act, Token{}, arena, entries, 0, 1)
-	if got == nil {
-		t.Fatal("expected raw unary single-token reduction to collapse to named leaf")
-	}
-	if got.Symbol() != 1 {
-		t.Fatalf("collapsed symbol = %d, want %d", got.Symbol(), 1)
-	}
-	if !got.IsNamed() {
-		t.Fatal("collapsed node should be named")
-	}
-	if got.ChildCount() != 0 {
-		t.Fatalf("collapsed child count = %d, want 0", got.ChildCount())
+	if got := p.collapsibleRawUnarySelfReduction(act, Token{}, arena, entries, 0, 1); got != nil {
+		t.Fatalf("expected different-named visible anon child to be kept (no collapse), got node with cc=%d", got.ChildCount())
 	}
 }
 

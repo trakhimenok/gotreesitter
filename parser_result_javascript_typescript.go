@@ -841,43 +841,6 @@ func insertJavaScriptStatementBlockComment(parent *Node, childIdx int, comment *
 	populateParentNode(parent, parent.children)
 }
 
-func normalizeJavaScriptTypeScriptOptionalChainLeaves(root *Node, source []byte, lang *Language) {
-	if root == nil || lang == nil || !bytes.Contains(source, []byte("?.")) {
-		return
-	}
-	switch lang.Name {
-	case "javascript", "typescript", "tsx":
-	default:
-		return
-	}
-	optionalChainSym, ok := symbolByName(lang, "optional_chain")
-	if !ok {
-		return
-	}
-
-	walkResultTreeDenseFirst(root, func(n *Node) {
-		if n.symbol != optionalChainSym || len(n.children) != 1 {
-			return
-		}
-		// The C reference parser emits optional_chain as a 0-child leaf.
-		// The Go parser sometimes materializes a "?." anonymous token as
-		// a child. Strip it to match C's structure.
-		child := n.children[0]
-		if child == nil {
-			return
-		}
-		if child.endByte <= child.startByte || int(child.endByte) > len(source) || !bytes.Equal(source[child.startByte:child.endByte], []byte("?.")) {
-			return
-		}
-		n.children = nil
-		n.fieldIDs = nil
-		n.fieldSources = nil
-		if n.ownerArena != nil {
-			n.ownerArena.clearFinalChildRefs(n)
-		}
-	})
-}
-
 func normalizeJavaScriptTypeScriptCallPrecedence(root *Node, lang *Language) {
 	if root == nil || lang == nil {
 		return
@@ -1187,19 +1150,14 @@ func rewriteJavaScriptTypeScriptStatementKeywordsCallPrecedenceAndBuildUnaryBina
 			if normalizeJavaScriptTypeScriptStatementKeywordLeafWithSymbolChanged(n, source, "while", whileSym, whileNamed, closeBraceSym, hasCloseBrace) {
 				index.statementKeyword.nodesRewritten++
 			}
-		} else if enableOptionalChain && n.symbol == optionalChainSym && len(n.children) == 1 {
-			// The C reference parser emits optional_chain as a 0-child leaf.
-			// Strip the materialized "?." child to match C.
-			child := n.children[0]
-			if child != nil && child.endByte > child.startByte && int(child.endByte) <= len(source) && bytes.Equal(source[child.startByte:child.endByte], []byte("?.")) {
-				n.children = nil
-				n.fieldIDs = nil
-				n.fieldSources = nil
-				if n.ownerArena != nil {
-					n.ownerArena.clearFinalChildRefs(n)
-				}
-			}
 		}
+		// optional_chain intentionally retains its visible "?." anonymous-token
+		// child: C tree-sitter emits (optional_chain (?.)) with childCount==1.
+		// The parser already builds that child; no normalization is applied here.
+		_ = enableOptionalChain
+		_ = optionalChainSym
+		_ = optionalChainTokenSym
+		_ = optionalChainTokenNamed
 
 		if nodeHasFinalChildRefs(n) {
 			childCount := resultChildCount(n)

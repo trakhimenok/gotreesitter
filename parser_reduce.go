@@ -532,6 +532,111 @@ func singleTokenWrapperChildTokenSetSizes(lang *Language, candidates []bool) map
 	return out
 }
 
+// buildKeepSameNamedAnonChildSymbols computes, for each visible named rule
+// symbol, whether a unary reduction over a same-named visible anonymous token
+// child must KEEP that child (C tree-sitter childCount==1) rather than collapse
+// it to a childless named leaf (childCount==0).
+//
+// The distinguisher (verified against the C oracle): a `rule: $ => 'literal'`
+// rule whose literal appears in ONLY that rule is inlined by tree-sitter into a
+// single named token (childCount==0, COLLAPSE — e.g. go's `nil`/`true`/`false`/
+// `iota`). When the literal is shared across 2+ productions, tree-sitter extracts
+// it as a distinct anonymous token that the named rule then wraps as a visible
+// child (childCount==1, KEEP — e.g. ruby `nil`, solidity `true`/`false`, css
+// `to`, typst `return`).
+//
+// The runtime proxy for "the anonymous token is a genuinely extracted/shared
+// token" is the number of distinct parse states it shifts INTO: a literal used
+// only by its own wrapper rule shifts into exactly one state (which immediately
+// reduces the wrapper), while a shared/extracted token shifts into 2+ distinct
+// states. So: KEEP iff the same-named anon token shifts into >= 2 distinct
+// target states.
+//
+// Returns a per-symbol slice indexed by the named parent symbol, or nil when no
+// such keep-cases exist (so synthetic Languages without a parse table are
+// unaffected).
+func buildKeepSameNamedAnonChildSymbols(lang *Language) []bool {
+	if lang == nil || len(lang.SymbolMetadata) == 0 {
+		return nil
+	}
+	if len(lang.ParseTable) == 0 && len(lang.SmallParseTableMap) == 0 {
+		return nil
+	}
+
+	meta := lang.SymbolMetadata
+	tokenCount := int(lang.TokenCount)
+
+	// For each name, find its visible named symbol and visible anonymous token.
+	type pair struct{ named, anon int }
+	byName := map[string]*pair{}
+	for sym := 0; sym < len(meta); sym++ {
+		m := meta[sym]
+		if !m.Visible {
+			continue
+		}
+		nm := m.Name
+		if nm == "" && sym < len(lang.SymbolNames) {
+			nm = lang.SymbolNames[sym]
+		}
+		if nm == "" {
+			continue
+		}
+		p := byName[nm]
+		if p == nil {
+			p = &pair{named: -1, anon: -1}
+			byName[nm] = p
+		}
+		if m.Named {
+			p.named = sym
+		} else {
+			p.anon = sym
+		}
+	}
+
+	// Collect anon-token candidates (those with a same-named named twin) and
+	// count distinct shift-target states per anon token.
+	anonShiftTargets := map[int]map[int]struct{}{}
+	for _, p := range byName {
+		if p.named < 0 || p.anon < 0 {
+			continue
+		}
+		anonShiftTargets[p.anon] = map[int]struct{}{}
+	}
+	if len(anonShiftTargets) == 0 {
+		return nil
+	}
+
+	denseLimit := int(lang.LargeStateCount)
+	if denseLimit == 0 {
+		denseLimit = len(lang.ParseTable)
+	}
+	smallBase := int(lang.LargeStateCount)
+	forEachStateAction(lang, denseLimit, smallBase, func(state, sym int, act ParseAction) {
+		if act.Type != ParseActionShift {
+			return
+		}
+		if set, ok := anonShiftTargets[sym]; ok && sym < tokenCount {
+			set[int(act.State)] = struct{}{}
+		}
+	})
+
+	out := make([]bool, len(meta))
+	any := false
+	for _, p := range byName {
+		if p.named < 0 || p.anon < 0 {
+			continue
+		}
+		if len(anonShiftTargets[p.anon]) >= 2 {
+			out[p.named] = true
+			any = true
+		}
+	}
+	if !any {
+		return nil
+	}
+	return out
+}
+
 // forEachStateAction iterates every (state, symbol) -> ParseAction across both
 // the dense and small (sparse) parse tables, invoking fn for each action of the
 // resolved action entry. Action index 0 is the no-action/error entry.
@@ -5286,7 +5391,16 @@ func (p *Parser) collapseUnaryLeafRule(act ParseAction, childSym Symbol) collaps
 		if p.wrapsSameNamedAnonymousToken(act.Symbol, childSym) {
 			return collapseUnaryRuleNone
 		}
-		if !p.isSingleTokenWrapperSymbol(act.Symbol) && !p.sameSymbolName(act.Symbol, childSym) {
+		// Only the inlined-token artifact collapses to a childless named leaf: a
+		// named rule whose body is a single literal that tree-sitter lexes
+		// directly as the rule symbol (e.g. go `nil`/`true`/`false`/`iota`). In
+		// the loaded Language ts2go splits that into a same-named named rule plus
+		// a same-named visible anonymous token, so the inlined case is exactly the
+		// same-named pair that wrapsSameNamedAnonymousToken did NOT mark as keep.
+		// A DIFFERENT-named visible anonymous child (e.g. optional_chain `?.`,
+		// empty `;`, moduleExpr `module`) is a genuine production member that C
+		// tree-sitter keeps as a visible child, so it must not collapse here.
+		if !p.sameSymbolName(act.Symbol, childSym) {
 			return collapseUnaryRuleNone
 		}
 		return collapseUnaryRuleNamedLeafAlias
@@ -5431,7 +5545,11 @@ func (p *Parser) collapseUnaryChildForReductionWithRule(act ParseAction, arena *
 		if p.wrapsSameNamedAnonymousToken(act.Symbol, child.symbol) {
 			return nil, collapseUnaryRuleNone
 		}
-		if !p.isSingleTokenWrapperSymbol(act.Symbol) && !p.sameSymbolName(act.Symbol, child.symbol) {
+		// Same rationale as collapseUnaryLeafRule: only the inlined-token artifact
+		// (a same-named anon token the lexer produces directly as the rule)
+		// collapses to a childless leaf. A different-named visible anonymous child
+		// is a real production member that C keeps, so it must not collapse.
+		if !p.sameSymbolName(act.Symbol, child.symbol) {
 			return nil, collapseUnaryRuleNone
 		}
 		return aliasedNodeInArena(arena, p.language, child, act.Symbol), collapseUnaryRuleNamedLeafAlias
@@ -5484,11 +5602,17 @@ func (p *Parser) shouldPreserveVisibleUnaryTokenWrapper(parentSym Symbol) bool {
 
 // wrapsSameNamedAnonymousToken reports whether parentSym is a visible named rule
 // whose single unary child is a distinct anonymous token that shares the parent's
-// name (e.g. the LLVM rule `dso_local: choice("dso_local", ...)` produces both a
-// named `dso_local` rule symbol and an anonymous `dso_local` token symbol). In C
-// tree-sitter this child token is kept as a child rather than collapsed away, so
-// the node retains ChildCount()==1. This is unlike single-token wrappers where the
-// token name differs from the rule (those collapse to a childless leaf).
+// name AND whose child token C tree-sitter keeps as a visible child (so the node
+// retains ChildCount()==1 instead of collapsing to a childless named leaf).
+//
+// e.g. ruby `nil`, solidity `true`/`false`, css `to`, typst `return`, and the
+// LLVM `dso_local`/`unnamed_addr`/… rules all KEEP their same-named anonymous
+// token child. By contrast go's `nil`/`true`/`false`/`iota` collapse it away:
+// their `$ => 'literal'` rule is inlined by tree-sitter into a single named
+// token. The two shapes are byte-identical in the loaded Language's symbol and
+// lexer metadata, so the keep-vs-collapse decision is derived from parse-table
+// behavior in buildKeepSameNamedAnonChildSymbols (the anon token shifts into 2+
+// distinct states only when it is a genuinely extracted/shared token).
 func (p *Parser) wrapsSameNamedAnonymousToken(parentSym, childSym Symbol) bool {
 	if p == nil || p.language == nil || parentSym == childSym {
 		return false
@@ -5498,21 +5622,25 @@ func (p *Parser) wrapsSameNamedAnonymousToken(parentSym, childSym Symbol) bool {
 		int(childSym) < 0 || int(childSym) >= len(meta) {
 		return false
 	}
-	// Scoped to llvm: the same-named-anonymous-token keep-the-child shape is
-	// verified to match C for llvm (dso_local, unnamed_addr, …). Other grammars
-	// (e.g. go) have same-named-anon-token rules that C COLLAPSES, so this is an
-	// opt-in per-language signal, not a universal rule. Broaden only after
-	// per-grammar verification against the C oracle.
-	if p.language.Name != "llvm" {
-		return false
-	}
 	parent := meta[parentSym]
 	child := meta[childSym]
 	// Parent must be a visible named rule; child must be a visible anonymous token.
 	if !parent.Visible || !parent.Named || !child.Visible || child.Named {
 		return false
 	}
-	return p.sameSymbolName(parentSym, childSym)
+	if !p.sameSymbolName(parentSym, childSym) {
+		return false
+	}
+	// General signal: the same-named anon token is a genuinely extracted/shared
+	// token (shifts into 2+ distinct parse states), so C keeps it as a child.
+	if int(parentSym) < len(p.keepSameNamedAnonChildSymbol) && p.keepSameNamedAnonChildSymbol[parentSym] {
+		return true
+	}
+	// llvm fallback: a few llvm rules (unnamed_addr, thread_local) keep their
+	// same-named anon token child even though it shifts into only one state. These
+	// are byte-identical to go's collapse cases in the loaded Language, so they
+	// can only be separated by a per-language opt-in verified against the C oracle.
+	return p.language.Name == "llvm"
 }
 
 func (p *Parser) isVisibleSymbol(sym Symbol) bool {

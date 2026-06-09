@@ -346,7 +346,7 @@ func TestParseTSXGenericCallUnionTypeArgument(t *testing.T) {
 	}
 }
 
-func TestParseTSXOptionalChainIsLeaf(t *testing.T) {
+func TestParseTSXOptionalChainKeepsTokenChild(t *testing.T) {
 	src := "const value = elements?.concat(wildcards);\n"
 	tree, lang := parseLanguageSample(t, "tsx", src)
 	t.Cleanup(tree.Release)
@@ -365,10 +365,13 @@ func TestParseTSXOptionalChainIsLeaf(t *testing.T) {
 	if node == nil {
 		t.Fatalf("missing optional_chain node: %s", tree.RootNode().SExpr(lang))
 	}
-	// C tree-sitter emits optional_chain as a 0-child leaf; the Go parser
-	// should match after normalization strips any materialized "?." child.
-	if got, want := node.ChildCount(), 0; got != want {
+	// C tree-sitter emits (optional_chain (?.)) — the visible "?." anonymous
+	// token is a child, so childCount==1. The Go parser must match.
+	if got, want := node.ChildCount(), 1; got != want {
 		t.Fatalf("optional_chain child count = %d, want %d; root=%s", got, want, tree.RootNode().SExpr(lang))
+	}
+	if got, want := node.Child(0).Type(lang), "?."; got != want {
+		t.Fatalf("optional_chain child type = %q, want %q; root=%s", got, want, tree.RootNode().SExpr(lang))
 	}
 }
 

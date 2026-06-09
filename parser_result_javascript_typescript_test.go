@@ -277,7 +277,10 @@ func TestNormalizeJavaScriptTrailingContinueCommentSiblingsDirectContinue(t *tes
 	}
 }
 
-func TestNormalizeJavaScriptTypeScriptOptionalChainStripsTokenChild(t *testing.T) {
+// optional_chain must KEEP its visible "?." anonymous-token child: C tree-sitter
+// emits (optional_chain (?.)) with childCount==1, so the TS compatibility pass
+// must not strip the materialized token child.
+func TestNormalizeJavaScriptTypeScriptOptionalChainKeepsTokenChild(t *testing.T) {
 	lang := &Language{
 		Name:        "javascript",
 		SymbolNames: []string{"EOF", "program", "expression_statement", "call_expression", "identifier", "optional_chain", "?.", "arguments"},
@@ -306,22 +309,18 @@ func TestNormalizeJavaScriptTypeScriptOptionalChainStripsTokenChild(t *testing.T
 	stmt := newParentNodeInArena(arena, 2, true, []*Node{call}, nil, 0)
 	root := newParentNodeInArena(arena, 1, true, []*Node{stmt}, nil, 0)
 
-	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, []byte("x?."), lang)
+	normalizeTypeScriptTreeCompatibilityWithParser(root, []byte("x?.(a)"), nil, lang)
 
-	if got, want := chain.ChildCount(), 0; got != want {
+	if got, want := chain.ChildCount(), 1; got != want {
 		t.Fatalf("optional_chain child count = %d, want %d", got, want)
+	}
+	if got, want := chain.Child(0).Type(lang), "?."; got != want {
+		t.Fatalf("optional_chain child type = %q, want %q", got, want)
 	}
 	if got, want := chain.StartByte(), uint32(1); got != want {
 		t.Fatalf("optional_chain start = %d, want %d", got, want)
 	}
 	if got, want := chain.EndByte(), uint32(3); got != want {
 		t.Fatalf("optional_chain end = %d, want %d", got, want)
-	}
-
-	collapsed := newLeafNodeInArena(arena, 5, true, 0, 2, Point{}, Point{Column: 2})
-	root = newParentNodeInArena(arena, 1, true, []*Node{collapsed}, nil, 0)
-	normalizeJavaScriptTypeScriptOptionalChainLeaves(root, []byte("?."), lang)
-	if got, want := collapsed.ChildCount(), 0; got != want {
-		t.Fatalf("collapsed optional_chain child count = %d, want %d", got, want)
 	}
 }
