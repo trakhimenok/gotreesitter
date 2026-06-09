@@ -260,6 +260,14 @@ func effectiveFullParseInitialMaxStacks(lang *Language, initialMaxStacks int) in
 		if initialMaxStacks == maxGLRStacks {
 			initialMaxStacks = 2
 		}
+	case "properties", "turtle":
+		// Both grammars churn equivalent survivor stacks catastrophically at
+		// the default cap: properties blows the 512MB arena budget on a 6.6KB
+		// catalina.properties and turtle hits the iteration limit on a
+		// 954-byte manifest.ttl. Cap 2 parses both byte-identical to C.
+		if initialMaxStacks == maxGLRStacks {
+			initialMaxStacks = 2
+		}
 	case "javascript":
 		// Large JavaScript UMD/runtime bundles need enough survivors to keep the
 		// outer call-expression branch alive through long function arguments.
