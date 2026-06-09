@@ -18,13 +18,23 @@ import (
 // Parser is not safe for concurrent use. Use one parser per goroutine, a
 // ParserPool, or guard shared parser instances with external synchronization.
 type Parser struct {
-	language                            *Language
-	reuseCursor                         reuseCursor
-	reuseScratch                        reuseScratch
-	reuseMu                             sync.Mutex
-	reparseFactory                      TokenSourceFactory
-	recoveryParser                      *Parser
-	skipRecoveryReparse                 bool
+	language            *Language
+	reuseCursor         reuseCursor
+	reuseScratch        reuseScratch
+	reuseMu             sync.Mutex
+	reparseFactory      TokenSourceFactory
+	recoveryParser      *Parser
+	skipRecoveryReparse bool
+	// forceCleanRetryPass forces a single parseInternal call to behave as a
+	// non-retry ("clean") pass even when the caller widened the GLR stack
+	// budget via maxStacksOverride. A widened retry would normally also enable
+	// the retry-pass error-recovery behavior (single-stack resurrection on
+	// all-stacks-dead, and the associated degraded error handling), which turns
+	// an otherwise-recoverable parse into a fragmented ERROR root. With this
+	// set, the extra budget alone keeps a winning branch alive to the same
+	// clean accepted forest a wider built-in budget (GOT_GLR_MAX_STACKS) would
+	// have produced, matching tree-sitter C on bash for/while/case scripts.
+	forceCleanRetryPass                 bool
 	compatibilityBorrowedArenas         []*nodeArena
 	fullArenaHint                       uint32
 	pendingFullArenaHint                uint32
@@ -2951,6 +2961,9 @@ type parseCaps struct {
 
 func (p *Parser) configureParseCaps(source []byte, reuse *reuseCursor, arenaClass arenaClass, scratch *parserScratch, maxStacksOverride, maxNodesOverride, maxMergePerKeyOverride int) parseCaps {
 	maxStacks, retryPass := resolveParseMaxStacks(parseMaxGLRStacksValue(), maxStacksOverride, p.maxConflictWidth)
+	if p.forceCleanRetryPass {
+		retryPass = false
+	}
 	mergePerKeyCap := effectiveParseMergePerKeyCap(p.language, parseMaxMergePerKeyValue(), reuse != nil, len(source))
 	if tsxFullParseNeedsTypedArrowMergeWidth(p.language, source, reuse) && mergePerKeyCap < 2 {
 		mergePerKeyCap = 2

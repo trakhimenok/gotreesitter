@@ -85,6 +85,15 @@ func shouldRetryNodeLimitParse(tree *Tree, sourceLen int) bool {
 	return tree.ParseStopReason() == ParseStopNodeLimit
 }
 
+func shouldRetryIncrementalParseAsFull(tree *Tree, sourceLen int, initialMaxStacks int) bool {
+	if tree == nil {
+		return false
+	}
+	return shouldRetryFullParse(tree, sourceLen) ||
+		shouldRetryAcceptedErrorParse(tree, sourceLen, initialMaxStacks) ||
+		shouldRetryNodeLimitParse(tree, sourceLen)
+}
+
 func treeParseClean(tree *Tree) bool {
 	if tree == nil {
 		return false
@@ -750,6 +759,38 @@ func (p *Parser) retryFullParse(source []byte, initialMaxStacks int, tree *Tree,
 	if maxStacksOverride == 0 && maxNodesOverride == 0 {
 		return bestTree
 	}
+	// A widened-stack retry would normally also enable the retry-pass
+	// error-recovery behavior (single-stack resurrection on all-stacks-dead),
+	// because the override exceeds the small global default budget. The original
+	// failure is usually that the narrower prior budget ran every stack dead at
+	// a single ambiguity peak; the extra budget alone keeps a winning branch
+	// alive to a clean accepted forest. The retry-pass recovery, however,
+	// derails the parse into single-stack error recovery and fragments the whole
+	// tree into an ERROR root (e.g. bash for/while/case scripts that tree-sitter
+	// C parses cleanly). So first try the wider budget as a clean (non-retry)
+	// pass; if it parses cleanly we take it. Otherwise we fall through to the
+	// retry-pass-enabled retry below, preserving prior recovery behavior.
+	if maxStacksOverride > 0 && p != nil && !p.forceCleanRetryPass {
+		p.forceCleanRetryPass = true
+		cleanRetryTree := runRetry(retryMaxStacks, 0, maxNodesOverride)
+		p.forceCleanRetryPass = false
+		// A clean (non-retry-pass) wider-budget parse legitimately ends on
+		// ParseStopNoStacksAlive after the winning branch reduces to the start
+		// symbol and the remaining survivors die at EOF, so treeParseClean
+		// (which requires ParseStopAccepted) under-reports it. Accept any
+		// error-free root here; replaceBest/preferRetryTree still pick the best
+		// tree if a later pass does better.
+		if cleanRetryTree != nil && !retryTreeHasError(cleanRetryTree) &&
+			!cleanRetryTree.ParseRuntime().Truncated &&
+			!cleanRetryTree.ParseRuntime().TokenSourceEOFEarly {
+			replaceBest(&bestTree, cleanRetryTree)
+			return bestTree
+		}
+		release(cleanRetryTree)
+		if retryDeadlineExceeded() {
+			return bestTree
+		}
+	}
 	if maxStacksOverride > 0 || maxNodesOverride > 0 {
 		retryTree := runRetry(retryMaxStacks, 0, maxNodesOverride)
 		// nodeRetryTree is read below for stop-reason inspection, so we hold
@@ -858,6 +899,25 @@ func (p *Parser) retryFullParseWithTokenSource(source []byte, ts TokenSource, in
 	// Same as retryFullParseWithDFA: release the original tree if a retry won.
 	if result != tree {
 		tree.Release()
+	}
+	return result
+}
+
+func (p *Parser) retryIncrementalParseAsFullWithTokenSource(source []byte, ts TokenSource, initialMaxStacks int, tree *Tree, timing *incrementalParseTiming) *Tree {
+	if tree == nil {
+		return tree
+	}
+	deterministicExternalConflicts := fullParseUsesDeterministicExternalConflicts(p.language)
+	retryStart := time.Now()
+	result := p.retryFullParseWithTokenSource(source, ts, initialMaxStacks, deterministicExternalConflicts, tree)
+	if result == tree {
+		return tree
+	}
+	if timing != nil {
+		timing.totalNanos += time.Since(retryStart).Nanoseconds()
+		timing.reuseUnsupported = true
+		timing.reuseUnsupportedReason = "incremental_parse_full_retry"
+		copyParseRuntimeToTiming(timing, result.ParseRuntime())
 	}
 	return result
 }

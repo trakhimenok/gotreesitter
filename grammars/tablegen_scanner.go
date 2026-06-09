@@ -2,7 +2,11 @@
 
 package grammars
 
-import gotreesitter "github.com/odvcencio/gotreesitter"
+import (
+	"unicode"
+
+	gotreesitter "github.com/odvcencio/gotreesitter"
+)
 
 // External token indexes for the tablegen grammar.
 const (
@@ -25,6 +29,16 @@ func (TablegenExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLex
 	if !tablegenValid(validSymbols, tablegenTokMultilineComment) {
 		return false
 	}
+
+	// Skip leading whitespace before the comment delimiter. The C scanner
+	// (scanner.c) does exactly this with advance(lexer, /*skip=*/true); without
+	// it the scanner bails the moment the lexer is positioned on the space that
+	// precedes "/*" (e.g. inside "{ /*x*/ }"), and the DFA then mis-lexes the
+	// comment body. Passing skip=true moves only the token start, matching C.
+	for unicode.IsSpace(lexer.Lookahead()) {
+		lexer.Advance(true)
+	}
+
 	if lexer.Lookahead() != '/' {
 		return false
 	}
@@ -36,10 +50,11 @@ func (TablegenExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLex
 
 	depth := 1
 	afterStar := false
-	for depth > 0 {
+	for {
 		ch := lexer.Lookahead()
 		if ch == 0 {
-			break
+			// Unterminated comment: C returns false (no token) on EOF.
+			return false
 		}
 		if ch == '*' {
 			lexer.Advance(false)
@@ -49,8 +64,13 @@ func (TablegenExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLex
 		if ch == '/' {
 			lexer.Advance(false)
 			if afterStar {
-				depth--
 				afterStar = false
+				depth--
+				if depth == 0 {
+					lexer.MarkEnd()
+					lexer.SetResultSymbol(tablegenSymMultilineComment)
+					return true
+				}
 			} else if lexer.Lookahead() == '*' {
 				depth++
 				lexer.Advance(false)
@@ -60,10 +80,6 @@ func (TablegenExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLex
 		lexer.Advance(false)
 		afterStar = false
 	}
-
-	lexer.MarkEnd()
-	lexer.SetResultSymbol(tablegenSymMultilineComment)
-	return true
 }
 
 func tablegenValid(vs []bool, i int) bool { return i < len(vs) && vs[i] }

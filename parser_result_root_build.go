@@ -95,6 +95,7 @@ func (b *resultRootBuild) tryBuildRealRootTree(nodes []*Node) *Tree {
 		b.finalizeWrappedSubtree(realRoot)
 		return nil
 	}
+	realRoot = flattenInvisibleRootChildren(realRoot, b.arena, b.lang)
 	return b.finishTree(realRoot, b.shouldWireParentLinks, extendTrailing)
 }
 
@@ -126,6 +127,18 @@ func (b *resultRootBuild) syntheticRootSymbol(originalNodes, rootChildren []*Nod
 		return b.expectedRootSymbol
 	}
 	if b.isLanguage("swift") {
+		return b.expectedRootSymbol
+	}
+	if b.isLanguage("make") {
+		// tree-sitter make's top rule is `makefile = repeat(_thing)`, so the C
+		// parser ALWAYS keeps `makefile` as the root and embeds ERROR nodes as
+		// children — it never escalates the root itself to ERROR (verified on
+		// arbitrary garbage input). An invalid construct such as a substitution
+		// reference over an automatic variable (`$(<:.c=.o)`) is contained within
+		// the makefile frame in C; go's GLR recovery fragments it into top-level
+		// pieces and would otherwise synthesize an ERROR root, diverging from C.
+		// Keeping `makefile` here restores byte-faithful root parity (HasError is
+		// still set on the root via buildSyntheticRootTree, matching C).
 		return b.expectedRootSymbol
 	}
 	return errorSymbol
@@ -357,6 +370,9 @@ func (p *Parser) finalizeResultRoot(root *Node, source []byte, linkScratch *[]*N
 	timing := p.currentMaterializationTiming()
 	finalizeStart := materializationTimingStart(timing)
 	defer timing.addResultFinalizeRoot(finalizeStart)
+	if p != nil {
+		root = flattenInvisibleRootChildren(root, root.ownerArena, p.language)
+	}
 	if extendTrailing {
 		start := materializationTimingStart(timing)
 		extendNodeToTrailingWhitespace(root, source)

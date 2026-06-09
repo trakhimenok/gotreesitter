@@ -767,19 +767,41 @@ const (
 )
 
 // resyncTopLevelLanguage reports whether the top-level panic-mode resync
-// (tryResyncErrorRecovery) is enabled for the active grammar. It is currently
-// scoped to plain C, whose start symbol is a flat translation_unit repeat for
-// which initial-state resync is validated to localize errors without regressing
-// other recoveries. Broadening this (e.g. to cpp/objc or other flat-top-level
-// grammars) is safe only after verifying that grammar's language-specific
-// recovery tests against the resync behavior; cpp in particular has recovery
-// tests that lock in the existing leaf-path output, so it is intentionally
-// excluded here.
+// (tryResyncErrorRecovery) is enabled for the active grammar. It is scoped to
+// grammars whose start symbol is a flat top-level repeat for which
+// initial-state resync is validated to localize errors without regressing
+// other recoveries: plain C (translation_unit) and jq (program's
+// REPEAT1(function_definition)). Broadening this (e.g. to cpp/objc or other
+// flat-top-level grammars) is safe only after verifying that grammar's
+// language-specific recovery tests against the resync behavior; cpp in
+// particular has recovery tests that lock in the existing leaf-path output, so
+// it is intentionally excluded here.
 func (p *Parser) resyncTopLevelLanguage() bool {
 	if p == nil || p.language == nil {
 		return false
 	}
-	return p.language.Name == "c"
+	switch p.language.Name {
+	case "c":
+		return true
+	case "jq":
+		// jq's start symbol `program` is a flat REPEAT1(function_definition)
+		// (optionally followed by a trailing expression) — the same flat
+		// top-level shape as C's translation_unit, for which initial-state
+		// resync is well-behaved. Real jq sources (e.g. jq's own
+		// src/builtin.jq) contain constructs the grammar rejects: an
+		// `if … end` / `reduce …` / `try …` control expression used directly
+		// as an object pair value, which the grammar admits only as a
+		// `primary_expression` (i.e. via a postfix `?` forming an
+		// optional_expression). C tree-sitter localizes those into a single
+		// nested ERROR (inserting a missing `?`) while keeping the
+		// surrounding program/function_definition structure intact. Without
+		// resync Go collapses the whole file into a flat ERROR root; resyncing
+		// to the program's initial state preserves the completed
+		// function_definition siblings and contains the damage to one ERROR
+		// subtree, matching C's `program` root shape.
+		return true
+	}
+	return false
 }
 
 // tryResyncErrorRecovery implements the panic-mode resync that mirrors C

@@ -63,11 +63,21 @@ func (VueExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, v
 	s := payload.(*vueState)
 	lx := &goLexerAdapter{lexer}
 
-	// Text fragment / interpolation text scanning
+	// Text fragment / interpolation text scanning.
+	//
+	// In the C scanner this is an inline block: when it cannot produce a
+	// TEXT_FRAGMENT/INTERPOLATION_TEXT token (e.g. the run is whitespace-only and
+	// the next significant character is `<`), control *falls through* to the rest
+	// of scan() so that a comment / implicit-end-tag / start/end tag name can be
+	// produced instead. The Go port must preserve that fall-through: a leading
+	// newline before `<!-- -->` inside a <template> would otherwise dead-end
+	// because the external `comment` token never gets a chance to fire.
 	isErrorRecovery := vueValid(validSymbols, vueTokStartTagName) && vueValid(validSymbols, vueTokRawText)
 	if !isErrorRecovery && lexer.Lookahead() != '<' &&
 		(vueValid(validSymbols, vueTokTextFragment) || vueValid(validSymbols, vueTokInterpolationText)) {
-		return vueScanTextFragment(s, lexer, validSymbols)
+		if result, handled := vueScanTextFragment(s, lexer, validSymbols); handled {
+			return result
+		}
 	}
 
 	if vueValid(validSymbols, vueTokRawText) && !vueValid(validSymbols, vueTokStartTagName) &&
@@ -116,7 +126,11 @@ func (VueExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, v
 	return false
 }
 
-func vueScanTextFragment(s *vueState, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
+// vueScanTextFragment mirrors the inline text-fragment block of the C scanner's
+// scan(). It returns (result, handled): when handled is false the caller must
+// continue with the rest of Scan() (C's fall-through), otherwise result is the
+// value to return from Scan().
+func vueScanTextFragment(s *vueState, lexer *gotreesitter.ExternalLexer, validSymbols []bool) (result bool, handled bool) {
 	advancedOnce := false
 
 	if !vueValid(validSymbols, vueTokComment) {
@@ -150,12 +164,22 @@ func vueScanTextFragment(s *vueState, lexer *gotreesitter.ExternalLexer, validSy
 				lexer.Advance(false)
 				if lexer.Lookahead() == '}' {
 					lexer.SetResultSymbol(vueSymInterpolationText)
-					return advancedOnce
+					return advancedOnce, true
 				}
 			} else {
 				lexer.Advance(false)
 				advancedOnce = true
 			}
+
+		case '\r':
+			// Mirror C: handle CRLF; a lone CR behaves like the default case.
+			lexer.Advance(false)
+			if lexer.Lookahead() != '\n' {
+				advancedOnce = true
+				lexer.Advance(false)
+				break
+			}
+			fallthrough
 
 		case '\n':
 			if vueValid(validSymbols, vueTokTextFragment) {
@@ -181,15 +205,17 @@ func vueScanTextFragment(s *vueState, lexer *gotreesitter.ExternalLexer, validSy
 	}
 
 	if lexer.Lookahead() == 0 {
-		return false
+		// C: `if (lexer->eof(lexer)) return false;` — a handled negative result.
+		return false, true
 	}
 
 loopExit:
 	if advancedOnce {
 		lexer.SetResultSymbol(vueSymTextFragment)
-		return true
+		return true, true
 	}
-	return false
+	// C falls through to the remainder of scan() (comment / tags / etc.).
+	return false, false
 }
 
 func vueValid(vs []bool, i int) bool { return i < len(vs) && vs[i] }
