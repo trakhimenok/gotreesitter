@@ -878,7 +878,32 @@ func (p *Parser) tryInsertMissingSingleShift(s *glrStack, tok Token, nodeCount *
 		return candidateCnt < 2
 	})
 	if candidateCnt != 1 {
-		return false
+		// Mirror tree-sitter's ts_parser__recover_with_missing: when the strict
+		// single-shift heuristic above did not isolate a unique visible/named
+		// candidate, fall back to the C runtime's exact algorithm. Scan terminal
+		// symbols in ascending id order and pick the first whose shift target has
+		// a reduce action on the real lookahead. C does this without any
+		// visible/named filter and without a uniqueness requirement, taking the
+		// lowest-id symbol that lets the parse make progress. This recovers
+		// constructs such as Zig's empty container body `struct {}`, where the
+		// grammar requires at least one `container_field` and the runtime inserts
+		// a missing `_identifier` (an invisible terminal) at the `}`.
+		//
+		// The broadened scan is gated exactly like the C runtime: a candidate is
+		// only accepted when, after inserting the missing terminal, performing all
+		// possible reductions eventually reaches a state that can SHIFT the real
+		// lookahead (ts_parser__do_all_potential_reductions returning
+		// can_shift_lookahead_symbol). For grammars such as PHP's
+		// `static function ...`, no missing terminal lets the offending `function`
+		// lookahead be shifted, so this returns false and the parser falls through
+		// to its established ERROR recovery; for Zig's `struct {}` the missing
+		// `_identifier` reduces up to a state that can shift the closing `}`.
+		if sym, act, ok := p.findRecoverWithMissingShift(s, state, tok.Symbol); ok {
+			candidateSym = sym
+			candidateAct = act
+		} else {
+			return false
+		}
 	}
 
 	missingTok := Token{
@@ -898,6 +923,150 @@ func (p *Parser) tryInsertMissingSingleShift(s *glrStack, tok Token, nodeCount *
 	p.applyAction(s, candidateAct, missingTok, new(bool), nodeCount, arena, entryScratch, gssScratch, nil, false, trackChildErrors)
 	s.shifted = false
 	return true
+}
+
+// findRecoverWithMissingShift mirrors tree-sitter's ts_parser__recover_with_missing
+// (lib/src/parser.c). It walks terminal symbols in ascending id order; for each it
+// computes the shift target (ts_language_next_state) and checks that the target
+// state has a leading reduce action on the real lookahead (ts_language_has_reduce_action).
+// The candidate is then confirmed by simulating ts_parser__do_all_potential_reductions:
+// the missing terminal is only accepted when, after applying every available
+// reduction, some reachable state can SHIFT the real lookahead. The first symbol
+// that passes wins, exactly matching the C runtime's lowest-id selection.
+func (p *Parser) findRecoverWithMissingShift(s *glrStack, state StateID, lookahead Symbol) (Symbol, ParseAction, bool) {
+	if p == nil || p.language == nil || s == nil {
+		return 0, ParseAction{}, false
+	}
+	tokenCount := Symbol(p.language.TokenCount)
+	// Materialize the current stack's state chain once; the per-candidate
+	// reduction simulation works on a scratch copy so the real stack is never
+	// mutated.
+	baseStates := p.collectStackStates(s)
+	if len(baseStates) == 0 {
+		return 0, ParseAction{}, false
+	}
+	var sim []StateID
+	for ms := Symbol(1); ms < tokenCount; ms++ {
+		if ms == lookahead {
+			continue
+		}
+		idx := p.lookupActionIndex(state, ms)
+		if idx == 0 || int(idx) >= len(p.language.ParseActions) {
+			continue
+		}
+		actions := p.language.ParseActions[idx].Actions
+		if len(actions) != 1 {
+			continue
+		}
+		act := actions[0]
+		if act.Type != ParseActionShift || act.Extra {
+			continue
+		}
+		nextState := act.State
+		// ts_language_next_state skips when the target is 0 or unchanged.
+		if nextState == 0 || nextState == state {
+			continue
+		}
+		if !p.stateHasLeadingReduceAction(nextState, lookahead) {
+			continue
+		}
+		// Simulate inserting the missing terminal (shift to nextState) followed
+		// by all potential reductions, then check the lookahead can be shifted.
+		sim = append(sim[:0], baseStates...)
+		sim = append(sim, nextState)
+		if p.canShiftAfterReductions(sim, lookahead) {
+			return ms, act, true
+		}
+	}
+	return 0, ParseAction{}, false
+}
+
+// collectStackStates returns the chain of parser states for s, bottom-to-top.
+func (p *Parser) collectStackStates(s *glrStack) []StateID {
+	if s == nil {
+		return nil
+	}
+	if s.gss.head == nil && len(s.entries) > 0 {
+		states := make([]StateID, len(s.entries))
+		for i := range s.entries {
+			states[i] = s.entries[i].state
+		}
+		return states
+	}
+	entries := s.gss.materialize(nil)
+	if len(entries) == 0 {
+		return nil
+	}
+	states := make([]StateID, len(entries))
+	for i := range entries {
+		states[i] = entries[i].state
+	}
+	return states
+}
+
+// stateHasLeadingReduceAction mirrors ts_language_has_reduce_action: the first
+// action for (state, sym) must be a reduce.
+func (p *Parser) stateHasLeadingReduceAction(state StateID, sym Symbol) bool {
+	entry := p.lookupAction(state, sym)
+	if entry == nil || len(entry.Actions) == 0 {
+		return false
+	}
+	return entry.Actions[0].Type == ParseActionReduce
+}
+
+// canShiftAfterReductions simulates ts_parser__do_all_potential_reductions for a
+// single lookahead symbol over a linear copy of the state stack. It repeatedly
+// applies reduce actions available for the lookahead (popping child states and
+// taking the GOTO of the reduced nonterminal) and returns true as soon as a
+// reachable state can shift (or recover on) the lookahead. The state slice is
+// mutated in place; callers pass a scratch copy.
+func (p *Parser) canShiftAfterReductions(states []StateID, lookahead Symbol) bool {
+	const maxSimSteps = 1024
+	for step := 0; step < maxSimSteps; step++ {
+		if len(states) == 0 {
+			return false
+		}
+		top := states[len(states)-1]
+		entry := p.lookupAction(top, lookahead)
+		if entry == nil || len(entry.Actions) == 0 {
+			return false
+		}
+		var reduce ParseAction
+		haveReduce := false
+		for i := range entry.Actions {
+			act := entry.Actions[i]
+			switch act.Type {
+			case ParseActionShift, ParseActionRecover:
+				if !act.Extra && !act.Repetition {
+					return true
+				}
+			case ParseActionReduce:
+				if act.ChildCount > 0 && !haveReduce {
+					reduce = act
+					haveReduce = true
+				}
+			}
+		}
+		if !haveReduce {
+			return false
+		}
+		// Apply the reduction: pop child_count states, then GOTO on the reduced
+		// nonterminal from the new top state.
+		childCount := int(reduce.ChildCount)
+		if childCount > len(states) {
+			return false
+		}
+		states = states[:len(states)-childCount]
+		if len(states) == 0 {
+			return false
+		}
+		gotoState := p.lookupGoto(states[len(states)-1], reduce.Symbol)
+		if gotoState == 0 {
+			return false
+		}
+		states = append(states, gotoState)
+	}
+	return false
 }
 
 func nodesFromStack(stack glrStack) []*Node {
