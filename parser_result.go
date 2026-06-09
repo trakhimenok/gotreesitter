@@ -637,7 +637,7 @@ func stackEntryTypeName(p *Parser, entry stackEntry) string {
 	if int(sym) >= len(p.language.SymbolNames) {
 		return ""
 	}
-	return p.language.SymbolNames[sym]
+	return unescapePunctuationSymbolName(p.language.SymbolNames[sym])
 }
 
 func (p *Parser) isAliasTargetSymbol(sym Symbol) bool {

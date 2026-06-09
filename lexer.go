@@ -42,6 +42,20 @@ type Lexer struct {
 	col             uint32
 	immediateTokens []bool // symbol IDs that are token.immediate(); rejected after whitespace skip
 	zeroWidthTokens []bool // symbol IDs whose terminal pattern can intentionally match empty input
+
+	// Set by scan on failure: where the token attempt began after the DFA
+	// consumed skip (whitespace) transitions. errorRunToken uses this so an
+	// unlexable run starts after legitimately skipped whitespace, like C.
+	failTokenStartPos int
+	failTokenStartRow uint32
+	failTokenStartCol uint32
+
+	// The grammar's most permissive lex state (LexModes[0], C's ERROR_STATE
+	// mode). NextWithErrorRuns only emits an error-run token when even this
+	// state cannot lex at a position — mirroring C, which retries failed
+	// lexes in error mode before skipping characters into an error subtree.
+	errorRunLexState    uint32
+	hasErrorRunLexState bool
 }
 
 // NewLexer creates a new Lexer that will tokenize source using the given
@@ -57,6 +71,20 @@ func NewLexer(states []LexState, source []byte) *Lexer {
 // It automatically skips tokens from states where Skip=true (whitespace).
 // Returns a zero-Symbol token with StartByte==EndByte at EOF.
 func (l *Lexer) Next(startState uint32) Token {
+	return l.next(startState, false)
+}
+
+// NextWithErrorRuns behaves like Next, except that bytes for which no
+// accepting DFA state exists are not silently dropped: the whole unlexable
+// run is consumed and returned as an errorSymbol token. This mirrors C
+// ts_parser__lex, which surfaces skipped characters as an error subtree —
+// the run starts after any whitespace the DFA legitimately skipped and ends
+// at the first position where a token can be lexed (or EOF).
+func (l *Lexer) NextWithErrorRuns(startState uint32) Token {
+	return l.next(startState, true)
+}
+
+func (l *Lexer) next(startState uint32, emitErrorRuns bool) Token {
 	for {
 		// EOF check.
 		if l.pos >= len(l.source) {
@@ -86,8 +114,61 @@ func (l *Lexer) Next(startState uint32) Token {
 			return tok
 		}
 
+		if emitErrorRuns && l.hasErrorRunLexState && !l.canLexAt(l.errorRunLexState, tokenStartPos, tokenStartRow, tokenStartCol) {
+			return l.errorRunToken()
+		}
 		// No accepting state was found. Skip one rune as error recovery.
 		l.skipOneRune()
+	}
+}
+
+// canLexAt reports whether the DFA can lex a token (or whitespace skip)
+// starting at the given position, without moving the lexer.
+func (l *Lexer) canLexAt(lexState uint32, pos int, row, col uint32) bool {
+	savedPos, savedRow, savedCol := l.pos, l.row, l.col
+	_, ok := l.scan(lexState, pos, row, col)
+	l.pos, l.row, l.col = savedPos, savedRow, savedCol
+	return ok
+}
+
+// errorRunToken consumes the unlexable run beginning at the last failed
+// scan's token start (i.e. after any whitespace the DFA skipped) and returns
+// it as an errorSymbol token. The run ends at the first position where the
+// error-mode lex state can lex again, matching C's character-by-character
+// error skipping.
+func (l *Lexer) errorRunToken() Token {
+	// Position the lexer at the real error start: scan records where the
+	// token attempt began after consuming skip (whitespace) transitions.
+	if l.failTokenStartPos > l.pos && l.failTokenStartPos <= len(l.source) {
+		l.pos = l.failTokenStartPos
+		l.row = l.failTokenStartRow
+		l.col = l.failTokenStartCol
+	}
+	if l.pos >= len(l.source) {
+		// Only whitespace remained: this is end-of-input, not an error run.
+		return Token{
+			StartByte:  uint32(l.pos),
+			EndByte:    uint32(l.pos),
+			StartPoint: Point{Row: l.row, Column: l.col},
+			EndPoint:   Point{Row: l.row, Column: l.col},
+		}
+	}
+	startPos, startRow, startCol := l.pos, l.row, l.col
+
+	l.skipOneRune()
+	for l.pos < len(l.source) {
+		if l.canLexAt(l.errorRunLexState, l.pos, l.row, l.col) {
+			break
+		}
+		l.skipOneRune()
+	}
+	return Token{
+		Symbol:     errorSymbol,
+		Text:       bytesToStringNoCopy(l.source[startPos:l.pos]),
+		StartByte:  uint32(startPos),
+		EndByte:    uint32(l.pos),
+		StartPoint: Point{Row: startRow, Column: startCol},
+		EndPoint:   Point{Row: l.row, Column: l.col},
 	}
 }
 
@@ -218,6 +299,9 @@ func (l *Lexer) scan(startState uint32, startPos int, startRow, startCol uint32)
 	}
 
 	if acceptPos < 0 {
+		l.failTokenStartPos = tokenStartPos
+		l.failTokenStartRow = tokenStartRow
+		l.failTokenStartCol = tokenStartCol
 		return Token{}, false
 	}
 

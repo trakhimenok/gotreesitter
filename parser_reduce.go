@@ -740,6 +740,60 @@ func (p *Parser) pushOrExtendErrorNode(s *glrStack, state StateID, tok Token, no
 	}
 }
 
+// pushLexErrorRunLeaf absorbs an unlexable-run lookahead (errorSymbol token
+// from NextWithErrorRuns) into the stack, mirroring C's skipped-error lexing:
+// the run becomes an ERROR leaf that is EXTRA — present in the tree but
+// transparent to production arity — and parsing resumes in the same state.
+func (p *Parser) pushLexErrorRunLeaf(s *glrStack, state StateID, tok Token, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, trackChildErrors *bool) {
+	leaf := newLeafNodeInArena(arena, errorSymbol, true,
+		tok.StartByte, tok.EndByte, tok.StartPoint, tok.EndPoint)
+	leaf.setHasError(true)
+
+	if s != nil {
+		top := stackEntryNode(s.top())
+		if top != nil &&
+			top.symbol == errorSymbol &&
+			top.isExtra() &&
+			!top.isMissing() &&
+			len(top.children) > 0 &&
+			top.parseState == state &&
+			tok.StartByte >= top.endByte {
+			top.children = append(top.children, leaf)
+			top.endByte = tok.EndByte
+			top.endPoint = tok.EndPoint
+			top.setHasError(true)
+			nodeBumpEquivVersion(top)
+			if s.byteOffset < top.endByte {
+				s.byteOffset = top.endByte
+			}
+			if trackChildErrors != nil {
+				*trackChildErrors = true
+			}
+			if nodeCount != nil {
+				*nodeCount = *nodeCount + 1
+			}
+			return
+		}
+	}
+
+	// C wraps the skipped-error token in an ERROR internal node (the error
+	// repeat), so the tree shape is ERROR -> ERROR-leaf.
+	wrapper := newParentNodeInArena(arena, errorSymbol, true, []*Node{leaf}, nil, 0)
+	wrapper.setHasError(true)
+	wrapper.setExtra(true)
+	if trackChildErrors != nil {
+		*trackChildErrors = true
+	}
+	if perfCountersEnabled {
+		perfRecordErrorNode()
+	}
+	wrapper.parseState = state
+	p.pushStackNode(s, state, wrapper, entryScratch, gssScratch)
+	if nodeCount != nil {
+		*nodeCount = *nodeCount + 2
+	}
+}
+
 // schemeErrorRecoveryState returns the state an error node should be pushed in
 // for tree-sitter-scheme. When a datum fails inside a list that has not yet
 // shifted a datum (e.g. immediately after "("), the error must be recovered as

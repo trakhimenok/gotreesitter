@@ -100,6 +100,39 @@ var dfaTokenSourcePool = sync.Pool{
 	},
 }
 
+// setLexerErrorRunLexState wires the grammar's most permissive lex mode
+// (LexModes[0], the C ERROR_STATE mode) into the lexer so NextWithErrorRuns
+// can mirror C's skipped-error lexing for truly unlexable runs.
+func setLexerErrorRunLexState(l *Lexer, language *Language) {
+	if l == nil {
+		return
+	}
+	l.errorRunLexState = 0
+	l.hasErrorRunLexState = false
+	if language == nil || len(language.LexModes) == 0 {
+		return
+	}
+	// Error runs are enabled per-grammar, only after real-corpus verification
+	// against the C oracle (the same way scheme earned its dedicated
+	// error-run path). Two hazards rule out a blanket enable: external
+	// scanners lex some tokens outside the DFA (powershell's newline
+	// _statement_terminator, which C's error-mode lex consults before
+	// skipping), and some DFA-only grammars (e.g. go) recover divergently
+	// from C when fed mid-parse error tokens. diff/elisp/jq are verified
+	// byte-faithful on the real corpus.
+	switch language.Name {
+	case "diff", "elisp", "jq":
+	default:
+		return
+	}
+	ls := language.LexModes[0].LexStateIndex()
+	if ls == noLookaheadLexState {
+		return
+	}
+	l.errorRunLexState = ls
+	l.hasErrorRunLexState = true
+}
+
 func initDFATokenSource(ts *dfaTokenSource, lexer *Lexer, language *Language, lookupActionIndex func(state StateID, sym Symbol) uint16, hasKeywordState []bool, externalValidByState [][]uint16) {
 	ts.lexer = lexer
 	ts.language = language
@@ -114,6 +147,7 @@ func initDFATokenSource(ts *dfaTokenSource, lexer *Lexer, language *Language, lo
 		ts.lexer.zeroWidthTokens = language.ZeroWidthTokens
 		ts.lexer.asciiTable = language.LexAsciiTable()
 		ts.lexModeStarts = language.LexModeStarts()
+		setLexerErrorRunLexState(ts.lexer, language)
 	}
 	if language != nil {
 		ts.hasExternalScanner = language.ExternalScanner != nil
@@ -222,6 +256,7 @@ func (d *dfaTokenSource) Reset(source []byte) {
 		d.lexer.immediateTokens = d.language.ImmediateTokens
 		d.lexer.zeroWidthTokens = d.language.ZeroWidthTokens
 		d.lexer.asciiTable = d.language.LexAsciiTable()
+		setLexerErrorRunLexState(d.lexer, d.language)
 	}
 	d.state = 0
 	d.glrStates = nil
@@ -523,6 +558,11 @@ func (d *dfaTokenSource) schemeErrorRunToken(iterStartPos int, iterStartRow, ite
 	if tok.Symbol == 0 {
 		// EOF or no accepting state at all while input remains.
 		skipped = true
+	} else if tok.Symbol == errorSymbol {
+		// The lexer now surfaces unlexable runs as errorSymbol tokens
+		// (NextWithErrorRuns); scheme still re-derives the run end with its
+		// own boundary rule, which absorbs lexable tails up to a delimiter.
+		skipped = true
 	} else if int(tok.StartByte) > iterStartPos {
 		skipped = true
 	}
@@ -582,7 +622,7 @@ func (d *dfaTokenSource) nextTokenForLexState(lexState uint32) Token {
 		tok.NoLookahead = true
 		return tok
 	}
-	return d.lexer.Next(lexState)
+	return d.lexer.NextWithErrorRuns(lexState)
 }
 
 func (d *dfaTokenSource) lexModeStartRows() []lexModeStart {
@@ -785,6 +825,19 @@ func (d *dfaTokenSource) scanDFATokenForState(state StateID, lexState uint32) (T
 			}
 			return errTok, int(errTok.EndByte), errTok.EndPoint.Row, errTok.EndPoint.Column
 		}
+	}
+	if tok.Symbol == errorSymbol {
+		// Unlexable-run error token from the lexer (mirrors C skipped-error
+		// lexing). Return it as-is: keyword promotion and DFA-token
+		// normalization only apply to real grammar tokens.
+		d.lexer.pos = savedPos
+		d.lexer.row = savedRow
+		d.lexer.col = savedCol
+		d.state = savedState
+		if DebugDFA.Load() {
+			fmt.Printf("  LEX-ERR run %d-%d state=%d\n", tok.StartByte, tok.EndByte, state)
+		}
+		return tok, int(tok.EndByte), tok.EndPoint.Row, tok.EndPoint.Column
 	}
 	if d.hasZeroWidthStartAccept {
 		if zeroTok, ok := d.preferZeroWidthStartAcceptForState(state, lexState, tok, savedPos, savedRow, savedCol); ok {

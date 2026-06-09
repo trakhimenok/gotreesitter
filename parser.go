@@ -2546,6 +2546,25 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 					return ns
 				}
 				sameState := parseStacksShareState(stacks, currentState)
+				if tok.Symbol == errorSymbol && tok.StartByte != tok.EndByte && !p.isScheme {
+					// Unlexable-run lookahead (mirrors C skipped-error lexing):
+					// absorb it into this stack as an extra ERROR leaf the way
+					// C ts_parser__recover does. It is never a reason to kill a
+					// GLR stack, relex (the error lex state already failed at
+					// this position), or pop into a resync. Scheme keeps its
+					// dedicated recovery flow (schemeErrorRunToken + _datum
+					// goto) further down this chain.
+					if DebugDFA.Load() {
+						fmt.Printf("  ABSORB-ERR tok=%d-%d state=%d stacks=%d\n", tok.StartByte, tok.EndByte, currentState, len(stacks))
+					}
+					p.pushLexErrorRunLeaf(s, currentState, tok, &nodeCount, arena, &scratch.entries, &scratch.gss, &trackChildErrors)
+					needToken = true
+					if actionTiming != nil {
+						ns := recordNoActionTiming()
+						actionTiming.actionNoActionErrorNanos += ns
+					}
+					continue
+				}
 				if tok.Symbol == 0 {
 					if sameState {
 						if reTok, ok := p.tryRelexCurrentStateDFA(tok, currentState, ts); ok {

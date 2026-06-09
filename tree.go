@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Range is a span of source text.
@@ -1316,12 +1318,74 @@ func (n *Node) Type(lang *Language) string {
 		return "ERROR"
 	}
 	if int(n.symbol) < len(lang.SymbolNames) {
-		// Return the symbol name exactly as the grammar defines it — C's
-		// ts_node_type never rewrites names, so neither can we (regex-source
-		// token names like `\.not\.` are legitimate and must survive).
-		return lang.SymbolNames[n.symbol]
+		return unescapePunctuationSymbolName(lang.SymbolNames[n.symbol])
 	}
 	return ""
+}
+
+// unescapePunctuationSymbolName maps blob symbol names back to C's display
+// names. Generated parse tables store string tokens in regex-escaped form
+// (e.g. `\?`, `defined\?`) where C names them by the literal (`?`,
+// `defined?`) — escaped punctuation is unescaped. True regex-source token
+// names must stay escaped because C keeps the pattern source verbatim: the
+// known class is fortran's dot-keyword operators (`\.not\.`, `\.and\.`, …),
+// matched structurally by isEscapedDotWordName (verified vs the C oracle).
+func unescapePunctuationSymbolName(name string) string {
+	if !strings.Contains(name, "\\") {
+		return name
+	}
+	if isEscapedDotWordName(name) {
+		return name
+	}
+	var b strings.Builder
+	b.Grow(len(name))
+	changed := false
+	for i := 0; i < len(name); {
+		r, size := utf8.DecodeRuneInString(name[i:])
+		if r != '\\' {
+			b.WriteRune(r)
+			i += size
+			continue
+		}
+		if i+size >= len(name) {
+			b.WriteRune(r)
+			i += size
+			continue
+		}
+		next, nextSize := utf8.DecodeRuneInString(name[i+size:])
+		if next == '\\' || unicode.IsLetter(next) || unicode.IsDigit(next) {
+			b.WriteRune(r)
+			i += size
+			continue
+		}
+		changed = true
+		b.WriteRune(next)
+		i += size + nextSize
+	}
+	if !changed {
+		return name
+	}
+	return b.String()
+}
+
+// isEscapedDotWordName reports whether name has the shape `\.word\.` — an
+// escaped dot, a letter/underscore run, and a trailing escaped dot. These
+// are regex-source token names (fortran's `.not.`-style operators) that C
+// reports with the backslashes intact.
+func isEscapedDotWordName(name string) bool {
+	if len(name) < 5 || !strings.HasPrefix(name, "\\.") || !strings.HasSuffix(name, "\\.") {
+		return false
+	}
+	mid := name[2 : len(name)-2]
+	if mid == "" {
+		return false
+	}
+	for _, r := range mid {
+		if !unicode.IsLetter(r) && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func pointLessThan(a, b Point) bool {

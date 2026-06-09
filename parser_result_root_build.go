@@ -153,6 +153,13 @@ func (b *resultRootBuild) syntheticRootSymbol(originalNodes, rootChildren []*Nod
 	if b.isLanguage("cpon") {
 		return b.expectedRootSymbol
 	}
+	// elisp's start rule is source_file = repeat(_sexp), the same shape as
+	// make: tree-sitter C keeps `source_file` as the root and nests recovery
+	// ERRORs as children (verified vs the C oracle on scrape-elpa.el, whose
+	// unlexable `#` becomes an inner ERROR leaf under a source_file root).
+	if b.isLanguage("elisp") {
+		return b.expectedRootSymbol
+	}
 	return errorSymbol
 }
 

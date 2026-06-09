@@ -1286,7 +1286,7 @@ func queryStackEntryTypeName(entry stackEntry, lang *Language) string {
 	}
 	symbol := stackEntryNodeSymbol(entry)
 	if int(symbol) >= 0 && int(symbol) < len(lang.SymbolNames) {
-		return lang.SymbolNames[symbol]
+		return unescapePunctuationSymbolName(lang.SymbolNames[symbol])
 	}
 	return ""
 }
