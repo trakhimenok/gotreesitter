@@ -467,7 +467,7 @@ func symbolTypeName(lang *Language, sym Symbol) string {
 	if lang == nil || int(sym) >= len(lang.SymbolNames) {
 		return ""
 	}
-	return unescapePunctuationSymbolName(lang.SymbolNames[sym])
+	return lang.SymbolNames[sym]
 }
 
 func cloneNodeSliceIfArena(arena *nodeArena, nodes []*Node) []*Node {

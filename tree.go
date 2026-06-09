@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"unicode"
-	"unicode/utf8"
 )
 
 // Range is a span of source text.
@@ -1318,46 +1316,12 @@ func (n *Node) Type(lang *Language) string {
 		return "ERROR"
 	}
 	if int(n.symbol) < len(lang.SymbolNames) {
-		name := lang.SymbolNames[n.symbol]
-		name = unescapePunctuationSymbolName(name)
-		return name
+		// Return the symbol name exactly as the grammar defines it — C's
+		// ts_node_type never rewrites names, so neither can we (regex-source
+		// token names like `\.not\.` are legitimate and must survive).
+		return lang.SymbolNames[n.symbol]
 	}
 	return ""
-}
-
-func unescapePunctuationSymbolName(name string) string {
-	if !strings.Contains(name, "\\") {
-		return name
-	}
-	var b strings.Builder
-	b.Grow(len(name))
-	changed := false
-	for i := 0; i < len(name); {
-		r, size := utf8.DecodeRuneInString(name[i:])
-		if r != '\\' {
-			b.WriteRune(r)
-			i += size
-			continue
-		}
-		if i+size >= len(name) {
-			b.WriteRune(r)
-			i += size
-			continue
-		}
-		next, nextSize := utf8.DecodeRuneInString(name[i+size:])
-		if next == '\\' || unicode.IsLetter(next) || unicode.IsDigit(next) {
-			b.WriteRune(r)
-			i += size
-			continue
-		}
-		changed = true
-		b.WriteRune(next)
-		i += size + nextSize
-	}
-	if !changed {
-		return name
-	}
-	return b.String()
 }
 
 func pointLessThan(a, b Point) bool {
