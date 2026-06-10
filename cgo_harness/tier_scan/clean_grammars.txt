@@ -33,6 +33,7 @@ gitignore
 gleam
 gn
 go
+godot_resource
 gomod
 hack
 hcl
