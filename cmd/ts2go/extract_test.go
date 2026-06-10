@@ -916,6 +916,20 @@ func TestUnescapeCString(t *testing.T) {
 		{`line\nbreak`, "line\nbreak"},
 		{`tab\there`, "tab\there"},
 		{`back\\slash`, `back\slash`},
+		// C universal character names must decode to the actual rune: the
+		// dhall grammar names tokens for →, λ and ∀ with \u escapes in
+		// parser.c, and C tree-sitter reports the decoded character as the
+		// node type.
+		{`\u2192`, "→"},
+		{`\u03bb`, "λ"},
+		{`\u2200`, "∀"},
+		{`a\u2192b`, "a→b"},
+		{`\U0001F600`, "😀"},
+		// A literal backslash followed by 'u' via \\ stays a literal escape.
+		{`\\u2192`, `\u2192`},
+		// Malformed escapes are preserved as-is.
+		{`\u219`, `\u219`},
+		{`\uZZZZ`, `\uZZZZ`},
 	}
 
 	for _, tt := range tests {

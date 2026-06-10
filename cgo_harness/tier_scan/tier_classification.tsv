@@ -42,7 +42,7 @@ d	IV-recovery?	14/30	ext=.d; faithful C error-cost version competition (see spec
 dart	IV-recovery?	11/30	ext=.dart; faithful C error-cost version competition (see spec)
 desktop	CLEAN	40/40	in ratchet
 devicetree	CLEAN	40/40	in ratchet
-dhall	IV-unknown	23/40	needs deeper single-file diagnosis
+dhall	CLEAN	40/40	ts2go unescapeCString now decodes C universal character names (dhall.bin regenerated: arrow/lambda/forall token names); root expression start snaps past leading whitespace to match C
 diff	CLEAN	40/40	in ratchet
 disassembly	IV-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
 djot	IV-scanner?	0/40	ext=.dj,.djot; 0/40 with 39 truncations (node_limit persists at stack cap 2: 8.4KB file blows the node budget); markdown-class inline ambiguity — re-port stateful external scanner from pinned upstream

@@ -13,6 +13,7 @@ css
 csv
 desktop
 devicetree
+dhall
 diff
 dot
 editorconfig

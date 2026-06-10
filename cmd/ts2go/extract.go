@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ExtractedGrammar holds all data extracted from a tree-sitter parser.c file.
@@ -2331,15 +2332,58 @@ func parseIndexedStringArray(body string, count int, enums map[string]int) ([]st
 	return result, nil
 }
 
-// unescapeCString handles basic C string escape sequences.
+// unescapeCString handles basic C string escape sequences, including
+// universal character names (\uXXXX and \UXXXXXXXX), which the C compiler
+// encodes as the UTF-8 bytes of the code point — C tree-sitter therefore
+// reports the decoded character in ts_symbol_names (e.g. dhall's arrow
+// token). Malformed escapes are preserved as-is.
 func unescapeCString(s string) string {
-	s = strings.ReplaceAll(s, `\\`, "\x00BACKSLASH\x00")
-	s = strings.ReplaceAll(s, `\"`, `"`)
-	s = strings.ReplaceAll(s, `\n`, "\n")
-	s = strings.ReplaceAll(s, `\t`, "\t")
-	s = strings.ReplaceAll(s, `\r`, "\r")
-	s = strings.ReplaceAll(s, "\x00BACKSLASH\x00", `\`)
-	return s
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c != '\\' || i+1 >= len(s) {
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		switch n := s[i+1]; n {
+		case '"':
+			b.WriteByte('"')
+		case 'n':
+			b.WriteByte('\n')
+		case 't':
+			b.WriteByte('\t')
+		case 'r':
+			b.WriteByte('\r')
+		case '\\':
+			b.WriteByte('\\')
+		case 'u', 'U':
+			digits := 4
+			if n == 'U' {
+				digits = 8
+			}
+			if i+2+digits <= len(s) {
+				if v, err := strconv.ParseUint(s[i+2:i+2+digits], 16, 32); err == nil && utf8.ValidRune(rune(v)) {
+					b.WriteRune(rune(v))
+					i += 2 + digits
+					continue
+				}
+			}
+			// Malformed universal character name: keep the escape text.
+			b.WriteByte(c)
+			b.WriteByte(n)
+		default:
+			// Unknown escape: keep the escape text.
+			b.WriteByte(c)
+			b.WriteByte(n)
+		}
+		i += 2
+	}
+	return b.String()
 }
 
 // parseUint16List parses a comma-separated list of uint16 values from

@@ -58,6 +58,8 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeCPONCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "d":
 		normalizeDCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "dhall":
+		normalizeDhallCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "dart":
 		normalizeDartCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "elixir":
