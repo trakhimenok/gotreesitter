@@ -3,6 +3,7 @@ package gotreesitter
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // parser_recover_c.go is the stage-1 faithful port of tree-sitter C's error
@@ -64,13 +65,25 @@ const (
 // verified to net-improve its full corpus against the C oracle with zero
 // clean-grammar regressions (recovery-cost-competition.md requirement 4).
 // GOT_C_RECOVERY=0 force-disables the gate (baseline A/B measurement: gate
-// off must be bit-identical to upstream).
+// off must be bit-identical to upstream); GOT_C_RECOVERY=all (or a
+// comma-separated grammar list) force-enables it, so stage-2 widening sweeps
+// can A/B a candidate grammar without a per-grammar rebuild.
 func errorCostCompetitionLanguage(lang *Language) bool {
 	if lang == nil {
 		return false
 	}
-	if os.Getenv("GOT_C_RECOVERY") == "0" {
+	switch v := os.Getenv("GOT_C_RECOVERY"); v {
+	case "":
+	case "0":
 		return false
+	case "all", "1":
+		return true
+	default:
+		for _, n := range strings.Split(v, ",") {
+			if strings.TrimSpace(n) == lang.Name {
+				return true
+			}
+		}
 	}
 	switch lang.Name {
 	case "requirements":
