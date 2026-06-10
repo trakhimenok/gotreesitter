@@ -21,7 +21,7 @@ c_sharp	IV-recovery	26/40	faithful C error-cost version competition (see spec)
 caddy	IV-recovery?	9/30	ext=Caddyfile; faithful C error-cost version competition (see spec)
 cairo	IV-recovery?	0/30	ext=.cairo; faithful C error-cost version competition (see spec)
 capnp	CLEAN	40/40	in ratchet
-chatito	IV-recovery	1/5	ext=.chatito; stackcap disproven (cap 2 identical); all 4 failures are files lacking a trailing newline at EOF — go GLR dies no_stacks_alive where C recovers (appending \n parses accepted); missing-token-at-EOF recovery gap
+chatito	IV-recovery	2/5	ext=.chatito; C-recovery gate KEPT: 1/5 -> 2/5 + trunc 4 -> 0 via EOF strategy-1 election (run 20260610T091230Z-redwood-wave1b); remaining 3 files (import/nestedimport cc go=1 c=2, dateBooking_large cc go=1 c=21) keep a whole-file error region under source root where C recovers structure — EOF election fork loses or never fires; stage-2 candidate
 circom	IV-shape?	11/30	ext=.circom; preliminary
 clojure	CLEAN	40/40	in ratchet
 cmake	CLEAN	40/40	in ratchet

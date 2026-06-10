@@ -79,6 +79,12 @@ func errorCostCompetitionLanguage(lang *Language) bool {
 		// IV-recovery fan-out (redwood): 39/40 -> 40/40 on the full real
 		// corpus (harness_out/docker/20260610T090208Z-redwood-wave1).
 		return true
+	case "chatito":
+		// IV-recovery fan-out (redwood): 1/5 -> 2/5 with the EOF strategy-1
+		// election (run 20260610T091230Z-redwood-wave1b); trunc 4 -> 0. The
+		// remaining 3 files diverge as source-root cc=1 (whole-file error
+		// region) vs C's structured recovery — see tier_classification.tsv.
+		return true
 	}
 	return false
 }
@@ -881,7 +887,17 @@ func (p *Parser) cEffectiveVersionCount(stacks []glrStack, group *cRecGroup) int
 // merged version's paths), deduped on (depth, state). At most one fork is
 // created, owned by the member whose path carried the elected entry.
 func (p *Parser) cRecoverStrategy1Election(stacks *[]glrStack, group *cRecGroup, tok Token, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, trackChildErrors *bool) (didRecover, forked bool) {
-	if tok.Symbol == errorSymbol || tok.Symbol == 0 {
+	// C runs the summary scan for every non-error lookahead INCLUDING the EOF
+	// token (parser.c ts_parser__recover: `summary && !ts_subtree_is_error`).
+	// EOF election is what lets C pop the open error region to a state where
+	// the end symbol is valid and finish with a named root + contained ERROR
+	// instead of recover_eof's whole-file ERROR wrap. A wide symbol-0 token is
+	// this engine's unlexable run (C: error-subtree lookahead) — C skips
+	// strategy 1 for those.
+	if tok.Symbol == errorSymbol {
+		return false, false
+	}
+	if tok.Symbol == 0 && tok.StartByte != tok.EndByte {
 		return false, false
 	}
 	var members []int
