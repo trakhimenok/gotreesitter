@@ -110,6 +110,33 @@ now-complete sibling and wrap only the genuinely-failed suffix. Validate it on
 `requirements` (cleanest), then `c`/`jq` (already on resync — must not
 regress), then widen.
 
+## Why targeted primitives are insufficient (proven by implementation)
+
+Four narrowing attempts on the `requirements` minimal case, each reverted:
+
+1. **resync + root carve-out** — fixed the root label, but the in-progress
+   `requirement` was wrapped in ERROR (not preserved): resync keeps *completed*
+   siblings, can't *complete* a partial one.
+2. **force-reduce on the lookahead** — no reduce action exists for the comment
+   at the stuck state.
+3. **force-reduce on the production's terminator + missing-terminator insertion**
+   — at the stuck state (requirements state 31) there is **neither a unique
+   reduce NOR a unique shift terminal** (`reduceOK=false shiftOK=false`). The
+   `requirement` does not complete via any single in-place action; C reaches its
+   completion through full recover candidate-generation (pop to a recoverable
+   ancestor, THEN do_all_potential_reductions there, THEN missing insertion),
+   not a local step.
+4. Compounding this, the fragmented `bcrypt`→ERROR tree comes from the **retry
+   full-parse** (`parser_retry.go`), not the first pass — so the recover fix
+   must also produce a tree the retry-selection prefers (lower error cost).
+
+Conclusion: the recovery bucket is **not assemblable from targeted primitives**.
+It requires a faithful port of C's complete `ts_parser__recover` — candidate
+generation across all stack ancestors + `do_all_potential_reductions` +
+missing-token insertion + error-cost version competition + retry-selection
+integration, working together. That is the dedicated engine project this spec
+scopes; partial shortcuts either regress (scheme 4.ss) or no-op (requirements).
+
 ## The lexer half (already shipped, keep)
 
 The skipped-error lexing (`Lexer.NextWithErrorRuns` + `errorRunToken` +
