@@ -1,0 +1,620 @@
+{
+  "ada": {
+    "tier": "IV"
+  },
+  "agda": {
+    "tier": "IV"
+  },
+  "angular": {
+    "tier": "IV"
+  },
+  "apex": {
+    "tier": "IV"
+  },
+  "arduino": {
+    "tier": "IV"
+  },
+  "asm": {
+    "tier": "IV"
+  },
+  "astro": {
+    "tier": "IV"
+  },
+  "authzed": {
+    "tier": "IV"
+  },
+  "awk": {
+    "tier": "I"
+  },
+  "bash": {
+    "tier": "II"
+  },
+  "bass": {
+    "tier": "IV"
+  },
+  "beancount": {
+    "tier": "IV"
+  },
+  "bibtex": {
+    "tier": "IV"
+  },
+  "bicep": {
+    "tier": "IV"
+  },
+  "bitbake": {
+    "tier": "IV"
+  },
+  "blade": {
+    "tier": "IV"
+  },
+  "brightscript": {
+    "tier": "I"
+  },
+  "c": {
+    "tier": "I"
+  },
+  "c_sharp": {
+    "tier": "II"
+  },
+  "caddy": {
+    "tier": "IV"
+  },
+  "cairo": {
+    "tier": "IV"
+  },
+  "capnp": {
+    "tier": "IV"
+  },
+  "chatito": {
+    "tier": "IV"
+  },
+  "circom": {
+    "tier": "IV"
+  },
+  "clojure": {
+    "tier": "I"
+  },
+  "cmake": {
+    "tier": "IV"
+  },
+  "cobol": {
+    "tier": "IV"
+  },
+  "comment": {
+    "tier": "IV"
+  },
+  "commonlisp": {
+    "tier": "IV"
+  },
+  "cooklang": {
+    "tier": "IV"
+  },
+  "corn": {
+    "tier": "IV"
+  },
+  "cpon": {
+    "tier": "IV"
+  },
+  "cpp": {
+    "tier": "III"
+  },
+  "crystal": {
+    "tier": "IV"
+  },
+  "css": {
+    "tier": "I"
+  },
+  "csv": {
+    "tier": "IV"
+  },
+  "cuda": {
+    "tier": "II"
+  },
+  "cue": {
+    "tier": "IV"
+  },
+  "cylc": {
+    "tier": "IV"
+  },
+  "d": {
+    "tier": "IV"
+  },
+  "dart": {
+    "tier": "IV"
+  },
+  "desktop": {
+    "tier": "IV"
+  },
+  "devicetree": {
+    "tier": "IV"
+  },
+  "dhall": {
+    "tier": "I"
+  },
+  "diff": {
+    "tier": "IV"
+  },
+  "disassembly": {
+    "tier": "I"
+  },
+  "djot": {
+    "tier": "IV"
+  },
+  "dockerfile": {
+    "tier": "IV"
+  },
+  "dot": {
+    "tier": "IV"
+  },
+  "doxygen": {
+    "tier": "IV"
+  },
+  "dtd": {
+    "tier": "IV"
+  },
+  "earthfile": {
+    "tier": "IV"
+  },
+  "ebnf": {
+    "tier": "IV"
+  },
+  "editorconfig": {
+    "tier": "IV"
+  },
+  "eds": {
+    "tier": "IV"
+  },
+  "eex": {
+    "tier": "IV"
+  },
+  "elisp": {
+    "tier": "IV"
+  },
+  "elixir": {
+    "tier": "II"
+  },
+  "elm": {
+    "tier": "IV"
+  },
+  "elsa": {
+    "tier": "IV"
+  },
+  "embedded_template": {
+    "tier": "IV"
+  },
+  "enforce": {
+    "tier": "IV"
+  },
+  "erlang": {
+    "tier": "I"
+  },
+  "facility": {
+    "tier": "IV"
+  },
+  "faust": {
+    "tier": "IV"
+  },
+  "fennel": {
+    "tier": "IV"
+  },
+  "fidl": {
+    "tier": "IV"
+  },
+  "firrtl": {
+    "tier": "IV"
+  },
+  "fish": {
+    "tier": "IV"
+  },
+  "foam": {
+    "tier": "IV"
+  },
+  "forth": {
+    "tier": "IV"
+  },
+  "fortran": {
+    "tier": "IV"
+  },
+  "fsharp": {
+    "tier": "IV"
+  },
+  "gdscript": {
+    "tier": "I"
+  },
+  "git_config": {
+    "tier": "IV"
+  },
+  "git_rebase": {
+    "tier": "IV"
+  },
+  "gitattributes": {
+    "tier": "II"
+  },
+  "gitcommit": {
+    "tier": "IV"
+  },
+  "gitignore": {
+    "tier": "IV"
+  },
+  "gleam": {
+    "tier": "I"
+  },
+  "glsl": {
+    "tier": "IV"
+  },
+  "gn": {
+    "tier": "IV"
+  },
+  "go": {
+    "tier": "IV"
+  },
+  "godot_resource": {
+    "tier": "IV"
+  },
+  "gomod": {
+    "tier": "IV"
+  },
+  "graphql": {
+    "tier": "IV"
+  },
+  "groovy": {
+    "tier": "I"
+  },
+  "hack": {
+    "tier": "IV"
+  },
+  "hare": {
+    "tier": "IV"
+  },
+  "haskell": {
+    "tier": "II"
+  },
+  "haxe": {
+    "tier": "IV"
+  },
+  "hcl": {
+    "tier": "IV"
+  },
+  "heex": {
+    "tier": "IV"
+  },
+  "hlsl": {
+    "tier": "II"
+  },
+  "html": {
+    "tier": "IV"
+  },
+  "http": {
+    "tier": "IV"
+  },
+  "hurl": {
+    "tier": "IV"
+  },
+  "hyprlang": {
+    "tier": "IV"
+  },
+  "ini": {
+    "tier": "IV"
+  },
+  "janet": {
+    "tier": "IV"
+  },
+  "java": {
+    "tier": "I"
+  },
+  "javascript": {
+    "tier": "IV"
+  },
+  "jinja2": {
+    "tier": "I"
+  },
+  "jq": {
+    "tier": "IV"
+  },
+  "jsdoc": {
+    "tier": "IV"
+  },
+  "json": {
+    "tier": "IV"
+  },
+  "json5": {
+    "tier": "II"
+  },
+  "jsonnet": {
+    "tier": "I"
+  },
+  "julia": {
+    "tier": "II"
+  },
+  "just": {
+    "tier": "IV"
+  },
+  "kconfig": {
+    "tier": "IV"
+  },
+  "kdl": {
+    "tier": "IV"
+  },
+  "kotlin": {
+    "tier": "IV"
+  },
+  "ledger": {
+    "tier": "IV"
+  },
+  "less": {
+    "tier": "IV"
+  },
+  "linkerscript": {
+    "tier": "I"
+  },
+  "liquid": {
+    "tier": "IV"
+  },
+  "llvm": {
+    "tier": "I"
+  },
+  "lua": {
+    "tier": "I"
+  },
+  "luau": {
+    "tier": "I"
+  },
+  "make": {
+    "tier": "IV"
+  },
+  "markdown": {
+    "tier": "IV"
+  },
+  "markdown_inline": {
+    "tier": "IV"
+  },
+  "matlab": {
+    "tier": "IV"
+  },
+  "mermaid": {
+    "tier": "I"
+  },
+  "meson": {
+    "tier": "IV"
+  },
+  "mojo": {
+    "tier": "I"
+  },
+  "move": {
+    "tier": "I"
+  },
+  "nginx": {
+    "tier": "IV"
+  },
+  "nickel": {
+    "tier": "I"
+  },
+  "nim": {
+    "tier": "III"
+  },
+  "ninja": {
+    "tier": "IV"
+  },
+  "nix": {
+    "tier": "I"
+  },
+  "norg": {
+    "tier": "IV"
+  },
+  "nushell": {
+    "tier": "IV"
+  },
+  "objc": {
+    "tier": "II"
+  },
+  "ocaml": {
+    "tier": "II"
+  },
+  "odin": {
+    "tier": "IV"
+  },
+  "org": {
+    "tier": "IV"
+  },
+  "pascal": {
+    "tier": "I"
+  },
+  "pem": {
+    "tier": "IV"
+  },
+  "perl": {
+    "tier": "IV"
+  },
+  "php": {
+    "tier": "IV"
+  },
+  "pkl": {
+    "tier": "I"
+  },
+  "powershell": {
+    "tier": "I"
+  },
+  "prisma": {
+    "tier": "I"
+  },
+  "prolog": {
+    "tier": "I"
+  },
+  "promql": {
+    "tier": "IV"
+  },
+  "properties": {
+    "tier": "IV"
+  },
+  "proto": {
+    "tier": "I"
+  },
+  "pug": {
+    "tier": "IV"
+  },
+  "puppet": {
+    "tier": "I"
+  },
+  "purescript": {
+    "tier": "II"
+  },
+  "python": {
+    "tier": "IV"
+  },
+  "ql": {
+    "tier": "IV"
+  },
+  "r": {
+    "tier": "IV"
+  },
+  "racket": {
+    "tier": "IV"
+  },
+  "regex": {
+    "tier": "IV"
+  },
+  "rego": {
+    "tier": "IV"
+  },
+  "requirements": {
+    "tier": "IV"
+  },
+  "rescript": {
+    "tier": "I"
+  },
+  "robot": {
+    "tier": "I"
+  },
+  "ron": {
+    "tier": "IV"
+  },
+  "rst": {
+    "tier": "IV"
+  },
+  "ruby": {
+    "tier": "II"
+  },
+  "rust": {
+    "tier": "IV"
+  },
+  "scala": {
+    "tier": "IV"
+  },
+  "scheme": {
+    "tier": "IV"
+  },
+  "scss": {
+    "tier": "IV"
+  },
+  "smithy": {
+    "tier": "I"
+  },
+  "solidity": {
+    "tier": "IV"
+  },
+  "sparql": {
+    "tier": "IV"
+  },
+  "sql": {
+    "tier": "III"
+  },
+  "squirrel": {
+    "tier": "I"
+  },
+  "ssh_config": {
+    "tier": "IV"
+  },
+  "starlark": {
+    "tier": "I"
+  },
+  "svelte": {
+    "tier": "IV"
+  },
+  "swift": {
+    "tier": "IV"
+  },
+  "tablegen": {
+    "tier": "IV"
+  },
+  "tcl": {
+    "tier": "IV"
+  },
+  "teal": {
+    "tier": "IV"
+  },
+  "templ": {
+    "tier": "IV"
+  },
+  "textproto": {
+    "tier": "IV"
+  },
+  "thrift": {
+    "tier": "IV"
+  },
+  "tlaplus": {
+    "tier": "IV"
+  },
+  "tmux": {
+    "tier": "IV"
+  },
+  "todotxt": {
+    "tier": "IV"
+  },
+  "toml": {
+    "tier": "IV"
+  },
+  "tsx": {
+    "tier": "IV"
+  },
+  "turtle": {
+    "tier": "IV"
+  },
+  "twig": {
+    "tier": "IV"
+  },
+  "typescript": {
+    "tier": "IV"
+  },
+  "typst": {
+    "tier": "IV"
+  },
+  "uxntal": {
+    "tier": "IV"
+  },
+  "v": {
+    "tier": "II"
+  },
+  "verilog": {
+    "tier": "IV"
+  },
+  "vhdl": {
+    "tier": "I"
+  },
+  "vimdoc": {
+    "tier": "IV"
+  },
+  "vue": {
+    "tier": "IV"
+  },
+  "wat": {
+    "tier": "I"
+  },
+  "wgsl": {
+    "tier": "IV"
+  },
+  "wolfram": {
+    "tier": "IV"
+  },
+  "xml": {
+    "tier": "IV"
+  },
+  "yaml": {
+    "tier": "I"
+  },
+  "yuck": {
+    "tier": "I"
+  },
+  "zig": {
+    "tier": "I"
+  }
+}

@@ -141,4 +141,21 @@ if [ -f "$CLASS_TSV" ]; then
     echo "all tier-IV grammars characterized (0 uncharacterized) ✓"
   fi
 fi
+
+# Per-release tier publication: regenerate docs/reports/tiers.{md,json} from
+# the committed ratchet + classification (+ local perf evidence when present)
+# and commit the refreshed artifact in the release PR. With
+# GTS_TIERS_REQUIRE_ZERO_IV=1 any tier-IV grammar is release-blocking — the
+# first tier-publishing release and every one after it requires IV=0.
+echo
+echo "=== tier publication (docs/reports/tiers.md)"
+TIERS_FLAGS=""
+if [ "${GTS_TIERS_REQUIRE_ZERO_IV:-0}" = "1" ]; then
+  TIERS_FLAGS="--require-zero-iv"
+fi
+if ! python3 "$REPO_ROOT/docs/reports/gen_tiers.py" \
+    --version "${GTS_RELEASE_VERSION:-unreleased}" $TIERS_FLAGS; then
+  status=1
+fi
+
 exit "$status"

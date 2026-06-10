@@ -1,0 +1,1389 @@
+{
+ "generated": "2026-06-10T07:49:17Z",
+ "commit": "2c52a4b8",
+ "version": "unreleased",
+ "tier_rules": {
+  "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
+  "II": "parity-clean and <=8x C full-parse, cold <=20ms",
+  "III": "parity-clean and (>8x C or cold >20ms or blob >400KB)",
+  "IV": "not parity-clean (any divergence vs the C oracle, or unmeasured)",
+  "unranked": "parity-clean; perf measurement pending"
+ },
+ "histogram": {
+  "IV": 133,
+  "II": 33,
+  "I": 31,
+  "III": 9
+ },
+ "grammars": [
+  {
+   "grammar": "ada",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "24/30",
+   "notes": "ext=.adb,.ads; preliminary"
+  },
+  {
+   "grammar": "agda",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "0/40",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "angular",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "26/30",
+   "notes": "ext=.component.html,.ng.html; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "apex",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "17/30",
+   "notes": "ext=.cls,.trigger,.apex; preliminary"
+  },
+  {
+   "grammar": "arduino",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "asm",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "0/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "astro",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "authzed",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "23/30",
+   "notes": "ext=.zed; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "awk",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "bash",
+   "tier": "IV",
+   "iv_cause": "IV-stackcap?",
+   "parity": "7/8",
+   "notes": "ext=.sh,.bash; add effectiveFullParseInitialMaxStacks cap entry"
+  },
+  {
+   "grammar": "bass",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "beancount",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "bibtex",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "28/30",
+   "notes": "ext=.bib; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "bicep",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "24/30",
+   "notes": "ext=.bicep; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "bitbake",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "blade",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "17/30",
+   "notes": "ext=.blade.php; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "brightscript",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/30",
+   "notes": "ext=.brs; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "c",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "21/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "c_sharp",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "26/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "caddy",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "9/30",
+   "notes": "ext=Caddyfile; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "cairo",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/30",
+   "notes": "ext=.cairo; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "capnp",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "chatito",
+   "tier": "IV",
+   "iv_cause": "IV-stackcap?",
+   "parity": "1/5",
+   "notes": "ext=.chatito; add effectiveFullParseInitialMaxStacks cap entry"
+  },
+  {
+   "grammar": "circom",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "11/30",
+   "notes": "ext=.circom; preliminary"
+  },
+  {
+   "grammar": "clojure",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "cmake",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "cobol",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "0/40",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "comment",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "commonlisp",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "22/30",
+   "notes": "ext=.lisp,.cl; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "cooklang",
+   "tier": "IV",
+   "iv_cause": "IV-stackcap?",
+   "parity": "0/3",
+   "notes": "ext=.cook; add effectiveFullParseInitialMaxStacks cap entry"
+  },
+  {
+   "grammar": "corn",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "cpon",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "9/10",
+   "notes": "ext=.cpon; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "cpp",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "10/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "crystal",
+   "tier": "IV",
+   "iv_cause": "IV-perf",
+   "parity": "0/0",
+   "notes": "perf-blocker: times out at N=8 (single-file >30s); profile before parity"
+  },
+  {
+   "grammar": "css",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "csv",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "cuda",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "17/30",
+   "notes": "ext=.cu,.cuh; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "cue",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "21/30",
+   "notes": "ext=.cue; preliminary"
+  },
+  {
+   "grammar": "cylc",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "4/30",
+   "notes": "ext=.cylc; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "d",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "14/30",
+   "notes": "ext=.d; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "dart",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "11/30",
+   "notes": "ext=.dart; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "desktop",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "devicetree",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "dhall",
+   "tier": "IV",
+   "iv_cause": "IV-unknown",
+   "parity": "23/40",
+   "notes": "needs deeper single-file diagnosis"
+  },
+  {
+   "grammar": "diff",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "disassembly",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "0/40",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "djot",
+   "tier": "IV",
+   "iv_cause": "IV-extmap",
+   "parity": "0/0",
+   "notes": "ext=.dj; add curated source-extension mapping"
+  },
+  {
+   "grammar": "dockerfile",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/30",
+   "notes": "ext=Dockerfile,.dockerfile; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "dot",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "doxygen",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "19/30",
+   "notes": "ext=.dox,.doxygen; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "dtd",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/5",
+   "notes": "ext=.dtd; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "earthfile",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/30",
+   "notes": "ext=Earthfile; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "ebnf",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/30",
+   "notes": "ext=.ebnf; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "editorconfig",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "eds",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/1",
+   "notes": "ext=.eds; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "eex",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "elisp",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "elixir",
+   "tier": "IV",
+   "iv_cause": "IV-unknown",
+   "parity": "0/40",
+   "notes": "needs deeper single-file diagnosis"
+  },
+  {
+   "grammar": "elm",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "7/8",
+   "notes": "ext=.elm; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "elsa",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "12/27",
+   "notes": "ext=.lc; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "embedded_template",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "enforce",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "21/30",
+   "notes": "ext=.c; preliminary"
+  },
+  {
+   "grammar": "erlang",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "facility",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "1/4",
+   "notes": "ext=.fsd; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "faust",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "fennel",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "8/30",
+   "notes": "ext=.fnl; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "fidl",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "firrtl",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "5/27",
+   "notes": "ext=.fir; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "fish",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "foam",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "forth",
+   "tier": "IV",
+   "iv_cause": "IV-unknown",
+   "parity": "34/40",
+   "notes": "cap=2 landed (20/40 -> 34/40, medianRatio 110x -> 3.8x; caps 1/3 identical); remaining 4 files are the engine-level leading-whitespace root-span divergence (Go root starts at 0, C after leading extras \u2014 repro: parse \"\\nhex\\n\"), 2 are childcount/trunc (ncexcompiler.fs go-cc=18 c-cc=105, mach.fs go-cc=29 c-cc=40)"
+  },
+  {
+   "grammar": "fortran",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "fsharp",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/8",
+   "notes": "ext=.fs,.fsi,.fsx; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "gdscript",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "1/40",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "git_config",
+   "tier": "IV",
+   "iv_cause": "IV-extmap",
+   "parity": "0/0",
+   "notes": "ext=.gitconfig,config; add curated source-extension mapping"
+  },
+  {
+   "grammar": "git_rebase",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "gitattributes",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "gitcommit",
+   "tier": "IV",
+   "iv_cause": "IV-extmap",
+   "parity": "0/0",
+   "notes": "ext=COMMIT_EDITMSG; add curated source-extension mapping"
+  },
+  {
+   "grammar": "gitignore",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "gleam",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "glsl",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "11/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "gn",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "27/40",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "go",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "godot_resource",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "21/40",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "gomod",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "graphql",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "0/1",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "groovy",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "4/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "hack",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "hare",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "20/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "haskell",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "7/40",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "haxe",
+   "tier": "IV",
+   "iv_cause": "IV-version",
+   "parity": "7/40",
+   "notes": "bump embedded grammar to corpus syntax version"
+  },
+  {
+   "grammar": "hcl",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "heex",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "hlsl",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "33/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "html",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "0/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "http",
+   "tier": "IV",
+   "iv_cause": "IV-unknown",
+   "parity": "6/11",
+   "notes": "needs deeper single-file diagnosis"
+  },
+  {
+   "grammar": "hurl",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "13/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "hyprlang",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "1/2",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "ini",
+   "tier": "IV",
+   "iv_cause": "IV-unknown",
+   "parity": "4/11",
+   "notes": "needs deeper single-file diagnosis"
+  },
+  {
+   "grammar": "janet",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "java",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "javascript",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "jinja2",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "3/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "jq",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "jsdoc",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "29/30",
+   "notes": "ext=.jsdoc; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "json",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "json5",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "jsonnet",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "julia",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "28/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "just",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "2/8",
+   "notes": "ext=justfile,.just; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "kconfig",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "13/30",
+   "notes": "ext=Kconfig; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "kdl",
+   "tier": "IV",
+   "iv_cause": "IV-version",
+   "parity": "12/40",
+   "notes": "bump embedded grammar to corpus syntax version"
+  },
+  {
+   "grammar": "kotlin",
+   "tier": "IV",
+   "iv_cause": "IV-unknown",
+   "parity": "17/40",
+   "notes": "needs deeper single-file diagnosis"
+  },
+  {
+   "grammar": "ledger",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "2/4",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "less",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "10/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "linkerscript",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "1/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "liquid",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "11/36",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "llvm",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "lua",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "7/40",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "luau",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "35/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "make",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "19/20",
+   "notes": "ext=Makefile,.mk; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "markdown",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "31/40",
+   "notes": "preliminary from signature"
+  },
+  {
+   "grammar": "markdown_inline",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "13/30",
+   "notes": "ext=.md; preliminary"
+  },
+  {
+   "grammar": "matlab",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "4/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "mermaid",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "meson",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "1/30",
+   "notes": "ext=meson.build; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "mojo",
+   "tier": "IV",
+   "iv_cause": "IV-version",
+   "parity": "4/40",
+   "notes": "bump embedded grammar to corpus syntax version"
+  },
+  {
+   "grammar": "move",
+   "tier": "IV",
+   "iv_cause": "IV-version",
+   "parity": "0/40",
+   "notes": "bump embedded grammar to corpus syntax version"
+  },
+  {
+   "grammar": "nginx",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "nickel",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "nim",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "3/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "ninja",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "3/5",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "nix",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "norg",
+   "tier": "IV",
+   "iv_cause": "IV-scanner",
+   "parity": "0/2",
+   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+  },
+  {
+   "grammar": "nushell",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "5/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "objc",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "1/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "ocaml",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "odin",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "13/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "org",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "5/39",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "pascal",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "pem",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "perl",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "php",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "pkl",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "34/40",
+   "notes": "preliminary from signature"
+  },
+  {
+   "grammar": "powershell",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "22/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "prisma",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "prolog",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "4/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "promql",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/4",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "properties",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "proto",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "25/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "pug",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "puppet",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "purescript",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "1/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "python",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "ql",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "33/40",
+   "notes": "preliminary from signature"
+  },
+  {
+   "grammar": "r",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "33/40",
+   "notes": "preliminary from signature"
+  },
+  {
+   "grammar": "racket",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "regex",
+   "tier": "IV",
+   "iv_cause": "IV-stackcap?",
+   "parity": "0/1",
+   "notes": "add effectiveFullParseInitialMaxStacks cap entry"
+  },
+  {
+   "grammar": "rego",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "7/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "requirements",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "8/9",
+   "notes": "ext=requirements.txt; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "rescript",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "23/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "robot",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "28/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "ron",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "rst",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "1/8",
+   "notes": "ext=.rst; preliminary"
+  },
+  {
+   "grammar": "ruby",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "25/40",
+   "notes": "preliminary from signature"
+  },
+  {
+   "grammar": "rust",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "21/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "scala",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "25/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "scheme",
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "36/40",
+   "notes": "recovery-shape (4.ss/oop.ss/ez-grammar) + 5_3.ss O(N^2) perf-blocker; faithful C error-cost competition + merge-equiv perf fix"
+  },
+  {
+   "grammar": "scss",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "6/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "smithy",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "solidity",
+   "tier": "IV",
+   "iv_cause": "IV-shape?",
+   "parity": "10/40",
+   "notes": "preliminary from signature"
+  },
+  {
+   "grammar": "sparql",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "sql",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "8/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "squirrel",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "ssh_config",
+   "tier": "III",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "starlark",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "svelte",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "37/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "swift",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "tablegen",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "tcl",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "10/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "teal",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "4/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "templ",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "24/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "textproto",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "thrift",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "tlaplus",
+   "tier": "IV",
+   "iv_cause": "IV-stackcap?",
+   "parity": "14/40",
+   "notes": "add effectiveFullParseInitialMaxStacks cap entry"
+  },
+  {
+   "grammar": "tmux",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/1",
+   "notes": "ext=.tmux.conf,tmux.conf; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "todotxt",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "toml",
+   "tier": "IV",
+   "iv_cause": "IV-extmap",
+   "parity": "0/0",
+   "notes": "ext=.toml; add curated source-extension mapping"
+  },
+  {
+   "grammar": "tsx",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "turtle",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "twig",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "typescript",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "typst",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "28/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "uxntal",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "v",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "25/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "verilog",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "4/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "vhdl",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "14/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "vimdoc",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/30",
+   "notes": "ext=.txt; faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "vue",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "wat",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "4/34",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "wgsl",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "20/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "wolfram",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "0/11",
+   "notes": "faithful C error-cost version competition (see spec)"
+  },
+  {
+   "grammar": "xml",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "yaml",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "yuck",
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
+  },
+  {
+   "grammar": "zig",
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "39/40",
+   "notes": "faithful C error-cost version competition (see spec)"
+  }
+ ]
+}
