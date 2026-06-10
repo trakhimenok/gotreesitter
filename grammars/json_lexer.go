@@ -242,12 +242,42 @@ func (ts *JSONTokenSource) skipToByteCached(offset uint32) gotreesitter.Token {
 		idx = len(ts.tokenCache) - 1
 	}
 	tok := ts.tokenCache[idx]
+	if int(tok.StartByte) < target && target < int(tok.EndByte) {
+		if tok.Symbol == ts.stringContentSymbol {
+			ts.cacheActive = true
+			ts.cacheIndex = idx + 1
+			return ts.clipStringContentToken(tok, target)
+		}
+		// A non-string token covers the target byte. Preserve the pre-cache
+		// SkipToByte contract (never return a token that starts before the
+		// target) by re-lexing from the target byte.
+		return ts.relexFromByte(target)
+	}
 	ts.cacheActive = true
 	ts.cacheIndex = idx + 1
-	if int(tok.StartByte) < target && target < int(tok.EndByte) && tok.Symbol == ts.stringContentSymbol {
-		return ts.clipStringContentToken(tok, target)
-	}
 	return tok
+}
+
+// relexFromByte restores the pre-cache SkipToByte behavior: position the
+// cursor at target and lex from there, so the returned token never starts
+// before the target byte.
+func (ts *JSONTokenSource) relexFromByte(target int) gotreesitter.Token {
+	ts.cacheActive = false
+	ts.pending = nil
+	ts.done = false
+	if target < ts.offset {
+		ts.offset = 0
+		ts.row = 0
+		ts.col = 0
+	}
+	for ts.offset < target {
+		ts.advanceOneRune()
+	}
+	if ts.offset >= len(ts.src) {
+		ts.done = true
+		return ts.eofToken()
+	}
+	return ts.nextLexed()
 }
 
 func (ts *JSONTokenSource) ensureTokenCache() {
