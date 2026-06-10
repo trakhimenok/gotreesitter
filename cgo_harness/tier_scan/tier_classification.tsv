@@ -1,7 +1,7 @@
 grammar	tier	parity	fix
 ada	IV-shape?	24/30	ext=.adb,.ads; preliminary
 agda	IV-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
-angular	IV-recovery?	26/30	ext=.component.html,.ng.html; faithful C error-cost version competition (see spec)
+angular	IV-recovery?	35/40	ext=.component.html,.ng.html; faithful C error-cost version competition (see spec)
 apex	IV-shape?	17/30	ext=.cls,.trigger,.apex; preliminary
 arduino	CLEAN	40/40	in ratchet
 asm	IV-recovery	0/40	faithful C error-cost version competition (see spec)
@@ -11,7 +11,7 @@ awk	CLEAN	40/40	in ratchet
 bash	IV-stackcap?	7/8	ext=.sh,.bash; add effectiveFullParseInitialMaxStacks cap entry
 bass	CLEAN	40/40	in ratchet
 beancount	CLEAN	40/40	in ratchet
-bibtex	IV-recovery?	28/30	ext=.bib; faithful C error-cost version competition (see spec)
+bibtex	IV-recovery?	37/40	ext=.bib; faithful C error-cost version competition (see spec)
 bicep	IV-recovery?	24/30	ext=.bicep; faithful C error-cost version competition (see spec)
 bitbake	CLEAN	40/40	in ratchet
 blade	IV-recovery?	17/30	ext=.blade.php; faithful C error-cost version competition (see spec)
@@ -103,7 +103,7 @@ java	CLEAN	40/40	in ratchet
 javascript	CLEAN	40/40	in ratchet
 jinja2	IV-recovery	3/40	faithful C error-cost version competition (see spec)
 jq	CLEAN	40/40	in ratchet
-jsdoc	IV-recovery?	29/30	ext=.jsdoc; faithful C error-cost version competition (see spec)
+jsdoc	IV-recovery?	39/40	ext=.jsdoc; faithful C error-cost version competition (see spec)
 json	CLEAN	40/40	in ratchet
 json5	CLEAN	40/40	in ratchet
 jsonnet	CLEAN	40/40	in ratchet
