@@ -69,8 +69,8 @@ type Parser struct {
 	// analogue of C's SubtreeHeapData.error_cost/visible_descendant_count
 	// computed once in ts_subtree_summarize_children. Cleared at parse start;
 	// nil while the gate is off.
-	cNodeMemo map[*Node]cNodeMemoEntry
-	forceRawSpanAll      bool
+	cNodeMemo       map[*Node]cNodeMemoEntry
+	forceRawSpanAll bool
 	// leafInternByLang enables canonical leaf interning for this language even
 	// when the global GOT_PARSE_INTERN_LEAVES_SUBSTITUTE flag is off. Limited to
 	// languages whose GLR parses keep hundreds of stacks alive (bash, swift),

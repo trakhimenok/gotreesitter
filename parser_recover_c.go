@@ -94,9 +94,27 @@ func errorCostCompetitionLanguage(lang *Language) bool {
 		return true
 	case "chatito":
 		// IV-recovery fan-out (redwood): 1/5 -> 2/5 with the EOF strategy-1
-		// election (run 20260610T091230Z-redwood-wave1b); trunc 4 -> 0. The
-		// remaining 3 files diverge as source-root cc=1 (whole-file error
-		// region) vs C's structured recovery — see tier_classification.tsv.
+		// election (run 20260610T091230Z-redwood-wave1b); trunc 4 -> 0.
+		// Stage-2 error-mode-retry lifted it to 4/5; the remaining file
+		// (dateBooking_large.chatito) roots ERROR where C keeps source at
+		// the same extent — see tier_classification.tsv.
+		return true
+	case "css":
+		// Stage-2 (redwood): 37/40 -> 40/40. The three diverging copies of
+		// grid_12-825-55-15.css (IE star-hack `*zoom: 1;`) needed the
+		// C-accept root rebuild (trailing extras into the root) plus the
+		// retry-selection error-cost integration; without them the retry
+		// pass's whole-file ERROR wrap displaced the correct first-pass
+		// tree.
+		return true
+	case "zig":
+		// Stage-2 (redwood): 39/40 -> 40/40 ("Assembly Syntax
+		// Explained.zig" root ERROR vs source_file cleared by the stage-2
+		// primitives).
+		return true
+	case "hack":
+		// Stage-2 (redwood): 38/40 -> 40/40 (fcall.hack / fcall_tc.hack
+		// root ERROR vs script cleared by the stage-2 primitives).
 		return true
 	}
 	return false
