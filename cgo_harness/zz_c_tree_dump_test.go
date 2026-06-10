@@ -70,6 +70,13 @@ func TestCTreeDumpDiag(t *testing.T) {
 	cp := sitter.NewParser()
 	defer cp.Close()
 	_ = cp.SetLanguage(cLang)
+	if os.Getenv("REPRO_CLOG") != "" {
+		cp.SetLogger(func(logType sitter.LogType, msg string) {
+			if logType == sitter.LogTypeParse {
+				t.Logf("CLOG %s", msg)
+			}
+		})
+	}
 	ct := cp.Parse(src, nil)
 	defer ct.Close()
 	t.Logf("=== C oracle tree (%d bytes) ===", len(src))

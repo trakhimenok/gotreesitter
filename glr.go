@@ -44,6 +44,15 @@ type glrStack struct {
 	// faithful recovery port (parser_recover_c.go). nil for every grammar not
 	// gated by errorCostCompetitionLanguage, and for stacks not in error.
 	cRec *cRecoverState
+	// cPaused mirrors C StackStatusPaused: the stack hit a no-action point
+	// under the gated recovery port and waits for the condense step to either
+	// resume it (ts_parser__handle_error) or remove it. Only ever set when
+	// errorCostCompetitionLanguage gates the grammar.
+	cPaused bool
+	// cNodeBaseline mirrors C StackHead.node_count_at_last_error: the stack's
+	// cumulative visible-node count when the error discontinuity was last
+	// pushed. Zero for stacks that never entered the C error state.
+	cNodeBaseline int
 }
 
 const (
@@ -215,34 +224,37 @@ func (s *glrStack) clone() glrStack {
 		entries := make([]stackEntry, len(s.entries))
 		copy(entries, s.entries)
 		return glrStack{
-			entries:      entries,
-			cacheEntries: s.cacheEntries,
-			byteOffset:   s.byteOffset,
-			score:        s.score,
-			branchOrder:  s.branchOrder,
-			cRec:         s.cRec.clone(),
+			entries:       entries,
+			cacheEntries:  s.cacheEntries,
+			byteOffset:    s.byteOffset,
+			score:         s.score,
+			branchOrder:   s.branchOrder,
+			cRec:          s.cRec.clone(),
+			cNodeBaseline: s.cNodeBaseline,
 		}
 	}
 	s.ensureGSS(nil)
 	return glrStack{
-		gss:          s.gss.clone(),
-		cacheEntries: s.cacheEntries,
-		byteOffset:   s.byteOffset,
-		score:        s.score,
-		branchOrder:  s.branchOrder,
-		cRec:         s.cRec.clone(),
+		gss:           s.gss.clone(),
+		cacheEntries:  s.cacheEntries,
+		byteOffset:    s.byteOffset,
+		score:         s.score,
+		branchOrder:   s.branchOrder,
+		cRec:          s.cRec.clone(),
+		cNodeBaseline: s.cNodeBaseline,
 	}
 }
 
 func (s *glrStack) cloneWithScratch(scratch *gssScratch) glrStack {
 	s.ensureGSS(scratch)
 	return glrStack{
-		gss:          s.gss.clone(),
-		cacheEntries: false,
-		byteOffset:   s.byteOffset,
-		score:        s.score,
-		branchOrder:  s.branchOrder,
-		cRec:         s.cRec.clone(),
+		gss:           s.gss.clone(),
+		cacheEntries:  false,
+		byteOffset:    s.byteOffset,
+		score:         s.score,
+		branchOrder:   s.branchOrder,
+		cRec:          s.cRec.clone(),
+		cNodeBaseline: s.cNodeBaseline,
 	}
 }
 
