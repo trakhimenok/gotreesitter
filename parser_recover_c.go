@@ -88,6 +88,34 @@ func errorCostCompetitionLanguage(lang *Language) bool {
 	switch lang.Name {
 	case "requirements":
 		return true
+	case "jsdoc":
+		// IV-recovery fan-out (redwood): 39/40 -> 40/40 on the full real
+		// corpus (harness_out/docker/20260610T090208Z-redwood-wave1).
+		return true
+	case "chatito":
+		// IV-recovery fan-out (redwood): 1/5 -> 2/5 with the EOF strategy-1
+		// election (run 20260610T091230Z-redwood-wave1b); trunc 4 -> 0.
+		// Stage-2 error-mode-retry lifted it to 4/5; the remaining file
+		// (dateBooking_large.chatito) roots ERROR where C keeps source at
+		// the same extent — see tier_classification.tsv.
+		return true
+	case "css":
+		// Stage-2 (redwood): 37/40 -> 40/40. The three diverging copies of
+		// grid_12-825-55-15.css (IE star-hack `*zoom: 1;`) needed the
+		// C-accept root rebuild (trailing extras into the root) plus the
+		// retry-selection error-cost integration; without them the retry
+		// pass's whole-file ERROR wrap displaced the correct first-pass
+		// tree.
+		return true
+	case "zig":
+		// Stage-2 (redwood): 39/40 -> 40/40 ("Assembly Syntax
+		// Explained.zig" root ERROR vs source_file cleared by the stage-2
+		// primitives).
+		return true
+	case "hack":
+		// Stage-2 (redwood): 38/40 -> 40/40 (fcall.hack / fcall_tc.hack
+		// root ERROR vs script cleared by the stage-2 primitives).
+		return true
 	}
 	return false
 }
@@ -203,10 +231,16 @@ func cNodeVisibleChildCountLang(lang *Language, n *Node) int {
 
 // cNodeVisibleSubtreeCount mirrors stack.c stack__subtree_node_count: the
 // visible descendant count (plus the node itself when visible), used for
-// node-count-since-error bookkeeping.
+// node-count-since-error bookkeeping. Memoized per (node, equivVersion) when
+// the gate is on — C keeps this in the subtree header too.
 func (p *Parser) cNodeVisibleSubtreeCount(n *Node) int {
 	if n == nil {
 		return 0
+	}
+	if p != nil && p.cNodeMemo != nil {
+		if e, ok := p.cNodeMemo[n]; ok && e.hasVis && e.ver == n.equivVersion {
+			return e.visCount
+		}
 	}
 	count := 0
 	if p.cSymbolVisible(n.symbol) {
@@ -214,6 +248,15 @@ func (p *Parser) cNodeVisibleSubtreeCount(n *Node) int {
 	}
 	for _, c := range n.children {
 		count += p.cNodeVisibleSubtreeCount(c)
+	}
+	if p != nil && p.cNodeMemo != nil {
+		e := p.cNodeMemo[n]
+		if e.ver != n.equivVersion {
+			e = cNodeMemoEntry{ver: n.equivVersion}
+		}
+		e.visCount = count
+		e.hasVis = true
+		p.cNodeMemo[n] = e
 	}
 	return count
 }
@@ -262,11 +305,74 @@ func cNodeErrorCostLang(lang *Language, n *Node) uint32 {
 	return cost
 }
 
+// cNodeMemoEntry caches the gated recovery's per-subtree aggregates, the
+// engine analogue of C SubtreeHeapData.error_cost / node counts computed once
+// per subtree in ts_subtree_summarize_children. Finished subtrees never
+// mutate during a parse; the open error region is bumped (equivVersion) on
+// every absorb, invalidating its entry. Without the memo every
+// condense/competition step rewalks whole accumulated subtrees per token,
+// which is O(n^2) on large gated files.
+type cNodeMemoEntry struct {
+	ver      uint32
+	cost     uint32
+	visCount int
+	hasCost  bool
+	hasVis   bool
+}
+
 func (p *Parser) cNodeErrorCost(n *Node) uint32 {
 	if p == nil {
 		return 0
 	}
-	return cNodeErrorCostLang(p.language, n)
+	if n == nil {
+		return 0
+	}
+	if p.cNodeMemo == nil {
+		return cNodeErrorCostLang(p.language, n)
+	}
+	if e, ok := p.cNodeMemo[n]; ok && e.hasCost && e.ver == n.equivVersion {
+		return e.cost
+	}
+	if n.isMissing() && len(n.children) == 0 {
+		return cErrCostPerMissingTree + cErrCostPerRecovery
+	}
+	var cost uint32
+	for _, c := range n.children {
+		cost += p.cNodeErrorCost(c)
+	}
+	if n.symbol == errorSymbol {
+		lang := p.language
+		for _, c := range n.children {
+			if c == nil || c.isExtra() {
+				continue
+			}
+			if c.symbol == errorSymbol && len(c.children) == 0 {
+				continue
+			}
+			if cSymbolVisibleLang(lang, c.symbol) {
+				cost += cErrCostPerSkippedTree
+			} else if len(c.children) > 0 {
+				cost += cErrCostPerSkippedTree * uint32(cNodeVisibleChildCountLang(lang, c))
+			}
+		}
+		bytes := uint32(0)
+		rows := uint32(0)
+		if n.endByte > n.startByte {
+			bytes = n.endByte - n.startByte
+		}
+		if n.endPoint.Row > n.startPoint.Row {
+			rows = n.endPoint.Row - n.startPoint.Row
+		}
+		cost += cErrCostPerRecovery + cErrCostPerSkippedChar*bytes + cErrCostPerSkippedLine*rows
+	}
+	e := p.cNodeMemo[n]
+	if e.ver != n.equivVersion {
+		e = cNodeMemoEntry{ver: n.equivVersion}
+	}
+	e.cost = cost
+	e.hasCost = true
+	p.cNodeMemo[n] = e
+	return cost
 }
 
 // cStackErrorCost ports ts_stack_error_cost: the accumulated error cost of
@@ -425,6 +531,11 @@ func (p *Parser) cBetterVersionExists(stacks []glrStack, self int, isInError boo
 	}
 	for i := range stacks {
 		if i == self || stacks[i].dead || stacks[i].byteOffset < pos {
+			continue
+		}
+		// C removes accepted versions from the pool (their tree is stashed
+		// for select_tree); they are not competitors here.
+		if stacks[i].accepted {
 			continue
 		}
 		if group != nil && stacks[i].cRec != nil && stacks[i].cRec.group == group {
@@ -869,7 +980,7 @@ func (p *Parser) cEffectiveVersionCount(stacks []glrStack, group *cRecGroup) int
 	count := 0
 	members := 0
 	for i := range stacks {
-		if stacks[i].dead {
+		if stacks[i].dead || stacks[i].accepted {
 			continue
 		}
 		if group != nil && stacks[i].cRec != nil && stacks[i].cRec.group == group {
@@ -890,7 +1001,17 @@ func (p *Parser) cEffectiveVersionCount(stacks []glrStack, group *cRecGroup) int
 // merged version's paths), deduped on (depth, state). At most one fork is
 // created, owned by the member whose path carried the elected entry.
 func (p *Parser) cRecoverStrategy1Election(stacks *[]glrStack, group *cRecGroup, tok Token, nodeCount *int, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch, trackChildErrors *bool) (didRecover, forked bool) {
-	if tok.Symbol == errorSymbol || tok.Symbol == 0 {
+	// C runs the summary scan for every non-error lookahead INCLUDING the EOF
+	// token (parser.c ts_parser__recover: `summary && !ts_subtree_is_error`).
+	// EOF election is what lets C pop the open error region to a state where
+	// the end symbol is valid and finish with a named root + contained ERROR
+	// instead of recover_eof's whole-file ERROR wrap. A wide symbol-0 token is
+	// this engine's unlexable run (C: error-subtree lookahead) — C skips
+	// strategy 1 for those.
+	if tok.Symbol == errorSymbol {
+		return false, false
+	}
+	if tok.Symbol == 0 && tok.StartByte != tok.EndByte {
 		return false, false
 	}
 	var members []int
@@ -938,7 +1059,7 @@ func (p *Parser) cRecoverStrategy1Election(stacks *[]glrStack, group *cRecGroup,
 				// Do not recover in ways that create redundant stack versions.
 				wouldMerge := false
 				for i := range *stacks {
-					if (*stacks)[i].dead {
+					if (*stacks)[i].dead || (*stacks)[i].accepted {
 						continue
 					}
 					if (*stacks)[i].top().state == entry.state && (*stacks)[i].byteOffset == pos {
@@ -1365,11 +1486,21 @@ func (p *Parser) cCondenseAndResume(stacks []glrStack, tok Token, nodeCount *int
 		return stacks, false
 	}
 	// Drop dead versions first (C removes halted versions in condense).
+	// Accepted versions have left the pool in C (ts_parser__accept stashes
+	// the tree and removes the version): they sit out the cost competition,
+	// the ordering, and the version cap, and rejoin only for final result
+	// selection.
+	var acceptedStacks []glrStack
 	alive := stacks[:0]
 	for i := range stacks {
-		if !stacks[i].dead {
-			alive = append(alive, stacks[i])
+		if stacks[i].dead {
+			continue
 		}
+		if stacks[i].accepted {
+			acceptedStacks = append(acceptedStacks, stacks[i])
+			continue
+		}
+		alive = append(alive, stacks[i])
 	}
 	stacks = alive
 	for i := 1; i < len(stacks); i++ {
@@ -1424,7 +1555,87 @@ func (p *Parser) cCondenseAndResume(stacks []glrStack, tok Token, nodeCount *int
 		stacks = append(stacks[:i], stacks[i+1:]...)
 		i--
 	}
+	stacks = append(stacks, acceptedStacks...)
 	return stacks, needsRedispatch
+}
+
+// cAcceptRootRebuild ports the root construction half of ts_parser__accept:
+// C pops the whole accepted stack, finds the TOPMOST non-extra subtree, and
+// rebuilds a node with that subtree's symbol whose children are every other
+// popped subtree spliced around its own children — so trailing extras (a
+// comment after the last rule of a stylesheet, the EOF padding) become
+// children OF the root instead of siblings. Without this, the engine's root
+// builder sees multiple top-level nodes on an accepted stack and wraps them
+// in a synthetic ERROR root (the css "collapse" shape: stylesheet{ERROR{...}}
+// where C has stylesheet{...}).
+//
+// The stack becomes [base, rebuiltRoot]. Stacks that already hold a single
+// payload node are left untouched (the no-error fast path and
+// cRecoverEOFAccept results).
+func (p *Parser) cAcceptRootRebuild(s *glrStack, arena *nodeArena, entryScratch *glrEntryScratch, gssScratch *gssScratch) {
+	if p == nil || s == nil || !s.accepted {
+		return
+	}
+	entries := cStackEntriesTopFirst(s, gssScratch)
+	payloads := 0
+	for i := range entries {
+		if stackEntryHasNode(entries[i]) {
+			payloads++
+		}
+	}
+	if payloads <= 1 {
+		return
+	}
+	// Materialize base-most first, mirroring C's popped subtree order.
+	nodes := make([]*Node, 0, payloads)
+	for i := len(entries) - 1; i >= 0; i-- {
+		if !stackEntryHasNode(entries[i]) {
+			continue // stack base / error discontinuity
+		}
+		n, _ := materializeStackEntryPayloadEntryWithParser(p, arena, entries[i], materializeForRecovery, materializeForRecovery)
+		if n == nil {
+			return
+		}
+		nodes = append(nodes, n)
+	}
+	// C: the topmost non-extra subtree names the root.
+	rootIdx := -1
+	for j := len(nodes) - 1; j >= 0; j-- {
+		if !nodes[j].isExtra() {
+			rootIdx = j
+			break
+		}
+	}
+	if rootIdx < 0 {
+		return
+	}
+	cand := nodes[rootIdx]
+	children := make([]*Node, 0, len(nodes)-1+len(cand.children))
+	for _, n := range nodes[:rootIdx] {
+		children = p.cAppendVisibleSplice(children, n)
+	}
+	children = append(children, cand.children...)
+	for _, n := range nodes[rootIdx+1:] {
+		children = p.cAppendVisibleSplice(children, n)
+	}
+	root := newParentNodeInArena(arena, cand.symbol, p.isNamedSymbol(cand.symbol), children, nil, 0)
+	first, last := nodes[0], nodes[len(nodes)-1]
+	cSetNodeSpan(root, first.startByte, last.endByte, first.startPoint, last.endPoint)
+	hasErr := false
+	for _, c := range children {
+		if c != nil && c.hasError() {
+			hasErr = true
+			break
+		}
+	}
+	if hasErr || cand.hasError() {
+		root.setHasError(true)
+	}
+	nodeBumpEquivVersion(root)
+	if !s.truncate(1) {
+		return
+	}
+	p.pushStackNode(s, 1, root, entryScratch, gssScratch)
 }
 
 // cStackResultErrorCost is the result-selection cost: the error cost of the
