@@ -1,6 +1,6 @@
 grammar	tier	parity	fix
 ada	IV-shape?	24/30	ext=.adb,.ads; preliminary
-agda	IV-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
+agda	IV-scanner	2/40	layout scanner, deep port needed (maple)
 angular	IV-recovery?	35/40	ext=.component.html,.ng.html; faithful C error-cost version competition (see spec)
 apex	IV-shape?	17/30	ext=.cls,.trigger,.apex; preliminary
 arduino	CLEAN	40/40	in ratchet
@@ -25,7 +25,7 @@ chatito	IV-recovery	4/5	gated; dateBooking_large.chatito roots ERROR where C kee
 circom	IV-shape?	11/30	ext=.circom; preliminary
 clojure	CLEAN	40/40	in ratchet
 cmake	CLEAN	40/40	in ratchet
-cobol	IV-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
+cobol	IV-version	0/40	corpus is CICS/embedded-SQL COBOL the pinned grammar doesn't support — 12/12 sampled root-ERROR in C too (maple)
 comment	IV-perf	35/40	trunc=5, 59x median — blowup truncation
 commonlisp	IV-recovery?	22/30	ext=.lisp,.cl; faithful C error-cost version competition (see spec)
 cooklang	IV-recovery	0/3	ext=.cook; stackcap disproven (cap 2 not kept); C-recovery gate tried and REVERTED (parity stays 0/3, run 20260610T091230Z-redwood-wave1b) though it helps: trunc 3 -> 2, all roots become named recipe, complex_test_recipe now differs only by EndByte 2522 vs 2523 (the missing-trailing-newline EOF byte); frontmatter/test_recipe still truncate early (go EndByte 2383/2644 vs c 2799/2994) — go stops mid-file where C absorbs on; stage-2 EOF-byte + truncation work, then re-enable
@@ -44,8 +44,8 @@ desktop	CLEAN	40/40	in ratchet
 devicetree	CLEAN	40/40	in ratchet
 dhall	IV-unknown	23/40	needs deeper single-file diagnosis
 diff	CLEAN	40/40	in ratchet
-disassembly	IV-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
-djot	IV-scanner?	0/40	ext=.dj,.djot; 0/40 with 39 truncations (node_limit persists at stack cap 2: 8.4KB file blows the node budget); markdown-class inline ambiguity — re-port stateful external scanner from pinned upstream
+disassembly	IV-version	0/40	German-locale riscv objdump corpus the grammar doesn't model — 10/10 C-error (maple)
+djot	IV-scanner?	0/40	ext=.dj,.djot; 0/40 with 39 truncations (node_limit persists at stack cap 2: 8.4KB file blows the node budget); markdown-class inline ambiguity — re-port stateful external scanner from pinned upstream; also IV-perf component (maple)
 dockerfile	IV-recovery?	0/30	ext=Dockerfile,.dockerfile; faithful C error-cost version competition (see spec)
 dot	IV-perf	39/40	bsdarch.dot 2257x agg blowup truncation
 doxygen	IV-recovery?	19/30	ext=.dox,.doxygen; faithful C error-cost version competition (see spec)
@@ -72,7 +72,7 @@ foam	CLEAN	40/40	in ratchet
 forth	IV-unknown	34/40	cap=2 landed (20/40 -> 34/40, medianRatio 110x -> 3.8x; caps 1/3 identical); remaining 4 files are the engine-level leading-whitespace root-span divergence (Go root starts at 0, C after leading extras — repro: parse "\nhex\n"), 2 are childcount/trunc (ncexcompiler.fs go-cc=18 c-cc=105, mach.fs go-cc=29 c-cc=40)
 fortran	CLEAN	40/40	in ratchet
 fsharp	IV-perf	0/8	timeout-or-fail at 1200s canonical budget
-gdscript	IV-scanner	1/40	re-port external scanner from pinned upstream src/scanner.c
+gdscript	IV-scanner	1/40	body start off-by-2: C scans externals before consuming leading whitespace-extras, Go DFA skips extras first; fix in lexer/parser_dfa_token_source handoff (python handles this; maple)
 git_config	CLEAN	7/7	in ratchet
 git_rebase	CLEAN	40/40	in ratchet
 gitattributes	CLEAN	40/40	in ratchet
@@ -80,15 +80,15 @@ gitcommit	CLEAN	13/13	in ratchet
 gitignore	CLEAN	40/40	in ratchet
 gleam	CLEAN	40/40	in ratchet
 glsl	IV-recovery	11/40	faithful C error-cost version competition (see spec)
-gn	IV-scanner	27/40	re-port external scanner from pinned upstream src/scanner.c
+gn	CLEAN	40/40	in ratchet; scanner aligned with upstream C (maple)
 go	IV-recovery	37/40	reader/writer_test root ERROR vs source_file (recovery class)
-godot_resource	IV-scanner	21/40	re-port external scanner from pinned upstream src/scanner.c
+godot_resource	CLEAN	40/40	in ratchet; scanner aligned with upstream C (maple)
 gomod	CLEAN	40/40	in ratchet
 graphql	IV-recovery	0/1	faithful C error-cost version competition (see spec)
 groovy	IV-recovery	4/40	faithful C error-cost version competition (see spec)
 hack	CLEAN	40/40	in ratchet; C-recovery gate (stage-2 redwood)
 hare	IV-recovery	20/40	faithful C error-cost version competition (see spec)
-haskell	IV-scanner	7/40	re-port external scanner from pinned upstream src/scanner.c
+haskell	IV-scanner	11/40	layout scanner, deep port needed (maple)
 haxe	IV-recovery	7/40	pins at upstream HEAD; C at same pin parses corpus clean — runtime fidelity, not version (oak 2026-06-10)
 hcl	CLEAN	40/40	in ratchet
 heex	CLEAN	40/40	in ratchet
@@ -117,7 +117,7 @@ less	IV-recovery?	10/40	faithful C error-cost version competition (see spec)
 linkerscript	IV-recovery	1/40	faithful C error-cost version competition (see spec)
 liquid	IV-recovery?	11/36	faithful C error-cost version competition (see spec)
 llvm	CLEAN	40/40	in ratchet
-lua	IV-scanner	7/40	re-port external scanner from pinned upstream src/scanner.c
+lua	CLEAN	40/40	in ratchet; scanner.c port + DFA routing (maple 2026-06-10)
 luau	IV-recovery	35/40	faithful C error-cost version competition (see spec)
 make	IV-recovery?	19/20	ext=Makefile,.mk; C-recovery gate tried and REVERTED (parity-neutral 19/20, runs 20260610T090208Z/091230Z redwood-wave1/1b): witness Makefile (129KB, git's) root ERROR cc go=5029 vs makefile c=2114 — signature identical with gate on/off, so the divergence is decided before/outside the gated recover path (retry full-parse or pre-error fragmentation); needs witness-level diagnosis, not more gate work
 markdown	IV-shape?	31/40	preliminary from signature
@@ -132,7 +132,7 @@ nickel	CLEAN	40/40	in ratchet
 nim	IV-recovery?	3/40	faithful C error-cost version competition (see spec)
 ninja	IV-recovery	3/5	faithful C error-cost version competition (see spec)
 nix	CLEAN	40/40	in ratchet
-norg	IV-scanner	0/2	re-port external scanner from pinned upstream src/scanner.c
+norg	IV-scanner	0/2	mixed scanner/version, 2-file corpus (maple)
 nushell	IV-recovery?	5/40	faithful C error-cost version competition (see spec)
 objc	IV-recovery?	1/40	faithful C error-cost version competition (see spec)
 ocaml	CLEAN	40/40	in ratchet

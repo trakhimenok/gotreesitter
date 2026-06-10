@@ -24,6 +24,8 @@ gitattributes
 gitcommit
 gitignore
 gleam
+gn
+godot_resource
 gomod
 hack
 hcl
@@ -35,6 +37,7 @@ jsdoc
 json
 json5
 llvm
+lua
 nginx
 nickel
 nix

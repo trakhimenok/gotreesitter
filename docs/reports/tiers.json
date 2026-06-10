@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-10T23:20:27Z",
- "commit": "97bf2072",
+ "generated": "2026-06-10T23:38:17Z",
+ "commit": "d6226011",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,9 +10,9 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 139,
-  "II": 32,
-  "I": 28,
+  "IV": 136,
+  "II": 34,
+  "I": 29,
   "III": 7
  },
  "grammars": [
@@ -27,8 +27,8 @@
    "grammar": "agda",
    "tier": "IV",
    "iv_cause": "IV-scanner",
-   "parity": "0/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "parity": "2/40",
+   "notes": "layout scanner, deep port needed (maple)"
   },
   {
    "grammar": "angular",
@@ -194,9 +194,9 @@
   {
    "grammar": "cobol",
    "tier": "IV",
-   "iv_cause": "IV-scanner",
+   "iv_cause": "IV-version",
    "parity": "0/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "notes": "corpus is CICS/embedded-SQL COBOL the pinned grammar doesn't support \u2014 12/12 sampled root-ERROR in C too (maple)"
   },
   {
    "grammar": "comment",
@@ -322,16 +322,16 @@
   {
    "grammar": "disassembly",
    "tier": "IV",
-   "iv_cause": "IV-scanner",
+   "iv_cause": "IV-version",
    "parity": "0/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "notes": "German-locale riscv objdump corpus the grammar doesn't model \u2014 10/10 C-error (maple)"
   },
   {
    "grammar": "djot",
    "tier": "IV",
    "iv_cause": "IV-scanner?",
    "parity": "0/40",
-   "notes": "ext=.dj,.djot; 0/40 with 39 truncations (node_limit persists at stack cap 2: 8.4KB file blows the node budget); markdown-class inline ambiguity \u2014 re-port stateful external scanner from pinned upstream"
+   "notes": "ext=.dj,.djot; 0/40 with 39 truncations (node_limit persists at stack cap 2: 8.4KB file blows the node budget); markdown-class inline ambiguity \u2014 re-port stateful external scanner from pinned upstream; also IV-perf component (maple)"
   },
   {
    "grammar": "dockerfile",
@@ -512,7 +512,7 @@
    "tier": "IV",
    "iv_cause": "IV-scanner",
    "parity": "1/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "notes": "body start off-by-2: C scans externals before consuming leading whitespace-extras, Go DFA skips extras first; fix in lexer/parser_dfa_token_source handoff (python handles this; maple)"
   },
   {
    "grammar": "git_config",
@@ -559,10 +559,9 @@
   },
   {
    "grammar": "gn",
-   "tier": "IV",
-   "iv_cause": "IV-scanner",
-   "parity": "27/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "go",
@@ -573,10 +572,9 @@
   },
   {
    "grammar": "godot_resource",
-   "tier": "IV",
-   "iv_cause": "IV-scanner",
-   "parity": "21/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "gomod",
@@ -615,8 +613,8 @@
    "grammar": "haskell",
    "tier": "IV",
    "iv_cause": "IV-scanner",
-   "parity": "7/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "parity": "11/40",
+   "notes": "layout scanner, deep port needed (maple)"
   },
   {
    "grammar": "haxe",
@@ -807,10 +805,9 @@
   },
   {
    "grammar": "lua",
-   "tier": "IV",
-   "iv_cause": "IV-scanner",
-   "parity": "7/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "luau",
@@ -912,7 +909,7 @@
    "tier": "IV",
    "iv_cause": "IV-scanner",
    "parity": "0/2",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "notes": "mixed scanner/version, 2-file corpus (maple)"
   },
   {
    "grammar": "nushell",

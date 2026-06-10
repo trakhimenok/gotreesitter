@@ -222,6 +222,7 @@ The single number that tracks the program is the **tier histogram**, ratcheted o
 | after final IV-elimination | 72 | 87 | 47 | 0 | 206/206 |
 | **after Phase 2 batch 1 (6 forest promotions)** | **73** | **92** | **41** | **0** | **206/206** |
 | **2026-06-10 canonical-frame reset + stage-2 lifts** | **28** | **32** | **7** | **139** | **206/206** |
+| **2026-06-10 scanner-family lifts (lua/gn/godot_resource)** | **29** | **34** | **7** | **136** | **206/206** |
 
 The perf ratchet is complete. Each future session's job shifts to the **parity ratchet** and
 the III→II lifts; push grammars up a tier and `--bump` the floor.

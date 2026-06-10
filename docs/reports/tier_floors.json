@@ -243,13 +243,13 @@
     "tier": "IV"
   },
   "gn": {
-    "tier": "IV"
+    "tier": "II"
   },
   "go": {
     "tier": "IV"
   },
   "godot_resource": {
-    "tier": "IV"
+    "tier": "II"
   },
   "gomod": {
     "tier": "III"
@@ -354,7 +354,7 @@
     "tier": "I"
   },
   "lua": {
-    "tier": "IV"
+    "tier": "I"
   },
   "luau": {
     "tier": "IV"
