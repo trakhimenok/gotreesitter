@@ -289,6 +289,18 @@ func effectiveFullParseInitialMaxStacks(lang *Language, initialMaxStacks int) in
 		if initialMaxStacks == maxGLRStacks {
 			initialMaxStacks = 2
 		}
+	case "crystal":
+		// Crystal's huge uniform hash literals (markd's 111KB entities.cr, 2127
+		// "k" => "v" entries) multiply equivalent survivor stacks until the
+		// merge-equivalence frontier rescan dominates: at the default cap a
+		// 20KB slice of that file takes 60s and the full file never finishes
+		// (>240s), with 95% of CPU in mergeStacksWithScratch /
+		// stackEntryNodesEquivalentFrontierWithScratch (~2x input -> ~25x
+		// time). Cap 2 parses the full file in 130ms and the first 40 corpus
+		// files all complete (max 401ms); cap 3 already truncates entities.cr.
+		if initialMaxStacks == maxGLRStacks {
+			initialMaxStacks = 2
+		}
 	case "javascript":
 		// Large JavaScript UMD/runtime bundles need enough survivors to keep the
 		// outer call-expression branch alive through long function arguments.
