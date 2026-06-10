@@ -55,6 +55,7 @@ prisma
 properties
 puppet
 python
+r
 racket
 ron
 smithy
