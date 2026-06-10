@@ -3,6 +3,7 @@
 package grammars
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/odvcencio/gotreesitter"
@@ -79,6 +80,40 @@ func TestJSONTokenSourceSkipToByte(t *testing.T) {
 	}
 }
 
+func TestJSONTokenSourceSkipToByteInsideStringContent(t *testing.T) {
+	lang := JsonLanguage()
+	src := []byte(`{"version": "0.24.8", "target": "x"}`)
+	ts, err := NewJSONTokenSource(src, lang)
+	if err != nil {
+		t.Fatalf("NewJSONTokenSource failed: %v", err)
+	}
+
+	target := bytes.Index(src, []byte("24.8"))
+	if target < 0 {
+		t.Fatal("test source missing target string")
+	}
+	tok := ts.SkipToByte(uint32(target))
+	if got := lang.SymbolNames[tok.Symbol]; got != "string_content" {
+		t.Fatalf("SkipToByte token = %q, want string_content; token=%+v", got, tok)
+	}
+	if got, want := tok.StartByte, uint32(target); got != want {
+		t.Fatalf("StartByte=%d, want %d", got, want)
+	}
+	if got := tok.Text; got != "24.8" {
+		t.Fatalf("Text=%q, want %q", got, "24.8")
+	}
+	next := ts.Next()
+	if got := lang.SymbolNames[next.Symbol]; got != "\"" {
+		t.Fatalf("next token after clipped string content = %q, want quote; token=%+v", got, next)
+	}
+	if next.StartByte <= tok.StartByte {
+		t.Fatalf("next token did not advance after clipped token: current=%+v next=%+v", tok, next)
+	}
+	if _, ok := any(ts).(gotreesitter.PointSkippableTokenSource); !ok {
+		t.Fatal("JSONTokenSource should implement PointSkippableTokenSource")
+	}
+}
+
 func TestParseJSONWithTokenSource(t *testing.T) {
 	lang := JsonLanguage()
 	parser := gotreesitter.NewParser(lang)
@@ -98,4 +133,66 @@ func TestParseJSONWithTokenSource(t *testing.T) {
 	if tree.RootNode().HasError() {
 		t.Fatal("expected json parse without syntax errors")
 	}
+}
+
+func TestParseJSONIncrementalWithTokenSourceStringEdit(t *testing.T) {
+	lang := JsonLanguage()
+	parser := gotreesitter.NewParser(lang)
+	oldSrc := []byte(`{"version": "0.24.8", "target": "x"}`)
+	newSrc := append([]byte(nil), oldSrc...)
+	editAt := bytes.IndexByte(newSrc, '0')
+	if editAt < 0 {
+		t.Fatal("test source missing edit byte")
+	}
+	newSrc[editAt] = '1'
+
+	oldTree, err := parser.ParseWithTokenSource(oldSrc, NewJSONTokenSourceOrEOF(oldSrc, lang))
+	if err != nil {
+		t.Fatalf("old parse failed: %v", err)
+	}
+	defer oldTree.Release()
+	freshTree, err := parser.ParseWithTokenSource(newSrc, NewJSONTokenSourceOrEOF(newSrc, lang))
+	if err != nil {
+		t.Fatalf("fresh parse failed: %v", err)
+	}
+	defer freshTree.Release()
+
+	edit := gotreesitter.InputEdit{
+		StartByte:   uint32(editAt),
+		OldEndByte:  uint32(editAt + 1),
+		NewEndByte:  uint32(editAt + 1),
+		StartPoint:  jsonTestPointAtOffset(oldSrc, editAt),
+		OldEndPoint: jsonTestPointAtOffset(oldSrc, editAt+1),
+		NewEndPoint: jsonTestPointAtOffset(newSrc, editAt+1),
+	}
+	oldTree.Edit(edit)
+
+	incrTree, err := parser.ParseIncrementalWithTokenSource(newSrc, oldTree, NewJSONTokenSourceOrEOF(newSrc, lang))
+	if err != nil {
+		t.Fatalf("incremental parse failed: %v", err)
+	}
+	defer incrTree.Release()
+
+	if incrTree.RootNode().HasError() {
+		t.Fatalf("incremental parse has error: %s", incrTree.RootNode().SExpr(lang))
+	}
+	if got, want := incrTree.RootNode().SExpr(lang), freshTree.RootNode().SExpr(lang); got != want {
+		t.Fatalf("incremental SExpr mismatch\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func jsonTestPointAtOffset(src []byte, offset int) gotreesitter.Point {
+	var pt gotreesitter.Point
+	if offset > len(src) {
+		offset = len(src)
+	}
+	for i := 0; i < offset; i++ {
+		if src[i] == '\n' {
+			pt.Row++
+			pt.Column = 0
+		} else {
+			pt.Column++
+		}
+	}
+	return pt
 }

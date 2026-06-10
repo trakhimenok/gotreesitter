@@ -4,6 +4,7 @@ package grammars
 
 import (
 	"fmt"
+	"sort"
 	"unicode/utf8"
 
 	"github.com/odvcencio/gotreesitter"
@@ -22,6 +23,10 @@ type JSONTokenSource struct {
 	done   bool
 
 	pending []gotreesitter.Token
+
+	tokenCache  []gotreesitter.Token
+	cacheIndex  int
+	cacheActive bool
 
 	eofSymbol           gotreesitter.Symbol
 	lbraceSymbol        gotreesitter.Symbol
@@ -111,6 +116,9 @@ func (ts *JSONTokenSource) Reset(src []byte) {
 	ts.col = 0
 	ts.done = false
 	ts.pending = ts.pending[:0]
+	ts.tokenCache = nil
+	ts.cacheIndex = 0
+	ts.cacheActive = false
 }
 
 // SupportsIncrementalReuse reports that JSONTokenSource preserves stable token
@@ -120,6 +128,21 @@ func (ts *JSONTokenSource) SupportsIncrementalReuse() bool {
 }
 
 func (ts *JSONTokenSource) Next() gotreesitter.Token {
+	if ts.cacheActive {
+		if ts.cacheIndex < len(ts.tokenCache) {
+			tok := ts.tokenCache[ts.cacheIndex]
+			ts.cacheIndex++
+			return tok
+		}
+		if len(ts.tokenCache) > 0 {
+			return ts.tokenCache[len(ts.tokenCache)-1]
+		}
+		return ts.eofToken()
+	}
+	return ts.nextLexed()
+}
+
+func (ts *JSONTokenSource) nextLexed() gotreesitter.Token {
 	if len(ts.pending) > 0 {
 		tok := ts.pending[0]
 		ts.pending = ts.pending[1:]
@@ -186,6 +209,14 @@ func (ts *JSONTokenSource) Next() gotreesitter.Token {
 }
 
 func (ts *JSONTokenSource) SkipToByte(offset uint32) gotreesitter.Token {
+	return ts.skipToByteCached(offset)
+}
+
+func (ts *JSONTokenSource) SkipToByteWithPoint(offset uint32, _ gotreesitter.Point) gotreesitter.Token {
+	return ts.skipToByteCached(offset)
+}
+
+func (ts *JSONTokenSource) skipToByteCached(offset uint32) gotreesitter.Token {
 	target := int(offset)
 	if target < 0 {
 		target = 0
@@ -194,23 +225,78 @@ func (ts *JSONTokenSource) SkipToByte(offset uint32) gotreesitter.Token {
 		target = len(ts.src)
 	}
 
-	// Clear pending split-string tokens because caller requested a jump.
-	ts.pending = nil
-	ts.done = false
-
-	if target < ts.offset {
-		ts.offset = 0
-		ts.row = 0
-		ts.col = 0
-	}
-	for ts.offset < target {
-		ts.advanceOneRune()
-	}
-	if ts.offset >= len(ts.src) {
-		ts.done = true
+	ts.ensureTokenCache()
+	if len(ts.tokenCache) == 0 {
+		ts.cacheActive = true
+		ts.cacheIndex = 0
 		return ts.eofToken()
 	}
-	return ts.Next()
+	idx := sort.Search(len(ts.tokenCache), func(i int) bool {
+		tok := ts.tokenCache[i]
+		if tok.Symbol == ts.eofSymbol && tok.StartByte == tok.EndByte {
+			return int(tok.StartByte) >= target
+		}
+		return int(tok.EndByte) > target
+	})
+	if idx >= len(ts.tokenCache) {
+		idx = len(ts.tokenCache) - 1
+	}
+	tok := ts.tokenCache[idx]
+	ts.cacheActive = true
+	ts.cacheIndex = idx + 1
+	if int(tok.StartByte) < target && target < int(tok.EndByte) && tok.Symbol == ts.stringContentSymbol {
+		return ts.clipStringContentToken(tok, target)
+	}
+	return tok
+}
+
+func (ts *JSONTokenSource) ensureTokenCache() {
+	if ts.tokenCache != nil {
+		return
+	}
+	lex := *ts
+	lex.offset = 0
+	lex.row = 0
+	lex.col = 0
+	lex.done = false
+	lex.pending = nil
+	lex.tokenCache = nil
+	lex.cacheIndex = 0
+	lex.cacheActive = false
+
+	for {
+		tok := lex.nextLexed()
+		ts.tokenCache = append(ts.tokenCache, tok)
+		if tok.Symbol == lex.eofSymbol && tok.StartByte == tok.EndByte && int(tok.StartByte) >= len(lex.src) {
+			return
+		}
+	}
+}
+
+func (ts *JSONTokenSource) clipStringContentToken(tok gotreesitter.Token, target int) gotreesitter.Token {
+	start := int(tok.StartByte)
+	end := int(tok.EndByte)
+	if target <= start || target >= end {
+		return tok
+	}
+	tok.StartByte = uint32(target)
+	tok.StartPoint = advanceJSONPoint(tok.StartPoint, ts.src[start:target])
+	tok.Text = string(ts.src[target:end])
+	return tok
+}
+
+func advanceJSONPoint(pt gotreesitter.Point, src []byte) gotreesitter.Point {
+	for len(src) > 0 {
+		r, size := utf8.DecodeRune(src)
+		if r == '\n' {
+			pt.Row++
+			pt.Column = 0
+		} else {
+			pt.Column++
+		}
+		src = src[size:]
+	}
+	return pt
 }
 
 func (ts *JSONTokenSource) singleByteToken(sym gotreesitter.Symbol) gotreesitter.Token {

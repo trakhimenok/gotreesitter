@@ -48,7 +48,7 @@ func DumpV1FromGo(root *gotreesitter.Node, lang *gotreesitter.Language) DumpV1Tr
 	if root == nil || lang == nil {
 		return out
 	}
-	walkDumpV1Go(root, lang, rootPath(root.Type(lang)), "", &out.Nodes)
+	walkDumpV1Go(root, lang, rootPath(dumpV1GoType(root, lang)), "", &out.Nodes)
 	return out
 }
 
@@ -80,9 +80,10 @@ func walkDumpV1Go(node *gotreesitter.Node, lang *gotreesitter.Language, path, fi
 	}
 	start := node.StartPoint()
 	end := node.EndPoint()
+	typ := dumpV1GoType(node, lang)
 	*out = append(*out, DumpV1Node{
 		Path:      path,
-		Type:      node.Type(lang),
+		Type:      typ,
 		Field:     field,
 		IsNamed:   node.IsNamed(),
 		IsExtra:   node.IsExtra(),
@@ -104,7 +105,7 @@ func walkDumpV1Go(node *gotreesitter.Node, lang *gotreesitter.Language, path, fi
 		if child == nil {
 			continue
 		}
-		childPath := childPath(path, child.Type(lang), i)
+		childPath := childPath(path, dumpV1GoType(child, lang), i)
 		walkDumpV1Go(child, lang, childPath, node.FieldNameForChild(i, lang), out)
 	}
 }
@@ -154,7 +155,7 @@ func firstDivergenceDumpV1(goNode *gotreesitter.Node, goLang *gotreesitter.Langu
 			CValue:   fmt.Sprintf("nil=%v", cNode == nil),
 		}
 	}
-	goType := goNode.Type(goLang)
+	goType := dumpV1GoType(goNode, goLang)
 	cType := cNode.Kind()
 	if goType != cType {
 		return &DumpV1Divergence{Path: path, Category: "type", GoValue: goType, CValue: cType}
@@ -252,7 +253,7 @@ func rootPath(typ string) string {
 
 func goTypeOrFallback(goNode *gotreesitter.Node, goLang *gotreesitter.Language, cNode *sitter.Node) string {
 	if goNode != nil && goLang != nil {
-		if typ := goNode.Type(goLang); typ != "" {
+		if typ := dumpV1GoType(goNode, goLang); typ != "" {
 			return typ
 		}
 	}
@@ -262,4 +263,15 @@ func goTypeOrFallback(goNode *gotreesitter.Node, goLang *gotreesitter.Language, 
 		}
 	}
 	return "?"
+}
+
+func dumpV1GoType(node *gotreesitter.Node, lang *gotreesitter.Language) string {
+	if node == nil || lang == nil {
+		return ""
+	}
+	typ := node.Type(lang)
+	if typ == "\\0" {
+		return ""
+	}
+	return typ
 }

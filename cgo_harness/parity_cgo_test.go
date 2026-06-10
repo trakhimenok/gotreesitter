@@ -282,7 +282,7 @@ type nodeSnapshot struct {
 
 func snapshotGo(n *gotreesitter.Node, lang *gotreesitter.Language) nodeSnapshot {
 	return nodeSnapshot{
-		Type:       n.Type(lang),
+		Type:       dumpV1GoType(n, lang),
 		StartByte:  n.StartByte(),
 		EndByte:    n.EndByte(),
 		IsNamed:    n.IsNamed(),
