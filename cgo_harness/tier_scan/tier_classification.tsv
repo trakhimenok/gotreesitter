@@ -22,7 +22,7 @@ caddy	IV-recovery?	9/30	ext=Caddyfile; faithful C error-cost version competition
 cairo	IV-recovery?	0/30	ext=.cairo; faithful C error-cost version competition (see spec)
 capnp	CLEAN	40/40	in ratchet
 chatito	IV-stackcap?	1/5	ext=.chatito; add effectiveFullParseInitialMaxStacks cap entry
-circom	IV-shape?	11/30	ext=.circom; preliminary
+circom	IV-shape?	11/30	ext=.circom; assignment_expression vs member_expression nesting on `<==`/`==>` lhs (witness circuits/bitify.circom); 2 files root StartByte go=0 c>0
 clojure	CLEAN	40/40	in ratchet
 cmake	CLEAN	40/40	in ratchet
 cobol	IV-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
@@ -36,7 +36,7 @@ crystal	IV-perf	0/0	perf-blocker: times out at N=8 (single-file >30s); profile b
 css	CLEAN	40/40	in ratchet
 csv	CLEAN	40/40	in ratchet
 cuda	IV-recovery?	17/30	ext=.cu,.cuh; faithful C error-cost version competition (see spec)
-cue	IV-shape?	21/30	ext=.cue; preliminary
+cue	IV-shape?	23/30	ext=.cue; was 21/30; +2 from tree.go unescaper fix (`\(`/`\#(` names); remaining 7: `value` ChildCount go=0 c=1 (witness load/testdata/testmod/multi2/other.cue) + 1 root StartByte go=0 c=1
 cylc	IV-recovery?	4/30	ext=.cylc; faithful C error-cost version competition (see spec)
 d	IV-recovery?	14/30	ext=.d; faithful C error-cost version competition (see spec)
 dart	IV-recovery?	11/30	ext=.dart; faithful C error-cost version competition (see spec)
@@ -142,7 +142,7 @@ pascal	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
 pem	CLEAN	40/40	in ratchet
 perl	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
 php	CLEAN	40/40	in ratchet
-pkl	IV-shape?	34/40	preliminary from signature
+pkl	CLEAN	40/40	Type() mangled literal-backslash token names (`\(`): unescapePunctuationSymbolName narrowed to exact inverse of escapeAnonymousName (tree.go); 40/40 vs C oracle 2026-06-10
 powershell	IV-recovery?	22/40	faithful C error-cost version competition (see spec)
 prisma	CLEAN	40/40	in ratchet
 prolog	IV-recovery?	4/40	faithful C error-cost version competition (see spec)

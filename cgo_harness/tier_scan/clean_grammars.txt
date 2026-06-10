@@ -50,6 +50,7 @@ nix
 ocaml
 pem
 php
+pkl
 prisma
 properties
 puppet
