@@ -75,6 +75,10 @@ func errorCostCompetitionLanguage(lang *Language) bool {
 	switch lang.Name {
 	case "requirements":
 		return true
+	case "jsdoc":
+		// IV-recovery fan-out (redwood): 39/40 -> 40/40 on the full real
+		// corpus (harness_out/docker/20260610T090208Z-redwood-wave1).
+		return true
 	}
 	return false
 }

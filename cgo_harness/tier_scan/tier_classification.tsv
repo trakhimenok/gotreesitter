@@ -103,7 +103,7 @@ java	CLEAN	40/40	in ratchet
 javascript	CLEAN	40/40	in ratchet
 jinja2	IV-recovery	3/40	faithful C error-cost version competition (see spec)
 jq	CLEAN	40/40	in ratchet
-jsdoc	IV-recovery?	39/40	ext=.jsdoc; faithful C error-cost version competition (see spec)
+jsdoc	CLEAN	40/40	in ratchet; ext=.jsdoc; IV-recovery clear via faithful C-recovery port (errorCostCompetitionLanguage gate, run 20260610T090208Z-redwood-wave1)
 json	CLEAN	40/40	in ratchet
 json5	CLEAN	40/40	in ratchet
 jsonnet	CLEAN	40/40	in ratchet
