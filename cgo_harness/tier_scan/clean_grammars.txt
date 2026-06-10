@@ -37,6 +37,7 @@ gomod
 hack
 hcl
 heex
+http
 janet
 java
 javascript
