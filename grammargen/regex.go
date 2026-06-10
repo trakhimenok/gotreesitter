@@ -788,17 +788,29 @@ func expandRegexToRule(node *regexNode) *Rule {
 		inner := expandRegexToRule(node.children[0])
 		min := node.count
 		max := node.countMax
+		if max == -1 {
+			// {n,} — mirror the C CLI's expand_tokens.rs repetition arms:
+			// (0, None) and (1, None) hit the dedicated star/plus arms, but
+			// (min>=2, None) builds its zero_or_more tail exiting to the same
+			// next state as the min-count chain without ever wiring the chain
+			// into the loop, so the loop is unreachable and the token lexes as
+			// exactly {min}. The C oracle's observed behavior is the parity
+			// spec, so truncate {n,} (n >= 2) to {n}.
+			switch {
+			case min <= 0:
+				return Repeat(cloneRule(inner))
+			case min == 1:
+				return Repeat1(cloneRule(inner))
+			default:
+				parts := make([]*Rule, min)
+				for i := 0; i < min; i++ {
+					parts[i] = cloneRule(inner)
+				}
+				return Seq(parts...)
+			}
+		}
 		if min <= 0 && max <= 0 {
 			return Blank()
-		}
-		if max == -1 {
-			// {n,} — n required + zero-or-more
-			parts := make([]*Rule, min+1)
-			for i := 0; i < min; i++ {
-				parts[i] = cloneRule(inner)
-			}
-			parts[min] = Repeat(cloneRule(inner))
-			return Seq(parts...)
 		}
 		// {n,m} or {n} — n required + (m-n) optional
 		parts := make([]*Rule, max)

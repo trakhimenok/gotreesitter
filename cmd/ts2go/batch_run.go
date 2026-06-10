@@ -49,6 +49,22 @@ func RunBatchManifest(manifestPath, outDir, pkg string, compact bool) error {
 		if err := grpCtx.Err(); err != nil {
 			break
 		}
+		if grammargenOwnedBlobs[entry.Name] {
+			// This language's checked-in blob is compiled by grammargen, not
+			// ts2go. Keep the embedded loader entry pointing at the existing
+			// blob but never re-extract it from C tables or emit a ts2go
+			// register stub for it (its registry entry advertises
+			// GrammarSourceGrammargenBlob).
+			mu.Lock()
+			loaderSpecs = append(loaderSpecs, embeddedLoaderSpec{
+				Name:     entry.Name,
+				BlobName: safeFileBase(entry.Name) + ".bin",
+			})
+			mu.Unlock()
+			fmt.Printf("skipped %s (grammargen-owned blob; regenerate with: go run ./cmd/grammargen -lr-split -bin grammars/grammar_blobs/%s.bin %s)\n",
+				entry.Name, safeFileBase(entry.Name), entry.Name)
+			continue
+		}
 		grp.Go(func() error {
 			if err := grpCtx.Err(); err != nil {
 				return err
@@ -215,6 +231,15 @@ func loadHighlightQuery(repoDir string) (string, bool) {
 	return "", false
 }
 
+// grammargenOwnedBlobs lists languages whose checked-in grammar_blobs/*.bin
+// is compiled by grammargen (go run ./cmd/grammargen -lr-split -bin ...)
+// instead of the ts2go C-table extraction pipeline. Batch regeneration must
+// not clobber these blobs or relabel their registry entries: they advertise
+// GrammarSourceGrammargenBlob in grammars/registry_builtin_gen.go.
+var grammargenOwnedBlobs = map[string]bool{
+	"go": true,
+}
+
 func writeRegisterStub(outDir string, entry ManifestEntry, highlightQuery string) error {
 	nameIdent := languageRegisterIdentifier(entry.Name)
 	funcName := languageFuncName(entry.Name)
@@ -240,6 +265,7 @@ func init() {
 		Name:           %q,
 		Extensions:     %s,
 		Language:       %s,
+		GrammarSource:  GrammarSourceTS2GoBlob,
 		HighlightQuery: %sHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory(%q),
 	})

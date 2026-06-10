@@ -56,6 +56,17 @@ type Lexer struct {
 	// lexes in error mode before skipping characters into an error subtree.
 	errorRunLexState    uint32
 	hasErrorRunLexState bool
+
+	// errorModeRetry enables the full C ts_parser__lex failure behavior for
+	// NextWithErrorRuns (faithful C error-recovery port, parser_recover_c.go):
+	// when the requested lex state fails, re-lex from the call's start
+	// position in errorRunLexState and return THAT token — C switches
+	// lex_mode to the ERROR_STATE mode and continues, surfacing real (often
+	// invisible) tokens like scheme's block_comment_token1 which the recovery
+	// then absorbs as hidden error-region leaves. Without the flag, a failed
+	// scan falls through to the error-run check / silent skip exactly as
+	// before.
+	errorModeRetry bool
 }
 
 // NewLexer creates a new Lexer that will tokenize source using the given
@@ -85,6 +96,10 @@ func (l *Lexer) NextWithErrorRuns(startState uint32) Token {
 }
 
 func (l *Lexer) next(startState uint32, emitErrorRuns bool) Token {
+	// C ts_parser__lex resets to the lex call's start position (before any
+	// whitespace the failed attempt skipped) when it switches to error-mode
+	// lexing; capture it for the errorModeRetry branch below.
+	callStartPos, callStartRow, callStartCol := l.pos, l.row, l.col
 	for {
 		// EOF check.
 		if l.pos >= len(l.source) {
@@ -114,6 +129,16 @@ func (l *Lexer) next(startState uint32, emitErrorRuns bool) Token {
 			return tok
 		}
 
+		if emitErrorRuns && l.hasErrorRunLexState && l.errorModeRetry && startState != l.errorRunLexState {
+			// Faithful C error-recovery port: ts_parser__lex retries a failed
+			// lex in the ERROR_STATE mode (LexModes[0]) from the call's start
+			// position and returns its token; characters are skipped into an
+			// errorSymbol run only when even error mode cannot lex. The
+			// recursive call has startState == errorRunLexState, so it takes
+			// the error-run branch below on failure instead of recursing.
+			l.pos, l.row, l.col = callStartPos, callStartRow, callStartCol
+			return l.next(l.errorRunLexState, true)
+		}
 		if emitErrorRuns && l.hasErrorRunLexState && !l.canLexAt(l.errorRunLexState, tokenStartPos, tokenStartRow, tokenStartCol) {
 			return l.errorRunToken()
 		}

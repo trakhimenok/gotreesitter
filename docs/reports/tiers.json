@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-10T08:13:00Z",
- "commit": "bc1596eb",
+ "generated": "2026-06-10T08:54:04Z",
+ "commit": "8c92f06d",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,8 +10,8 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 130,
-  "II": 35,
+  "IV": 129,
+  "II": 36,
   "I": 32,
   "III": 9
  },
@@ -34,7 +34,7 @@
    "grammar": "angular",
    "tier": "IV",
    "iv_cause": "IV-recovery?",
-   "parity": "26/30",
+   "parity": "35/40",
    "notes": "ext=.component.html,.ng.html; faithful C error-cost version competition (see spec)"
   },
   {
@@ -79,9 +79,9 @@
   {
    "grammar": "bash",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
-   "parity": "7/8",
-   "notes": "ext=.sh,.bash; add effectiveFullParseInitialMaxStacks cap entry"
+   "iv_cause": "IV-recovery?",
+   "parity": "30/40",
+   "notes": "ext=.sh; stackcap disproven (cap-256 floor entry already present); divergences are recovery-shape: go ERROR root where C recovers program (lib.sh, git-prompt.sh, git-subtree.sh) plus small child-count diffs; 1 trunc (cmd-list.sh no_stacks_alive)"
   },
   {
    "grammar": "bass",
@@ -99,7 +99,7 @@
    "grammar": "bibtex",
    "tier": "IV",
    "iv_cause": "IV-recovery?",
-   "parity": "28/30",
+   "parity": "37/40",
    "notes": "ext=.bib; faithful C error-cost version competition (see spec)"
   },
   {
@@ -166,9 +166,9 @@
   {
    "grammar": "chatito",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
+   "iv_cause": "IV-recovery",
    "parity": "1/5",
-   "notes": "ext=.chatito; add effectiveFullParseInitialMaxStacks cap entry"
+   "notes": "ext=.chatito; stackcap disproven (cap 2 identical); all 4 failures are files lacking a trailing newline at EOF \u2014 go GLR dies no_stacks_alive where C recovers (appending \\n parses accepted); missing-token-at-EOF recovery gap"
   },
   {
    "grammar": "circom",
@@ -212,9 +212,9 @@
   {
    "grammar": "cooklang",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
+   "iv_cause": "IV-recovery",
    "parity": "0/3",
-   "notes": "ext=.cook; add effectiveFullParseInitialMaxStacks cap entry"
+   "notes": "ext=.cook; stackcap disproven (cap 2 cuts trunc 3\u21921 and ratio 239x\u219214x but parity stays 0/3 \u2014 go ERROR root vs C recovered recipe; 2 files differ by the missing-trailing-newline EOF byte); cap entry not kept"
   },
   {
    "grammar": "corn",
@@ -325,9 +325,9 @@
   {
    "grammar": "djot",
    "tier": "IV",
-   "iv_cause": "IV-extmap",
-   "parity": "0/0",
-   "notes": "ext=.dj; add curated source-extension mapping"
+   "iv_cause": "IV-scanner?",
+   "parity": "0/40",
+   "notes": "ext=.dj,.djot; 0/40 with 39 truncations (node_limit persists at stack cap 2: 8.4KB file blows the node budget); markdown-class inline ambiguity \u2014 re-port stateful external scanner from pinned upstream"
   },
   {
    "grammar": "dockerfile",
@@ -706,7 +706,7 @@
    "grammar": "jsdoc",
    "tier": "IV",
    "iv_cause": "IV-recovery?",
-   "parity": "29/30",
+   "parity": "39/40",
    "notes": "ext=.jsdoc; faithful C error-cost version competition (see spec)"
   },
   {
@@ -1061,9 +1061,9 @@
   {
    "grammar": "regex",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
+   "iv_cause": "IV-unknown?",
    "parity": "0/1",
-   "notes": "add effectiveFullParseInitialMaxStacks cap entry"
+   "notes": "ext=.regex; stackcap disproven (default iteration_limit, cap 2 no_stacks_alive); single-file corpus with UTF-8 BOM: C roots after the BOM (StartByte 3) and parses all 2255 bytes, go roots at 0 and truncates at 390"
   },
   {
    "grammar": "rego",
@@ -1074,10 +1074,9 @@
   },
   {
    "grammar": "requirements",
-   "tier": "IV",
-   "iv_cause": "IV-recovery?",
-   "parity": "8/9",
-   "notes": "ext=requirements.txt; faithful C error-cost version competition (see spec)"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "rescript",
@@ -1241,9 +1240,9 @@
   {
    "grammar": "tlaplus",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
+   "iv_cause": "IV-unknown?",
    "parity": "14/40",
-   "notes": "add effectiveFullParseInitialMaxStacks cap entry"
+   "notes": "ext=.tla; stackcap disproven (cap 2: 21\u219220 iteration_limit truncations, parity unchanged); 197x median ratio with deep truncations (go stops at 1-2KB where C parses 11-31KB) \u2014 likely jlist external-scanner-driven GLR churn"
   },
   {
    "grammar": "tmux",
