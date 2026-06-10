@@ -23,8 +23,8 @@ desktop	.desktop,.desktop.in,.service
 devicetree	.dts,.dtsi
 dhall	.dhall
 diff	.patch,.diff
-djot	.dj,.djot
 disassembly	.dis,.dump
+djot	.dj,.djot
 dot	.dot,.gv
 editorconfig	.editorconfig
 eex	.heex,.html.eex,.leex
@@ -119,6 +119,7 @@ r	.r,.R
 racket	.rkt
 regex	.regex
 rego	.rego
+requirements	requirements.txt
 rescript	.res,.resi
 robot	.robot
 ron	.ron
