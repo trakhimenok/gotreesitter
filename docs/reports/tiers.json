@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-10T08:51:04Z",
- "commit": "bfecdbaf",
+ "generated": "2026-06-10T08:54:04Z",
+ "commit": "8c92f06d",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,8 +10,8 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 130,
-  "II": 35,
+  "IV": 129,
+  "II": 36,
   "I": 32,
   "III": 9
  },
@@ -1074,10 +1074,9 @@
   },
   {
    "grammar": "requirements",
-   "tier": "IV",
-   "iv_cause": "IV-recovery?",
-   "parity": "8/9",
-   "notes": "ext=requirements.txt; faithful C error-cost version competition (see spec)"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "rescript",

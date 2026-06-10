@@ -55,6 +55,7 @@ properties
 puppet
 python
 racket
+requirements
 ron
 smithy
 sparql

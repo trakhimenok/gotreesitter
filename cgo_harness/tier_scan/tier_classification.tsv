@@ -158,7 +158,7 @@ r	IV-shape?	33/40	preliminary from signature
 racket	CLEAN	40/40	in ratchet
 regex	IV-unknown?	0/1	ext=.regex; stackcap disproven (default iteration_limit, cap 2 no_stacks_alive); single-file corpus with UTF-8 BOM: C roots after the BOM (StartByte 3) and parses all 2255 bytes, go roots at 0 and truncates at 390
 rego	IV-recovery?	7/40	faithful C error-cost version competition (see spec)
-requirements	IV-recovery?	8/9	ext=requirements.txt; faithful C error-cost version competition (see spec)
+requirements	CLEAN	9/9	in ratchet; first IV-recovery clear via faithful C-recovery port (errorCostCompetitionLanguage gate)
 rescript	IV-recovery?	23/40	faithful C error-cost version competition (see spec)
 robot	IV-recovery?	28/40	faithful C error-cost version competition (see spec)
 ron	CLEAN	40/40	in ratchet

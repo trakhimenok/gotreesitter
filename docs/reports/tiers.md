@@ -1,29 +1,29 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-10T08:51:04Z at `bfecdbaf`. Parity vs the
+Generated 2026-06-10T08:54:04Z at `8c92f06d`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
 | tier | count |
 | --- | --- |
 | I | 32 |
-| II | 35 |
+| II | 36 |
 | III | 9 |
-| IV | 130 |
+| IV | 129 |
 
 ## Tier I — parity-clean, fast (32)
 
 `astro`, `awk`, `clojure`, `css`, `csv`, `elisp`, `erlang`, `faust`, `fidl`, `fish`, `gitcommit`, `gleam`, `hcl`, `java`, `javascript`, `jsonnet`, `llvm`, `nickel`, `nix`, `php`, `prisma`, `puppet`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`
 
-## Tier II — parity-clean, ok (35)
+## Tier II — parity-clean, ok (36)
 
-`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `typescript`, `vue`
+`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `typescript`, `vue`
 
 ## Tier III — parity-clean, poor perf (9)
 
 `comment`, `desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `nginx`, `properties`, `ssh_config`
 
-## Tier IV — not parity-clean (130)
+## Tier IV — not parity-clean (129)
 
 | grammar | cause | parity |
 | --- | --- | --- |
@@ -129,7 +129,6 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `r` | IV-shape? | 33/40 |
 | `regex` | IV-unknown? | 0/1 |
 | `rego` | IV-recovery? | 7/40 |
-| `requirements` | IV-recovery? | 8/9 |
 | `rescript` | IV-recovery? | 23/40 |
 | `robot` | IV-recovery? | 28/40 |
 | `rst` | IV-shape? | 1/8 |
