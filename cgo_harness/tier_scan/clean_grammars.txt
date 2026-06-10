@@ -25,6 +25,7 @@ fidl
 fish
 foam
 fortran
+git_config
 git_rebase
 gitattributes
 gitcommit

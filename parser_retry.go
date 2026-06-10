@@ -268,6 +268,15 @@ func effectiveFullParseInitialMaxStacks(lang *Language, initialMaxStacks int) in
 		if initialMaxStacks == maxGLRStacks {
 			initialMaxStacks = 2
 		}
+	case "git_config":
+		// Long quoted values with escape sequences (e.g. diff xfuncname
+		// regexes) churn equivalent survivor stacks until a 618-byte config
+		// hits the iteration limit mid-file and truncates (root EndByte 582 vs
+		// C 618). Cap 2 parses the curated corpus byte-identical to C; cap 3
+		// measures the same, cap 8 still truncates.
+		if initialMaxStacks == maxGLRStacks {
+			initialMaxStacks = 2
+		}
 	case "forth":
 		// Forth's word-soup grammar multiplies equivalent survivor stacks on
 		// real gforth sources until parses truncate: at the default cap only

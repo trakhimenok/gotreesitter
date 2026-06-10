@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-10T08:12:35Z",
- "commit": "da3b5902",
+ "generated": "2026-06-10T08:13:00Z",
+ "commit": "bc1596eb",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,8 +10,8 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 131,
-  "II": 34,
+  "IV": 130,
+  "II": 35,
   "I": 32,
   "III": 9
  },
@@ -509,10 +509,9 @@
   },
   {
    "grammar": "git_config",
-   "tier": "IV",
-   "iv_cause": "IV-extmap",
-   "parity": "0/0",
-   "notes": "ext=.gitconfig,config; add curated source-extension mapping"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "git_rebase",

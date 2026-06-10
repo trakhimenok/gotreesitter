@@ -1,29 +1,29 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-10T08:12:35Z at `da3b5902`. Parity vs the
+Generated 2026-06-10T08:13:00Z at `bc1596eb`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
 | tier | count |
 | --- | --- |
 | I | 32 |
-| II | 34 |
+| II | 35 |
 | III | 9 |
-| IV | 131 |
+| IV | 130 |
 
 ## Tier I — parity-clean, fast (32)
 
 `astro`, `awk`, `clojure`, `css`, `csv`, `elisp`, `erlang`, `faust`, `fidl`, `fish`, `gitcommit`, `gleam`, `hcl`, `java`, `javascript`, `jsonnet`, `llvm`, `nickel`, `nix`, `php`, `prisma`, `puppet`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`
 
-## Tier II — parity-clean, ok (34)
+## Tier II — parity-clean, ok (35)
 
-`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `typescript`, `vue`
+`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `typescript`, `vue`
 
 ## Tier III — parity-clean, poor perf (9)
 
 `comment`, `desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `nginx`, `properties`, `ssh_config`
 
-## Tier IV — not parity-clean (131)
+## Tier IV — not parity-clean (130)
 
 | grammar | cause | parity |
 | --- | --- | --- |
@@ -74,7 +74,6 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `forth` | IV-unknown | 34/40 |
 | `fsharp` | IV-recovery? | 0/8 |
 | `gdscript` | IV-scanner | 1/40 |
-| `git_config` | IV-extmap | 0/0 |
 | `glsl` | IV-recovery | 11/40 |
 | `gn` | IV-scanner | 27/40 |
 | `godot_resource` | IV-scanner | 21/40 |

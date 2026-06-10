@@ -73,7 +73,7 @@ forth	IV-unknown	34/40	cap=2 landed (20/40 -> 34/40, medianRatio 110x -> 3.8x; c
 fortran	CLEAN	40/40	in ratchet
 fsharp	IV-recovery?	0/8	ext=.fs,.fsi,.fsx; faithful C error-cost version competition (see spec)
 gdscript	IV-scanner	1/40	re-port external scanner from pinned upstream src/scanner.c
-git_config	IV-extmap	0/0	ext=.gitconfig,config; add curated source-extension mapping
+git_config	CLEAN	7/7	in ratchet
 git_rebase	CLEAN	40/40	in ratchet
 gitattributes	CLEAN	40/40	in ratchet
 gitcommit	CLEAN	13/13	in ratchet
