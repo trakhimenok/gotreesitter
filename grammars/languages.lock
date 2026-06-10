@@ -206,5 +206,5 @@ sparql https://github.com/GordianDziwis/tree-sitter-sparql 1ef52d35a73a2a5f2e433
 turtle https://github.com/GordianDziwis/tree-sitter-turtle 7f789ea7ef765080f71a298fc96b7c957fa24422 src .ttl
 wat https://github.com/wasm-lsp/tree-sitter-wasm 2ca28a9f9d709847bf7a3de0942a84e912f59088 wat/src .wat,.wast
 prolog https://github.com/Rukiza/tree-sitter-prolog c246cf2bf36590a3cb4de380205376d3c46208e8 src .pl,.pro
-mojo https://github.com/HerringtonDarkholme/tree-sitter-mojo 99fe918e69f087f910ef3b11eba31eb0d7e54edf src .mojo,.🔥
+mojo https://github.com/whistlebee/tree-sitter-mojo c307dab71a43add26b4715f14e2d6de2a42e6007 src .mojo,.🔥
 wolfram https://github.com/bostick/tree-sitter-wolfram 63ebdac6f040d9082d3d8fa88be96ce24549adc5 src .wl,.m,.nb

@@ -125,7 +125,7 @@ markdown_inline	IV-shape?	13/30	ext=.md; preliminary
 matlab	IV-recovery?	4/40	faithful C error-cost version competition (see spec)
 mermaid	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
 meson	IV-recovery?	1/30	ext=meson.build; faithful C error-cost version competition (see spec)
-mojo	IV-version	4/40	bump embedded grammar to corpus syntax version
+mojo	IV-shape?	30/40	repinned to whistlebee/tree-sitter-mojo@c307dab (old 2023 pin errored on 36/40 in both parsers; new C oracle clean on 40/40); 4/40 -> 30/40; residual 10 = shape divergence + 8 truncations (not stackcap: cap2 measures 29/40)
 move	IV-shape?	14/40	repinned to aptos-labs/tree-sitter-move-on-aptos@12906b3 (old pin errored on all 40 in BOTH parsers; new C oracle clean on 39/40); 0/40 -> 14/40; residual is Go conflict-resolution shape (generic vs binary_expression) + 12 Go-only ERROR roots
 nginx	CLEAN	40/40	in ratchet
 nickel	CLEAN	40/40	in ratchet
