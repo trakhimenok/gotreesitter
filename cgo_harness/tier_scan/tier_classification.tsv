@@ -57,7 +57,7 @@ eds	IV-recovery?	0/1	ext=.eds; faithful C error-cost version competition (see sp
 eex	CLEAN	40/40	in ratchet
 elisp	CLEAN	40/40	in ratchet
 elixir	IV-unknown	0/40	needs deeper single-file diagnosis
-elm	IV-recovery?	7/8	ext=.elm; faithful C error-cost version competition (see spec)
+elm	IV-recovery?	7/8	ext=.elm; C-recovery gate tried and REVERTED (parity-neutral 7/8, run 20260610T091230Z-redwood-wave1b): witness Deps.elm — gate fixes root EndByte (28293) but yields file root with cc go=1 (one whole-file error region) vs c=177; aggRatio blew 18x -> 1450x under gate = stage-2 limitation (c) O(stack) cost queries; needs cost memoization + recovery-shape work
 elsa	IV-recovery?	12/27	ext=.lc; faithful C error-cost version competition (see spec)
 embedded_template	CLEAN	40/40	in ratchet
 enforce	IV-shape?	21/30	ext=.c; preliminary
