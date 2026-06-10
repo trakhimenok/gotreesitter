@@ -268,6 +268,18 @@ func effectiveFullParseInitialMaxStacks(lang *Language, initialMaxStacks int) in
 		if initialMaxStacks == maxGLRStacks {
 			initialMaxStacks = 2
 		}
+	case "forth":
+		// Forth's word-soup grammar multiplies equivalent survivor stacks on
+		// real gforth sources until parses truncate: at the default cap only
+		// 20/40 corpus files matched C (16 truncated, medianRatio 110x). Cap 2
+		// lifts the corpus to 34/40 (medianRatio 3.8x); caps 1 and 3 measure
+		// identically. The remaining 6 divergences are not stack-budget
+		// effects: 4 are the engine-level leading-whitespace root-span
+		// divergence (Go roots at byte 0, C roots after leading extras) and 2
+		// are child-count/truncation cases.
+		if initialMaxStacks == maxGLRStacks {
+			initialMaxStacks = 2
+		}
 	case "javascript":
 		// Large JavaScript UMD/runtime bundles need enough survivors to keep the
 		// outer call-expression branch alive through long function arguments.
