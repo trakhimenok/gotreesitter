@@ -17,8 +17,11 @@ type AuthzedTokenSource struct {
 	lang *gotreesitter.Language
 	cur  sourceCursor
 
-	done    bool
-	pending []gotreesitter.Token
+	done        bool
+	pending     []gotreesitter.Token
+	parserState gotreesitter.StateID
+	glrStates   []gotreesitter.StateID
+	eofNullDone bool
 
 	// Token symbols
 	eofSym        gotreesitter.Symbol
@@ -107,6 +110,7 @@ type AuthzedTokenSource struct {
 
 	// Keyword map for identifier resolution
 	keywordMap map[string]gotreesitter.Symbol
+	literalMap map[string][]gotreesitter.Symbol
 }
 
 // NewAuthzedTokenSource creates a token source for authzed source text.
@@ -247,6 +251,7 @@ func NewAuthzedTokenSource(src []byte, lang *gotreesitter.Language) (*AuthzedTok
 		"true":       ts.trueSym,
 		"false":      ts.falseSym,
 	}
+	ts.literalMap = buildAuthzedLiteralMap(lang)
 
 	return ts, nil
 }
@@ -267,12 +272,27 @@ func (ts *AuthzedTokenSource) Reset(src []byte) {
 	ts.cur = newSourceCursor(src)
 	ts.done = false
 	ts.pending = ts.pending[:0]
+	ts.parserState = 0
+	ts.glrStates = ts.glrStates[:0]
+	ts.eofNullDone = false
 }
 
 // SupportsIncrementalReuse reports that AuthzedTokenSource preserves stable
 // token boundaries across edits and supports deterministic SkipToByte behavior.
 func (ts *AuthzedTokenSource) SupportsIncrementalReuse() bool {
 	return true
+}
+
+func (ts *AuthzedTokenSource) SetParserState(state gotreesitter.StateID) {
+	ts.parserState = state
+}
+
+func (ts *AuthzedTokenSource) SetGLRStates(states []gotreesitter.StateID) {
+	if len(states) == 0 {
+		ts.glrStates = ts.glrStates[:0]
+		return
+	}
+	ts.glrStates = append(ts.glrStates[:0], states...)
 }
 
 // Next returns the next token from the source.
@@ -291,6 +311,10 @@ func (ts *AuthzedTokenSource) Next() gotreesitter.Token {
 		ts.cur.skipSpacesAndTabs()
 
 		if ts.cur.eof() {
+			if !ts.eofNullDone && ts.nullSym != 0 && ts.hasAction(ts.nullSym) {
+				ts.eofNullDone = true
+				return ts.nullTokenAtEOF()
+			}
 			ts.done = true
 			return ts.eofToken()
 		}
@@ -299,7 +323,11 @@ func (ts *AuthzedTokenSource) Next() gotreesitter.Token {
 
 		// Newline is a significant token
 		if b == '\n' {
-			return ts.newlineToken()
+			if sym := ts.literalSymbol("\n", ts.newlineSym); ts.hasAction(sym) {
+				return ts.newlineToken(sym)
+			}
+			ts.cur.advanceByte()
+			continue
 		}
 
 		// Carriage return: skip (handle \r\n)
@@ -316,14 +344,21 @@ func (ts *AuthzedTokenSource) Next() gotreesitter.Token {
 			return makeToken(ts.nullSym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
 		}
 
-		// Comments: // style
+		// Comments: // and /* */ styles.
 		if b == '/' && ts.cur.offset+1 < len(ts.src) && ts.src[ts.cur.offset+1] == '/' {
 			return ts.lineComment()
+		}
+		if b == '/' && ts.cur.offset+1 < len(ts.src) && ts.src[ts.cur.offset+1] == '*' {
+			return ts.blockComment()
 		}
 
 		// String literals
 		if b == '"' {
 			return ts.interpretedString()
+		}
+		if b == '\'' {
+			ts.skipSingleQuotedChunk()
+			continue
 		}
 
 		// Raw string literals (backtick)
@@ -337,6 +372,9 @@ func (ts *AuthzedTokenSource) Next() gotreesitter.Token {
 		}
 
 		// Identifiers and keywords
+		if tok, ok := ts.wildcardType(); ok {
+			return tok
+		}
 		if isAuthzedIdentStart(b) {
 			return ts.identifierOrKeyword()
 		}
@@ -382,11 +420,11 @@ func (ts *AuthzedTokenSource) SkipToByte(offset uint32) gotreesitter.Token {
 	return ts.Next()
 }
 
-func (ts *AuthzedTokenSource) newlineToken() gotreesitter.Token {
+func (ts *AuthzedTokenSource) newlineToken(sym gotreesitter.Symbol) gotreesitter.Token {
 	start := ts.cur.offset
 	startPt := ts.cur.point()
 	ts.cur.advanceByte() // consume '\n'
-	return makeToken(ts.newlineSym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
+	return makeToken(sym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
 }
 
 func (ts *AuthzedTokenSource) lineComment() gotreesitter.Token {
@@ -396,6 +434,22 @@ func (ts *AuthzedTokenSource) lineComment() gotreesitter.Token {
 	ts.cur.advanceByte() // /
 	ts.cur.advanceByte() // /
 	for !ts.cur.eof() && ts.cur.peekByte() != '\n' {
+		ts.cur.advanceRune()
+	}
+	return makeToken(ts.commentSym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
+}
+
+func (ts *AuthzedTokenSource) blockComment() gotreesitter.Token {
+	start := ts.cur.offset
+	startPt := ts.cur.point()
+	ts.cur.advanceByte()
+	ts.cur.advanceByte()
+	for !ts.cur.eof() {
+		if ts.cur.peekByte() == '*' && ts.cur.offset+1 < len(ts.src) && ts.src[ts.cur.offset+1] == '/' {
+			ts.cur.advanceByte()
+			ts.cur.advanceByte()
+			break
+		}
 		ts.cur.advanceRune()
 	}
 	return makeToken(ts.commentSym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
@@ -499,6 +553,26 @@ func (ts *AuthzedTokenSource) rawString() gotreesitter.Token {
 	return makeToken(ts.rawStringLitSym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
 }
 
+func (ts *AuthzedTokenSource) skipSingleQuotedChunk() {
+	ts.cur.advanceByte()
+	for !ts.cur.eof() {
+		switch ts.cur.peekByte() {
+		case '\'':
+			ts.cur.advanceByte()
+			return
+		case '\n', '\r':
+			return
+		case '\\':
+			ts.cur.advanceByte()
+			if !ts.cur.eof() && ts.cur.peekByte() != '\n' && ts.cur.peekByte() != '\r' {
+				ts.cur.advanceRune()
+			}
+		default:
+			ts.cur.advanceRune()
+		}
+	}
+}
+
 func (ts *AuthzedTokenSource) numberLiteral() gotreesitter.Token {
 	start := ts.cur.offset
 	startPt := ts.cur.point()
@@ -583,10 +657,30 @@ func (ts *AuthzedTokenSource) identifierOrKeyword() gotreesitter.Token {
 
 	// Check keyword map
 	if sym, ok := ts.keywordMap[text]; ok {
-		return makeToken(sym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
+		activeSym := ts.literalSymbol(text, sym)
+		if ts.hasAction(activeSym) || !ts.hasAction(ts.identifierSym) {
+			return makeToken(activeSym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
+		}
 	}
 
 	return makeToken(ts.identifierSym, ts.src, start, ts.cur.offset, startPt, ts.cur.point())
+}
+
+func (ts *AuthzedTokenSource) wildcardType() (gotreesitter.Token, bool) {
+	if ts.cur.eof() || !isAuthzedWildcardStart(ts.cur.peekByte()) {
+		return gotreesitter.Token{}, false
+	}
+	i := ts.cur.offset + 1
+	for i < len(ts.src) && isAuthzedWildcardBasePart(ts.src[i]) {
+		i++
+	}
+	if i+1 >= len(ts.src) || ts.src[i] != ':' || ts.src[i+1] != '*' {
+		return gotreesitter.Token{}, false
+	}
+	start := ts.cur.offset
+	startPt := ts.cur.point()
+	ts.cur.advanceBytes(i + 2 - start)
+	return makeToken(ts.wildcardTypeSym, ts.src, start, ts.cur.offset, startPt, ts.cur.point()), true
 }
 
 func (ts *AuthzedTokenSource) multiCharOp() (gotreesitter.Token, bool) {
@@ -639,7 +733,7 @@ func (ts *AuthzedTokenSource) multiCharOp() (gotreesitter.Token, bool) {
 
 	ts.cur.advanceByte()
 	ts.cur.advanceByte()
-	return makeToken(sym, ts.src, start, ts.cur.offset, startPt, ts.cur.point()), true
+	return makeToken(ts.literalSymbol(string(ts.src[start:ts.cur.offset]), sym), ts.src, start, ts.cur.offset, startPt, ts.cur.point()), true
 }
 
 func (ts *AuthzedTokenSource) singleCharToken(b byte) (gotreesitter.Token, bool) {
@@ -696,7 +790,7 @@ func (ts *AuthzedTokenSource) singleCharToken(b byte) (gotreesitter.Token, bool)
 	start := ts.cur.offset
 	startPt := ts.cur.point()
 	ts.cur.advanceByte()
-	return makeToken(sym, ts.src, start, ts.cur.offset, startPt, ts.cur.point()), true
+	return makeToken(ts.literalSymbol(string(ts.src[start:ts.cur.offset]), sym), ts.src, start, ts.cur.offset, startPt, ts.cur.point()), true
 }
 
 func (ts *AuthzedTokenSource) eofToken() gotreesitter.Token {
@@ -711,10 +805,133 @@ func (ts *AuthzedTokenSource) eofToken() gotreesitter.Token {
 	}
 }
 
+func (ts *AuthzedTokenSource) nullTokenAtEOF() gotreesitter.Token {
+	n := uint32(len(ts.src))
+	pt := ts.cur.point()
+	return gotreesitter.Token{
+		Symbol:     ts.nullSym,
+		StartByte:  n,
+		EndByte:    n,
+		StartPoint: pt,
+		EndPoint:   pt,
+	}
+}
+
 func isAuthzedIdentStart(b byte) bool {
 	return isASCIIAlpha(b) || b == '_'
 }
 
 func isAuthzedIdentPart(b byte) bool {
-	return isASCIIAlpha(b) || isASCIIDigit(b) || b == '_'
+	return isASCIIAlpha(b) || b == '_' || b == ':' || b == '/' || b == '='
+}
+
+func isAuthzedWildcardStart(b byte) bool {
+	return isASCIIAlpha(b) || b == '_'
+}
+
+func isAuthzedWildcardBasePart(b byte) bool {
+	return isASCIIAlpha(b) || isASCIIDigit(b) || b == '_' || b == '/' || b == '='
+}
+
+func buildAuthzedLiteralMap(lang *gotreesitter.Language) map[string][]gotreesitter.Symbol {
+	out := make(map[string][]gotreesitter.Symbol)
+	if lang == nil {
+		return out
+	}
+	for _, lexeme := range []string{
+		"\n", ";", "\x00",
+		"import", "as", "in", "all", "any",
+		"int", "uint", "bool", "string", "double", "bytes", "duration", "timestamp",
+		"nil", "true", "false",
+		"definition", "caveat", "relation", "permission",
+		".", "(", ")", ",", "[", "]", "{", "}", "=", ":",
+		"*", "/", "%", "<<", ">>", "&", "&^", "+", "-", "|", "^",
+		"==", "!=", "<", "<=", ">", ">=", "&&", "||", "->", "#",
+	} {
+		if syms := lang.TokenSymbolsByName(lexeme); len(syms) > 0 {
+			out[lexeme] = syms
+		}
+	}
+	return out
+}
+
+func (ts *AuthzedTokenSource) literalSymbol(lexeme string, fallback gotreesitter.Symbol) gotreesitter.Symbol {
+	if ts == nil {
+		return fallback
+	}
+	candidates := ts.literalMap[lexeme]
+	for _, sym := range candidates {
+		if ts.hasAction(sym) {
+			return sym
+		}
+	}
+	return fallback
+}
+
+func (ts *AuthzedTokenSource) hasAction(sym gotreesitter.Symbol) bool {
+	if ts == nil || ts.lang == nil || sym == 0 {
+		return false
+	}
+	if len(ts.glrStates) > 0 {
+		for _, state := range ts.glrStates {
+			if ts.lookupActionIndex(state, sym) != 0 {
+				return true
+			}
+		}
+		return false
+	}
+	return ts.lookupActionIndex(ts.parserState, sym) != 0
+}
+
+func (ts *AuthzedTokenSource) lookupActionIndex(state gotreesitter.StateID, sym gotreesitter.Symbol) uint16 {
+	if ts == nil || ts.lang == nil {
+		return 0
+	}
+	denseLimit := len(ts.lang.ParseTable)
+	if ts.lang.LargeStateCount > 0 {
+		denseLimit = int(ts.lang.LargeStateCount)
+	}
+	if int(state) < denseLimit {
+		if int(state) >= len(ts.lang.ParseTable) {
+			return 0
+		}
+		row := ts.lang.ParseTable[state]
+		if int(sym) >= len(row) {
+			return 0
+		}
+		return row[sym]
+	}
+
+	smallBase := int(ts.lang.LargeStateCount)
+	smallIdx := int(state) - smallBase
+	if smallIdx < 0 || smallIdx >= len(ts.lang.SmallParseTableMap) {
+		return 0
+	}
+
+	offset := ts.lang.SmallParseTableMap[smallIdx]
+	table := ts.lang.SmallParseTable
+	if int(offset) >= len(table) {
+		return 0
+	}
+
+	groupCount := table[offset]
+	pos := int(offset) + 1
+	for i := uint16(0); i < groupCount; i++ {
+		if pos+1 >= len(table) {
+			break
+		}
+		sectionValue := table[pos]
+		symbolCount := table[pos+1]
+		pos += 2
+		for j := uint16(0); j < symbolCount; j++ {
+			if pos >= len(table) {
+				break
+			}
+			if table[pos] == uint16(sym) {
+				return sectionValue
+			}
+			pos++
+		}
+	}
+	return 0
 }

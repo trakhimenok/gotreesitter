@@ -7,6 +7,7 @@ func normalizeAuthzedCompatibility(root *Node, source []byte, lang *Language) {
 	normalizeAuthzedUnclosedCaveatRecovery(root, source, lang)
 	normalizeAuthzedStrayCaveatTailRecovery(root, source, lang)
 	normalizeAuthzedSingleQuotedCaveatRecovery(root, source, lang)
+	normalizeAuthzedSingleQuotedCaveatBlockRecovery(root, source, lang)
 	normalizeAuthzedUnsupportedUseDirective(root, source, lang)
 	normalizeAuthzedMalformedDefinitionRoot(root, source, lang)
 	normalizeAuthzedMissingPermissionExpression(root, source, lang)
@@ -239,6 +240,14 @@ func normalizeAuthzedStrayCaveatTailRecovery(root *Node, source []byte, lang *La
 	lbrace := children[caveatIdx+3]
 	left := children[caveatIdx+4]
 	exprStmt := children[caveatIdx+5]
+	// The recovered left operand may surface as a hidden `_expression`
+	// wrapper around the identifier; unwrap it so the rebuilt statement
+	// matches the C shape (hidden rules never appear in C trees).
+	if symbolTypeName(lang, left.symbol) == "_expression" && resultChildCount(left) == 1 {
+		if inner := resultChildAt(left, 0); inner != nil {
+			left = inner
+		}
+	}
 	if symbolTypeName(lang, caveatLiteral.symbol) != "caveat_literal" {
 		caveatLiteral = authzedLeafByName(root.ownerArena, lang, "caveat_literal", source, int(children[caveatIdx].startByte), int(children[caveatIdx].endByte))
 		if caveatLiteral == nil {
@@ -591,6 +600,117 @@ func normalizeAuthzedSingleQuotedCaveatRecovery(root *Node, source []byte, lang 
 	root.endByte = uint32(len(source))
 	root.startPoint = Point{}
 	root.endPoint = advancePointByBytes(Point{}, source)
+}
+
+// normalizeAuthzedSingleQuotedCaveatBlockRecovery handles the structured
+// recovery shape for a single-quoted caveat literal: the parser produces a
+// proper caveat/block_c subtree whose trailing comparison is a broken
+// binary_expression (identifier == <missing>) because the single-quoted
+// chunk emits no token. The C oracle instead keeps the statement up to the
+// last identifier and wraps the dangling "==" (through the quoted literal)
+// in an ERROR node followed by the newline.
+func normalizeAuthzedSingleQuotedCaveatBlockRecovery(root *Node, source []byte, lang *Language) {
+	if root == nil || lang == nil || lang.Name != "authzed" || len(source) == 0 {
+		return
+	}
+	if symbolTypeName(lang, root.symbol) != "source_file" {
+		return
+	}
+	for _, child := range resultChildSliceForMutation(root) {
+		if child == nil || symbolTypeName(lang, child.symbol) != "caveat" || !child.hasError() {
+			continue
+		}
+		if authzedRebuildSingleQuotedCaveatBlock(child, source, lang, root.ownerArena) {
+			return
+		}
+	}
+}
+
+func authzedRebuildSingleQuotedCaveatBlock(caveat *Node, source []byte, lang *Language, arena *nodeArena) bool {
+	n := resultChildCount(caveat)
+	if n == 0 {
+		return false
+	}
+	block := resultChildAt(caveat, n-1)
+	if block == nil || symbolTypeName(lang, block.symbol) != "block_c" ||
+		!block.hasError() || resultChildCount(block) != 3 {
+		return false
+	}
+	lbrace := resultChildAt(block, 0)
+	exprStmt := resultChildAt(block, 1)
+	rbrace := resultChildAt(block, 2)
+	if lbrace == nil || exprStmt == nil || rbrace == nil ||
+		symbolTypeName(lang, lbrace.symbol) != "{" ||
+		symbolTypeName(lang, exprStmt.symbol) != "expression_statement" ||
+		!exprStmt.hasError() ||
+		symbolTypeName(lang, rbrace.symbol) != "}" ||
+		resultChildCount(exprStmt) != 1 {
+		return false
+	}
+	outer := resultChildAt(exprStmt, 0)
+	if outer == nil || symbolTypeName(lang, outer.symbol) != "binary_expression" || !outer.hasError() {
+		return false
+	}
+	// The broken comparison is either the expression itself or its
+	// right-most binary_expression child.
+	broken := outer
+	if resultChildCount(outer) == 3 {
+		if last := resultChildAt(outer, 2); last != nil &&
+			symbolTypeName(lang, last.symbol) == "binary_expression" && last.hasError() {
+			broken = last
+		}
+	}
+	if resultChildCount(broken) != 3 {
+		return false
+	}
+	goodRight := resultChildAt(broken, 0)
+	eq := resultChildAt(broken, 1)
+	missing := resultChildAt(broken, 2)
+	if goodRight == nil || eq == nil || missing == nil ||
+		symbolTypeName(lang, goodRight.symbol) != "identifier" ||
+		symbolTypeName(lang, eq.symbol) != "==" ||
+		missing.startByte != missing.endByte {
+		return false
+	}
+	errorStart := int(eq.startByte)
+	errorEnd := authzedLineEnd(source, int(eq.endByte))
+	if errorEnd <= int(eq.endByte) || bytes.IndexByte(source[int(eq.endByte):errorEnd], '\'') < 0 {
+		return false
+	}
+	if errorEnd >= len(source) || source[errorEnd] != '\n' {
+		return false
+	}
+	if int(rbrace.startByte) != errorEnd+1 {
+		return false
+	}
+	newlineSym, ok := symbolByName(lang, "\n")
+	if !ok {
+		return false
+	}
+
+	expr := goodRight
+	if broken != outer {
+		expr = newParentNodeInArena(arena, outer.symbol, outer.isNamed(),
+			cloneNodeSliceInArena(arena, []*Node{resultChildAt(outer, 0), resultChildAt(outer, 1), goodRight}),
+			authzedBinaryExpressionFieldIDs(arena, lang), 0)
+	}
+	newStmt, ok := authzedCaveatExpressionStatement([]*Node{expr}, lang, arena)
+	if !ok {
+		return false
+	}
+	errNode := authzedExtraError(arena, source, errorStart, errorEnd, []*Node{eq})
+	newline := authzedLeaf(arena, lang, newlineSym, false, source, errorEnd, errorEnd+1)
+	if errNode == nil || newline == nil {
+		return false
+	}
+
+	block.children = cloneNodeSliceInArena(arena, []*Node{lbrace, newStmt, errNode, newline, rbrace})
+	block.fieldIDs = nil
+	block.fieldSources = nil
+	populateParentNode(block, block.children)
+	block.setHasError(true)
+	caveat.setHasError(true)
+	return true
 }
 
 func normalizeAuthzedUnsupportedUseDirective(root *Node, source []byte, lang *Language) {
