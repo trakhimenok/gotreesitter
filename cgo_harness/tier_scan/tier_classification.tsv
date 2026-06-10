@@ -80,7 +80,7 @@ gitcommit	CLEAN	13/13	in ratchet
 gitignore	CLEAN	40/40	in ratchet
 gleam	CLEAN	40/40	in ratchet
 glsl	IV-recovery	11/40	faithful C error-cost version competition (see spec)
-gn	IV-scanner	27/40	re-port external scanner from pinned upstream src/scanner.c
+gn	CLEAN	40/40	in ratchet
 go	CLEAN	40/40	in ratchet
 godot_resource	IV-scanner	21/40	re-port external scanner from pinned upstream src/scanner.c
 gomod	CLEAN	40/40	in ratchet
