@@ -458,13 +458,25 @@ func (p *Parser) shouldDeferResultParentLinks(root *Node) bool {
 }
 
 func (p *Parser) normalizeRootSourceStart(root *Node, source []byte) {
-	if root == nil || root.startByte == 0 || len(source) == 0 {
+	if root == nil || len(source) == 0 {
 		return
 	}
 	// Included-range parses intentionally preserve range-local root spans.
 	if p != nil && len(p.included) > 0 {
 		return
 	}
-	root.startByte = 0
-	root.startPoint = Point{}
+	// tree-sitter C starts the root at the first non-whitespace byte: leading
+	// whitespace is token padding, excluded from every node extent including
+	// the root's (oracle-verified on faust/css/squirrel corpora — squirrel
+	// previously compensated per-grammar in normalizeSquirrelCompatibility).
+	// Pull a root that starts late (dropped leading extras) BACK to that
+	// position — never all the way to 0 unless a token really starts there.
+	first := firstNonTriviaByteStart(source)
+	if first >= root.startByte {
+		// Root already starts at or before the first token (a child may
+		// genuinely cover leading bytes, e.g. error absorption) — leave it.
+		return
+	}
+	root.startByte = first
+	root.startPoint = advancePointByBytes(Point{}, source[:first])
 }
