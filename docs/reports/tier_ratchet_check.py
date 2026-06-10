@@ -1,53 +1,62 @@
 #!/usr/bin/env python3
 """Perf-tier ratchet gate: fail if any grammar regressed below its floor tier.
 
-Reads the committed floor (tier_floors.json) and the latest measurement
-(harness_out/perf_picture/merged_bench_report.json), recomputes each grammar's
-tier, and exits non-zero if any grammar is below its floor. `--bump` ratchets the
-floor up to the current tiers (use only after a verified lift).
+Current state is read from the canonical published artifacts, NOT a perf rerun:
+
+  * parity  — ``cgo_harness/tier_scan/clean_grammars.txt`` (the hard gate; a
+    grammar IS eligible for tiers I/II/III iff it is listed there, i.e. it
+    parses byte-identical to the C oracle on its full measured corpus).
+  * tier    — ``docs/reports/tiers.json`` (the published per-release tier
+    table). The current tier of grammar ``g`` is tiers.json's tier for ``g``
+    (``IV`` if absent). The parity gate is re-asserted defensively here: any
+    grammar not in clean_grammars.txt is forced to ``IV`` regardless of what
+    tiers.json says — parity-vs-C is the hard gate, full stop.
+
+The committed floor lives in ``tier_floors.json`` (one ``{"tier": ...}`` entry
+per grammar). The gate exits non-zero if any grammar's current tier is BELOW
+its floor. ``--bump`` ratchets the floor up to the current tiers (use only
+after a verified, published lift).
+
+Canonical: ``docs/reports/tier-ratchet.md`` and
+``cgo_harness/tier_scan/README.md``.
 """
 import json, os, sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(ROOT, "..", ".."))
 FLOOR = os.path.join(ROOT, "tier_floors.json")
-MERGED = os.path.join(REPO, "harness_out/perf_picture/merged_bench_report.json")
-COLD = os.path.join(REPO, "harness_out/perf_picture/cold_cost.json")
+TIERS = os.path.join(ROOT, "tiers.json")
+CLEAN = os.path.join(REPO, "cgo_harness", "tier_scan", "clean_grammars.txt")
 
 # Tiers are Roman numerals (I best .. IV worst) so "III" never collides with the
 # C language. Mapping from the old A/B/C/D scheme: A=I, B=II, C=III, D=IV.
 RANK = {"I": 3, "II": 2, "III": 1, "IV": 0}  # higher is better
 
-# PARITY IS A HARD GATE (2026-06-08). A grammar whose tree diverges from the C
-# oracle is POISONED — untrustworthy regardless of speed — and is tier IV, full
-# stop. Only parity-clean grammars (they passed full-parse parity vs C) are
-# ranked I/II/III by performance. "parity-clean" = readiness passed full parity.
-CLEAN_READINESS = {"meets-current-targets", "parity-clean", "parity-clean-slow",
-                   "needs-incremental-work"}
 
-
-def tier(parity_clean, fr, blob, cold_ms):
-    if not parity_clean or fr <= 0:
-        return "IV"  # poisoned (diverges from C) or unmeasured — hard stop
-    if fr <= 1.5 and cold_ms <= 5 and blob <= 150_000:
-        return "I"
-    if fr > 8 or cold_ms > 20 or blob > 400_000:
-        return "III"
-    return "II"
+def clean_set():
+    """Grammars that passed full-corpus parity vs the C oracle (the hard gate)."""
+    with open(CLEAN) as f:
+        return {ln.strip() for ln in f if ln.strip()}
 
 
 def current_tiers():
-    m = json.load(open(MERGED))
-    cold = {r["name"]: r for r in json.load(open(COLD))}
+    """Current published tier per grammar: tiers.json tier, IV if absent.
+
+    PARITY IS A HARD GATE (2026-06-08): a grammar whose tree diverges from the C
+    oracle is POISONED — untrustworthy regardless of speed — and is tier IV,
+    full stop. Only parity-clean grammars (those in clean_grammars.txt) are
+    ranked I/II/III. We therefore clamp any non-clean grammar to IV even if
+    tiers.json happens to list it higher.
+    """
+    clean = clean_set()
+    tiers = json.load(open(TIERS))
     out = {}
-    for x in m["languages"]:
-        n = x["language"]
-        c = cold.get(n, {})
-        parity_clean = x.get("readiness") in CLEAN_READINESS
-        out[n] = tier(parity_clean,
-                      x.get("full_ratio") or 0,
-                      c.get("blob_bytes") or 0,
-                      (c.get("cold_decode_ns") or 0) / 1e6)
+    for x in tiers["grammars"]:
+        n = x["grammar"]
+        t = x.get("tier", "IV")
+        if n not in clean:
+            t = "IV"
+        out[n] = t if t in RANK else "IV"
     return out
 
 
@@ -75,7 +84,9 @@ def main():
         for n, ct in cur.items():
             if n in full and RANK[ct] > RANK[full[n]["tier"]]:
                 full[n]["tier"] = ct
-        json.dump(full, open(FLOOR, "w"), indent=2)
+        with open(FLOOR, "w") as f:
+            json.dump(full, f, indent=2)
+            f.write("\n")
         print(f"\nfloor ratcheted up ({len(lifts)} lifts applied)")
     else:
         print("\nratchet OK — no grammar below floor" if not regressions else "")

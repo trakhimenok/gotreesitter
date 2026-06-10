@@ -27,7 +27,7 @@
     "tier": "IV"
   },
   "bash": {
-    "tier": "II"
+    "tier": "IV"
   },
   "bass": {
     "tier": "II"
@@ -48,13 +48,13 @@
     "tier": "IV"
   },
   "brightscript": {
-    "tier": "I"
+    "tier": "IV"
   },
   "c": {
-    "tier": "I"
+    "tier": "IV"
   },
   "c_sharp": {
-    "tier": "II"
+    "tier": "IV"
   },
   "caddy": {
     "tier": "IV"
@@ -96,7 +96,7 @@
     "tier": "IV"
   },
   "cpp": {
-    "tier": "III"
+    "tier": "IV"
   },
   "crystal": {
     "tier": "IV"
@@ -108,7 +108,7 @@
     "tier": "I"
   },
   "cuda": {
-    "tier": "II"
+    "tier": "IV"
   },
   "cue": {
     "tier": "IV"
@@ -129,13 +129,13 @@
     "tier": "II"
   },
   "dhall": {
-    "tier": "I"
+    "tier": "IV"
   },
   "diff": {
     "tier": "III"
   },
   "disassembly": {
-    "tier": "I"
+    "tier": "IV"
   },
   "djot": {
     "tier": "IV"
@@ -171,7 +171,7 @@
     "tier": "I"
   },
   "elixir": {
-    "tier": "II"
+    "tier": "IV"
   },
   "elm": {
     "tier": "IV"
@@ -219,7 +219,7 @@
     "tier": "IV"
   },
   "gdscript": {
-    "tier": "I"
+    "tier": "IV"
   },
   "git_config": {
     "tier": "II"
@@ -258,7 +258,7 @@
     "tier": "IV"
   },
   "groovy": {
-    "tier": "I"
+    "tier": "IV"
   },
   "hack": {
     "tier": "II"
@@ -267,7 +267,7 @@
     "tier": "IV"
   },
   "haskell": {
-    "tier": "II"
+    "tier": "IV"
   },
   "haxe": {
     "tier": "IV"
@@ -279,7 +279,7 @@
     "tier": "II"
   },
   "hlsl": {
-    "tier": "II"
+    "tier": "IV"
   },
   "html": {
     "tier": "IV"
@@ -306,7 +306,7 @@
     "tier": "I"
   },
   "jinja2": {
-    "tier": "I"
+    "tier": "IV"
   },
   "jq": {
     "tier": "II"
@@ -324,7 +324,7 @@
     "tier": "IV"
   },
   "julia": {
-    "tier": "II"
+    "tier": "IV"
   },
   "just": {
     "tier": "IV"
@@ -345,7 +345,7 @@
     "tier": "IV"
   },
   "linkerscript": {
-    "tier": "I"
+    "tier": "IV"
   },
   "liquid": {
     "tier": "IV"
@@ -354,10 +354,10 @@
     "tier": "I"
   },
   "lua": {
-    "tier": "I"
+    "tier": "IV"
   },
   "luau": {
-    "tier": "I"
+    "tier": "IV"
   },
   "make": {
     "tier": "IV"
@@ -372,16 +372,16 @@
     "tier": "IV"
   },
   "mermaid": {
-    "tier": "I"
+    "tier": "IV"
   },
   "meson": {
     "tier": "IV"
   },
   "mojo": {
-    "tier": "I"
+    "tier": "IV"
   },
   "move": {
-    "tier": "I"
+    "tier": "IV"
   },
   "nginx": {
     "tier": "III"
@@ -390,7 +390,7 @@
     "tier": "I"
   },
   "nim": {
-    "tier": "III"
+    "tier": "IV"
   },
   "ninja": {
     "tier": "IV"
@@ -405,7 +405,7 @@
     "tier": "IV"
   },
   "objc": {
-    "tier": "II"
+    "tier": "IV"
   },
   "ocaml": {
     "tier": "II"
@@ -417,7 +417,7 @@
     "tier": "IV"
   },
   "pascal": {
-    "tier": "I"
+    "tier": "IV"
   },
   "pem": {
     "tier": "II"
@@ -429,16 +429,16 @@
     "tier": "I"
   },
   "pkl": {
-    "tier": "I"
+    "tier": "IV"
   },
   "powershell": {
-    "tier": "I"
+    "tier": "IV"
   },
   "prisma": {
     "tier": "I"
   },
   "prolog": {
-    "tier": "I"
+    "tier": "IV"
   },
   "promql": {
     "tier": "IV"
@@ -447,7 +447,7 @@
     "tier": "III"
   },
   "proto": {
-    "tier": "I"
+    "tier": "IV"
   },
   "pug": {
     "tier": "IV"
@@ -456,7 +456,7 @@
     "tier": "I"
   },
   "purescript": {
-    "tier": "II"
+    "tier": "IV"
   },
   "python": {
     "tier": "II"
@@ -480,10 +480,10 @@
     "tier": "II"
   },
   "rescript": {
-    "tier": "I"
+    "tier": "IV"
   },
   "robot": {
-    "tier": "I"
+    "tier": "IV"
   },
   "ron": {
     "tier": "II"
@@ -492,7 +492,7 @@
     "tier": "IV"
   },
   "ruby": {
-    "tier": "II"
+    "tier": "IV"
   },
   "rust": {
     "tier": "IV"
@@ -516,7 +516,7 @@
     "tier": "II"
   },
   "sql": {
-    "tier": "III"
+    "tier": "IV"
   },
   "squirrel": {
     "tier": "I"
@@ -582,13 +582,13 @@
     "tier": "IV"
   },
   "v": {
-    "tier": "II"
+    "tier": "IV"
   },
   "verilog": {
     "tier": "IV"
   },
   "vhdl": {
-    "tier": "I"
+    "tier": "IV"
   },
   "vimdoc": {
     "tier": "IV"
@@ -597,7 +597,7 @@
     "tier": "II"
   },
   "wat": {
-    "tier": "I"
+    "tier": "IV"
   },
   "wgsl": {
     "tier": "IV"
