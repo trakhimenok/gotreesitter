@@ -1,6 +1,9 @@
 package gotreesitter
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 // parser_recover_c.go is the stage-1 faithful port of tree-sitter C's error
 // recovery loop into the pure-Go GLR engine, gated per grammar via
@@ -60,8 +63,13 @@ const (
 // port is enabled for the active grammar. Enabled one grammar at a time, each
 // verified to net-improve its full corpus against the C oracle with zero
 // clean-grammar regressions (recovery-cost-competition.md requirement 4).
+// GOT_C_RECOVERY=0 force-disables the gate (baseline A/B measurement: gate
+// off must be bit-identical to upstream).
 func errorCostCompetitionLanguage(lang *Language) bool {
 	if lang == nil {
+		return false
+	}
+	if os.Getenv("GOT_C_RECOVERY") == "0" {
 		return false
 	}
 	switch lang.Name {
