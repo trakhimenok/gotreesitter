@@ -23,6 +23,7 @@ desktop	.desktop,.desktop.in,.service
 devicetree	.dts,.dtsi
 dhall	.dhall
 diff	.patch,.diff
+djot	.dj,.djot
 disassembly	.dis,.dump
 dot	.dot,.gv
 editorconfig	.editorconfig
@@ -42,6 +43,7 @@ gdscript	.gd
 git_config	.gitconfig
 git_rebase	.git-rebase-todo
 gitattributes	.gitattributes
+gitcommit	COMMIT_EDITMSG
 gitignore	.gitignore
 gleam	.gleam
 glsl	.glsl,.vert,.frag

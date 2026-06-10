@@ -42,17 +42,41 @@ BIN="$OUT_DIR/measure.test"
 echo "building measure binary..."
 (cd "$HARNESS" && CGO_ENABLED=1 go test -c -tags treesitter_c_parity -o "$BIN" .)
 
+# Curated fallback corpus: repo-root corpus_real/<grammar> holds hand-curated
+# real-world files for grammars whose external corpus checkout contains no
+# matching sources (e.g. toml's checkout is the spec repo, gitcommit's is the
+# grammar repo). The external corpus stays authoritative — the curated dir is
+# only consulted when the external checkout yields zero eligible files.
+CURATED="$REPO_ROOT/corpus_real"
+
+measure_grammar() { # $1=grammar $2=exts $3=corpus_root
+  timeout "$PER_GRAMMAR_TIMEOUT" env CGO_ENABLED=1 \
+    REPRO_LANG="$1" REPRO_DIR="$3" REPRO_EXTS="$2" REPRO_N="$N" \
+    "$BIN" -test.run '^TestMeasureDtierVsC$' -test.count=1 2>&1 | grep -E '^MEASURE-DTIER' || true
+}
+
 while IFS=$'\t' read -r grammar exts; do
   [ -z "$grammar" ] && continue
-  if [ ! -d "$CORPUS/$grammar" ]; then
-    echo "$grammar no-corpus" >> "$UNMEASURED_OUT"
-    continue
+  line=""
+  if [ -d "$CORPUS/$grammar" ]; then
+    line=$(measure_grammar "$grammar" "$exts" "$CORPUS")
+    files=""
+    if [ -n "$line" ]; then
+      files=$(awk -F= '{print $2}' <<<"$(awk '{print $4}' <<<"$line")")
+    fi
   fi
-  line=$(timeout "$PER_GRAMMAR_TIMEOUT" env CGO_ENABLED=1 \
-    REPRO_LANG="$grammar" REPRO_DIR="$CORPUS" REPRO_EXTS="$exts" REPRO_N="$N" \
-    "$BIN" -test.run '^TestMeasureDtierVsC$' -test.count=1 2>&1 | grep -E '^MEASURE-DTIER' || true)
+  if { [ -z "$line" ] || [ "${files:-0}" = "0" ]; } && [ -d "$CURATED/$grammar" ]; then
+    curated_line=$(measure_grammar "$grammar" "$exts" "$CURATED")
+    if [ -n "$curated_line" ]; then
+      line="$curated_line corpus=curated"
+    fi
+  fi
   if [ -z "$line" ]; then
-    echo "$grammar timeout-or-fail" >> "$UNMEASURED_OUT"
+    if [ -d "$CORPUS/$grammar" ]; then
+      echo "$grammar timeout-or-fail" >> "$UNMEASURED_OUT"
+    else
+      echo "$grammar no-corpus" >> "$UNMEASURED_OUT"
+    fi
     continue
   fi
   echo "$line" >> "$REPORT"

@@ -26,6 +26,7 @@ func init() {
 		"typst":      TypstExternalScanner{},
 		// New hand-written scanners:
 		"jsdoc":           JsdocExternalScanner{},
+		"toml":            TomlExternalScanner{},
 		"gleam":           GleamExternalScanner{},
 		"scss":            ScssExternalScanner{},
 		"css":             CssExternalScanner{},
