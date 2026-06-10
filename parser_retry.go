@@ -490,11 +490,14 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		}
 	case "lua":
 		// Lua's string/call-heavy recovery can keep redundant alternatives
-		// alive even on small files. One full-parse survivor bounds the GLR
-		// surface and brings full parses into the C-tier range; remaining
-		// string no-tree cost is handled separately.
-		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
-			return 1
+		// alive even on small files, so the cap stays below the default. It
+		// cannot drop to 1: the table-constructor field list (field
+		// (sep field)* sep?) needs two same-key survivors at each separator
+		// or the trailing-separator branch is pruned and a clean parse
+		// degrades into recovery (`t = { a = 1, b = 2, c = 3, }` grew a
+		// zero-width MISSING field with cap=1 under the DFA lexer path).
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 2 {
+			return 2
 		}
 	case "ruby":
 		// Ruby still needs a wider stack budget for some real-world files, but

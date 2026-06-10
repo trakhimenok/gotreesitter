@@ -23,37 +23,59 @@ func (GnExternalScanner) Destroy(payload any)                   {}
 func (GnExternalScanner) Serialize(payload any, buf []byte) int { return 0 }
 func (GnExternalScanner) Deserialize(payload any, buf []byte)   {}
 
+// Scan is a line-faithful port of the pinned upstream src/scanner.c
+// (tree-sitter-grammars/tree-sitter-gn @ bc06955b).
 func (GnExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
 	if !gnValid(validSymbols, gnTokStringContent) {
 		return false
 	}
-	hasContent := false
+	didAdvance := false
 	for {
-		lexer.MarkEnd()
-		ch := lexer.Lookahead()
-		switch ch {
-		case '"', '\\':
-			lexer.SetResultSymbol(gnSymStringContent)
-			return hasContent
-		case '$':
-			lexer.Advance(false)
-			if lexer.Lookahead() == '{' {
-				lexer.SetResultSymbol(gnSymStringContent)
-				return hasContent
-			}
-			// $x is also interpolation for single identifier chars
-			if lexer.Lookahead() == '$' {
-				// $$ is an escaped dollar, consume and continue
-				lexer.Advance(false)
-			}
-			// Other $X — just continue
+		switch lexer.Lookahead() {
 		case 0:
+			// Lookahead()==0 covers both lexer->eof() and a literal NUL
+			// byte; the C scanner returns false for either.
 			return false
+		case '\\':
+			// The token ends before the backslash only when it begins a
+			// recognized escape (\" \$ \\); otherwise both the backslash
+			// and the escaped character become string content.
+			lexer.MarkEnd()
+			lexer.Advance(false)
+			la := lexer.Lookahead()
+			if la == '"' || la == '$' || la == '\\' {
+				lexer.SetResultSymbol(gnSymStringContent)
+				return didAdvance
+			}
+			didAdvance = true
+			lexer.Advance(false)
+		case '$':
+			// The token ends before '$' when it starts an interpolation:
+			// ${...}, $identifier ($ followed by a letter or '_').
+			// Otherwise '$' and the following character are content.
+			lexer.MarkEnd()
+			lexer.Advance(false)
+			la := lexer.Lookahead()
+			if la == '{' || gnIsAlpha(la) || la == '_' {
+				lexer.SetResultSymbol(gnSymStringContent)
+				return didAdvance
+			}
+			didAdvance = true
+			lexer.Advance(false)
+		case '"':
+			lexer.MarkEnd()
+			lexer.SetResultSymbol(gnSymStringContent)
+			return didAdvance
 		default:
+			didAdvance = true
 			lexer.Advance(false)
 		}
-		hasContent = true
 	}
+}
+
+// gnIsAlpha mirrors C isalpha() in the C locale (ASCII letters only).
+func gnIsAlpha(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
 func gnValid(vs []bool, i int) bool { return i < len(vs) && vs[i] }
