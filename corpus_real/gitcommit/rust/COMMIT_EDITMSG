@@ -1,0 +1,39 @@
+Auto merge of #157558 - jhpratt:rollup-DWtXTfN, r=jhpratt
+
+Rollup of 25 pull requests
+
+Successful merges:
+
+ - rust-lang/rust#157251 (`rust-analyzer` subtree update)
+ - rust-lang/rust#157533 (Subtree sync for rustc_codegen_cranelift)
+ - rust-lang/rust#154742 (Add APIs for case folding to the standard library)
+ - rust-lang/rust#155144 (mir_build: Add an extra intermediate step in MIR building for patterns )
+ - rust-lang/rust#156222 (Stabilize `Result::map_or_default` and `Option::map_or_default`)
+ - rust-lang/rust#157016 (add `extern "tail"` calling convention)
+ - rust-lang/rust#157264 (diagnostics: Fix ICE building a trait ref in method suggestions)
+ - rust-lang/rust#157386 (Parse deprecated note links separately in rustc_resolve)
+ - rust-lang/rust#157483 (fix windows-gnu TLS leak)
+ - rust-lang/rust#157488 (compiletest: inject `#![windows_subsystem = "windows"]` to debuginfo tests on Windows)
+ - rust-lang/rust#157509 (remove solaris implementation for File::lock, it has the wrong semantics)
+ - rust-lang/rust#157521 (Rename `SyncView::{as_pin => as_pin_ref}`)
+ - rust-lang/rust#156136 (Move tests box)
+ - rust-lang/rust#156573 (Add unwinder_private_data_size for wasm64 target)
+ - rust-lang/rust#156783 (docs: make `Rc::into_raw` clickable in `Rc::increment_strong_count` doc)
+ - rust-lang/rust#156840 (Stabilize `PathBuf::into_string`)
+ - rust-lang/rust#156936 (Remove FIXME about impl PinCoerceUnsized for UnsafePinned<T>)
+ - rust-lang/rust#157365 (Revert "LLVM 23: Run AssignGUIDPass in some places")
+ - rust-lang/rust#157380 (clarify compiler_fence (and fence) docs)
+ - rust-lang/rust#157471 (Debug assert that parsed attributes are in the `BUILTIN_ATTRIBUTE_MAP`)
+ - rust-lang/rust#157485 (Rename `errors.rs` file to `diagnostics.rs` (1/N))
+ - rust-lang/rust#157494 (Convert `QueryRegionConstraint` into a struct)
+ - rust-lang/rust#157526 (std tests: skip a slow test on Miri)
+ - rust-lang/rust#157531 (ci: bump x86_64-gnu base image to 26.04)
+ - rust-lang/rust#157556 (Add `BTree::append()` change to 1.96.0 relnotes)
+
+Failed merges:
+
+ - rust-lang/rust#155527 (Replace printables table with `unicode_data.rs` tables)
+
+
+
+

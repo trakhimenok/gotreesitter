@@ -1,0 +1,4 @@
+Merge pull request #15965 from NixOS/sink-to-source-buffering
+
+sinkToSource: Use an intermediate buffer to reduce context switching
+

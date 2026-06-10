@@ -1,0 +1,22 @@
+net/mail: parse ipv6 in addresses according to RFC 5321.
+
+The new domain-literal support missed that IPv6 addresses need to be
+prefixed with "IPv6:".
+
+The IPv6-address-literal Specification, defined in RFC 5321 Section 4.1.3,
+outlines the format for IPv6 address literals:
+https://datatracker.ietf.org/doc/html/rfc5321#section-4.1.3
+
+Good news, the IANA has registered no other Address Literal Tags.
+
+Updates #60206
+
+Change-Id: I7796b0f78e386a6509e793a9db98404934797722
+GitHub-Last-Rev: b65fdec3e96da76f16b42eb761d6aafd3b476377
+GitHub-Pull-Request: golang/go#69461
+Reviewed-on: https://go-review.googlesource.com/c/go/+/613335
+Reviewed-by: Sean Liao <sean@liao.dev>
+Reviewed-by: Junyang Shao <shaojunyang@google.com>
+Reviewed-by: David Chase <drchase@google.com>
+LUCI-TryBot-Result: golang-scoped@luci-project-accounts.iam.gserviceaccount.com <golang-scoped@luci-project-accounts.iam.gserviceaccount.com>
+

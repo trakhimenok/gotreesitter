@@ -76,7 +76,7 @@ gdscript	IV-scanner	1/40	re-port external scanner from pinned upstream src/scann
 git_config	IV-extmap	0/0	ext=.gitconfig,config; add curated source-extension mapping
 git_rebase	CLEAN	40/40	in ratchet
 gitattributes	CLEAN	40/40	in ratchet
-gitcommit	IV-extmap	0/0	ext=COMMIT_EDITMSG; add curated source-extension mapping
+gitcommit	CLEAN	13/13	in ratchet
 gitignore	CLEAN	40/40	in ratchet
 gleam	CLEAN	40/40	in ratchet
 glsl	IV-recovery	11/40	faithful C error-cost version competition (see spec)

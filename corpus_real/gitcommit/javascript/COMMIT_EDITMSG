@@ -1,0 +1,7 @@
+doc: update npm supported versions link
+
+Signed-off-by: Hojeong Park <parkhj062@gmail.com>
+PR-URL: https://github.com/nodejs/node/pull/63672
+Reviewed-By: Antoine du Hamel <duhamelantoine1995@gmail.com>
+Reviewed-By: Luigi Pinca <luigipinca@gmail.com>
+Reviewed-By: Matteo Collina <matteo.collina@gmail.com>

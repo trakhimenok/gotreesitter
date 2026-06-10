@@ -1,0 +1,80 @@
+Add server-driven visualizer graph (protocol, canonical builder, patch diff engine) (#19757)
+
+## Overview
+
+First slice of the **Bicep Visualizer MSAGL layout migration** — moving
+graph topology, metadata, and (eventually) layout from the client into
+the language server. This PR lands the design doc plus Phases 1, 3, and
+4. It is **inert by default**: the new handler answers in shadow mode
+and nothing routes through it yet, so `main` stays shippable on the
+existing ELK path.
+
+See
+[docs/visualizer-msagl-layout-migration/plan.md](docs/visualizer-msagl-layout-migration/plan.md)
+for the full design.
+
+## What's included
+
+**Phase 1 — Protocol contracts + feature flag**
+- C# + TypeScript protocol types for the
+`textDocument/visualizerGraphUpdate` request.
+- Feature flag `bicep.visualizer.serverLayout.enabled` (default `false`)
+gates whether the extension routes through the new path.
+- Node kind trimmed to `resource`/`module`; edges carry no kind.
+
+**Phase 3 — Server canonical graph builder**
+- `VisualizerGraphBuilder` builds the canonical graph from the live
+compilation, mirroring `BicepDeploymentGraphHandler` (BFS over semantic
+models, descends into modules, resolves resource/module metadata). No
+MSAGL yet.
+
+**Phase 4 — Patch diff engine + handler**
+- `VisualizerGraphDiffer` reconciles the client's rendered graph against
+the freshly built canonical graph and returns an ordered `GraphPatch[]`
+(a complete delta; empty means nothing changed).
+- `VisualizerGraphUpdateHandler` registered in **shadow mode** (always
+answers, not flag-gated) to enable end-to-end testing.
+- ELK still lays out on the client; `setNodeLayout` is not emitted yet.
+
+## Design notes
+
+- **No revision tokens.** The request carries the client's current graph
+and each response is a complete delta from it, so responses need no
+shared version counter and need not be applied in order.
+- **Models named `CanonicalGraph` (server's source of truth) and
+`RenderedGraph` (what the webview currently shows)** for clarity.
+- **Survivors always get an idempotent `updateNode` + the response
+always ends with `setErrorCount`** — the minimal `RenderedGraph` omits
+metadata, so the server can't detect metadata equality and refreshes
+unconditionally.
+- **`GraphPatch` is self-describing on the wire.** It carries a
+class-level `[JsonConverter]` attribute so OmniSharp's typed Newtonsoft
+client can deserialize the discriminated union. A `[ThreadStatic]`
+re-entrancy guard prevents the inherited attribute from recursing when
+deserializing the concrete patch type. *(This was caught by the
+integration test below — without it the typed client throws `"Type is an
+interface or abstract class and cannot be instantiated"`.)*
+
+## Tests
+
+- **Differ unit tests** — full add, deepest-first removal,
+reparent/kind-change as remove+add, metadata refresh, edge add/remove
+ordering, error-count-last.
+- **Serialization tests** — round-trip all 8 patches through OmniSharp's
+actual `LspSerializer` (camelCase, LSP model converters), plus
+unknown-op rejection.
+- **Handler integration tests** — drive the real LSP server end to end:
+initial full-add delta and matching-current metadata-only refresh.
+
+LangServer unit tests: **837 passed**. LangServer integration tests:
+**2046 passed, 0 failed**.
+
+## Scoping
+
+- Phases 3 + 4 combined into this PR.
+- MSAGL adapter, applying server layout, single-flight hardening, and
+ELK removal are **follow-up phases** (5–9 in the plan).
+- Handler is intentionally **not** flag-gated (shadow mode) so it can be
+exercised in tests before the client is wired up.
+###### Microsoft Reviewers: [Open in
+CodeFlow](https://microsoft.github.io/open-pr/?codeflow=https://github.com/Azure/bicep/pull/19757)

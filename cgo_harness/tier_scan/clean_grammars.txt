@@ -27,6 +27,7 @@ foam
 fortran
 git_rebase
 gitattributes
+gitcommit
 gitignore
 gleam
 go

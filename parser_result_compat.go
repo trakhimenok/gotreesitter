@@ -73,6 +73,8 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeGoReturnedTreeCompatibility(ctx.root, ctx.source, ctx.parser, ctx.lang)
 	case "git_rebase":
 		normalizeGitRebaseCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "gitcommit":
+		normalizeGitcommitCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "hack":
 		normalizeHackCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "haskell":

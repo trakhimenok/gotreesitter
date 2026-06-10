@@ -1,0 +1,3 @@
+gh-150885: Remove unused shutil._ensure_directory (GH-150883)
+
+No longer used after gh-146581 (GH-146591).
