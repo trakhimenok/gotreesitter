@@ -64,6 +64,12 @@ type Parser struct {
 	// errorCostCompetition enables the faithful C error-recovery port
 	// (parser_recover_c.go) for this grammar; see errorCostCompetitionLanguage.
 	errorCostCompetition bool
+	// cNodeMemo caches per-subtree error cost and visible node count for the
+	// gated recovery, keyed on (node pointer, equivVersion) — the engine
+	// analogue of C's SubtreeHeapData.error_cost/visible_descendant_count
+	// computed once in ts_subtree_summarize_children. Cleared at parse start;
+	// nil while the gate is off.
+	cNodeMemo map[*Node]cNodeMemoEntry
 	forceRawSpanAll      bool
 	// leafInternByLang enables canonical leaf interning for this language even
 	// when the global GOT_PARSE_INTERN_LEAVES_SUBSTITUTE flag is off. Limited to
@@ -2260,6 +2266,16 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	scratch.audit.beginParse()
 	scratch.merge.audit = nil
 	scratch.gss.audit = nil
+	if p.errorCostCompetitionEnabled() {
+		// Faithful C recovery port: arena nodes are pooled across parses, so
+		// stale (pointer, version) memo hits from a previous parse must be
+		// impossible.
+		if p.cNodeMemo == nil {
+			p.cNodeMemo = make(map[*Node]cNodeMemoEntry, 256)
+		} else {
+			clear(p.cNodeMemo)
+		}
+	}
 	trackChildErrors := !deferParentLinks
 
 	arena := acquireNodeArena(arenaClass)
@@ -2624,6 +2640,15 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 		for si := 0; si < numStacks; si++ {
 			s := &stacks[si]
 			if s.dead || s.shifted {
+				continue
+			}
+			// Faithful C recovery port (parser_recover_c.go): an accepted
+			// version has left the version pool (C stashes its tree in
+			// finished_tree and removes the version); it must not dispatch
+			// again while other versions finish competing. Outside the gated
+			// recovery, accepted stacks never survive an iteration (the loop
+			// tail finalizes immediately), so this is unreachable there.
+			if s.accepted {
 				continue
 			}
 			// Faithful C recovery port (parser_recover_c.go): paused stacks
@@ -3215,8 +3240,31 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			lastReduceDepth = -1
 			consecutiveReduces = 0
 		}
-		if accepted := compactAcceptedStacks(stacks); len(accepted) > 0 {
-			return finalize(accepted, ParseStopAccepted)
+		acceptedCount, liveUnaccepted := 0, 0
+		for i := range stacks {
+			if stacks[i].accepted {
+				acceptedCount++
+			} else if !stacks[i].dead {
+				liveUnaccepted++
+			}
+		}
+		if acceptedCount > 0 {
+			// Faithful C recovery port: C keeps parsing the remaining
+			// versions after one accepts (the accepted tree is stashed and
+			// competes in ts_parser__select_tree); finalize only when every
+			// version has accepted or halted. Without the gate, finalize on
+			// the first accept exactly as before.
+			if !p.errorCostCompetitionEnabled() || liveUnaccepted == 0 {
+				accepted := compactAcceptedStacks(stacks)
+				if p.errorCostCompetitionEnabled() {
+					// Faithful C recovery port: ts_parser__accept rebuilds the
+					// root around trailing extras before the tree competes.
+					for i := range accepted {
+						p.cAcceptRootRebuild(&accepted[i], arena, &scratch.entries, &scratch.gss)
+					}
+				}
+				return finalize(accepted, ParseStopAccepted)
+			}
 		}
 	}
 
@@ -3756,7 +3804,30 @@ func (p *Parser) updateParserStateTokenSource(ts TokenSource, stacks []glrStack,
 	if !ok || len(stacks) == 0 {
 		return
 	}
-	stateful.SetParserState(stacks[0].top().state)
+	// Faithful C recovery port (parser_recover_c.go): C versions each lex
+	// with their own state's mode, so the merged error version's ERROR_STATE
+	// mode — where every token, external tokens included, is valid — never
+	// leaks into another version's lexing. This engine lexes once for all
+	// stacks; keep absorbing stacks (head at the C error state) out of the
+	// primary-state choice and the GLR lex union while any normally-parsing
+	// stack is live. When only absorbing stacks remain, ERROR_STATE drives
+	// the lex exactly like C's error-mode lexing.
+	excludeAbsorbing := false
+	primary := stacks[0].top().state
+	if p.errorCostCompetitionEnabled() {
+		for si := range stacks {
+			if stacks[si].dead {
+				continue
+			}
+			if stacks[si].cRec != nil && stacks[si].top().state == cErrorState {
+				continue
+			}
+			primary = stacks[si].top().state
+			excludeAbsorbing = true
+			break
+		}
+	}
+	stateful.SetParserState(primary)
 	if len(stacks) == 1 || p.usesPrimaryExternalScannerStateForGLR() {
 		clearGLRStateTokenSource(stateful, scratch)
 		return
@@ -3766,9 +3837,13 @@ func (p *Parser) updateParserStateTokenSource(ts TokenSource, stacks []glrStack,
 		glrBuf = make([]StateID, 0, len(stacks))
 	}
 	for si := range stacks {
-		if !stacks[si].dead {
-			glrBuf = append(glrBuf, stacks[si].top().state)
+		if stacks[si].dead {
+			continue
 		}
+		if excludeAbsorbing && stacks[si].cRec != nil && stacks[si].top().state == cErrorState {
+			continue
+		}
+		glrBuf = append(glrBuf, stacks[si].top().state)
 	}
 	scratch.glrStates = glrBuf
 	stateful.SetGLRStates(glrBuf)
