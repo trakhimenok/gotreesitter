@@ -17,5 +17,9 @@ func init() {
 	// who carry their own ts2go Go blob via the public API.
 	registerTokenSourceFactory("java", NewJavaTokenSourceOrEOF)
 	registerTokenSourceFactory("json", NewJSONTokenSourceOrEOF)
-	registerTokenSourceFactory("lua", NewLuaTokenSourceOrEOF)
+	// Lua now parses via the blob's DFA lexer plus LuaExternalScanner (a
+	// line-faithful port of upstream scanner.c), which matches the C oracle
+	// where the hand-tuned LuaTokenSource diverged (7/40 corpus parity).
+	// LuaTokenSource remains available to downstream callers via the public
+	// API.
 }
