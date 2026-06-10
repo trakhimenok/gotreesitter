@@ -2,9 +2,36 @@
 
 Parity-vs-C is the correctness gate: a grammar is **CLEAN** when every
 measured real-corpus file parses byte-identical (type/span/child-count) to
-the tree-sitter C oracle; anything below 100% is **TIER IV** (incorrect
-parse). Tier IV is a transitory tier — the goal is zero members, and the
-committed ratchet makes regressions release-blocking.
+the tree-sitter C oracle; anything below 100% is incorrect-parse. The scan
+makes **uncharacterized incorrect parse** the transitory tier we drive to
+zero: every non-clean grammar must carry a named, assessed sub-tier in
+`tier_classification.tsv`, and the committed ratchet (`clean_grammars.txt`)
+makes clean→incorrect regressions release-blocking.
+
+## Tier taxonomy (`tier_classification.tsv`)
+
+Every grammar with a corpus is one of:
+
+| tier | meaning | fix recipe |
+| --- | --- | --- |
+| `CLEAN` | 100% real-corpus parity, in the ratchet | — |
+| `III-recovery` | both parsers see errors, but C contains damage locally where Go fragments / roots ERROR | faithful C error-cost version competition (see `recovery-cost-competition.md`) |
+| `III-scanner` | Go external-scanner port diverges from C (over/under-permissive, token boundaries) | re-port `grammars/<g>_scanner.go` from pinned upstream `src/scanner.c` |
+| `III-version` | most corpus files error in BOTH parsers — corpus uses syntax newer than the embedded grammar | bump the embedded grammar version |
+| `III-stackcap` | divergence/truncation clears or shrinks at `GOT_GLR_MAX_STACKS=2` | add an `effectiveFullParseInitialMaxStacks` cap entry |
+| `III-extmap` | zero/few files measured under the current extension set | add a curated source-extension mapping |
+| `III-perf` | cannot measure within timeout (O(N²) or pathological file) | profile/fix before parity (overlaps the perf push) |
+| `III-unknown` | diagnosed but does not fit a single bucket | deeper single-file diagnosis |
+| `IV-unassessed` | **the tier we keep empty** — a measured incorrect parse nobody has triaged | run the diagnosis workflow / `TestFirstDiffDiag` |
+
+A `?` suffix (e.g. `III-recovery?`) marks a *preliminary* classification
+inferred from the measure signature (parity%, errTree, trunc) rather than a
+per-file diagnosis — these get confirmed when the full diagnosis workflow
+re-runs. The scan fails (exit 1) if any tier-IV grammar is `IV-unassessed`
+or missing a row, so the uncharacterized count is enforced at zero.
+
+The deep-diagnosis evidence and proposed fixes for the first wave live in
+`../../.campaign_state/diagnosis_classified.json`.
 
 ## Run on every release
 

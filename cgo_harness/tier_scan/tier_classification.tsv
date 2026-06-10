@@ -1,0 +1,207 @@
+grammar	tier	parity	fix
+ada	III-shape?	24/30	ext=.adb,.ads; preliminary
+agda	III-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
+angular	III-recovery?	26/30	ext=.component.html,.ng.html; faithful C error-cost version competition (see spec)
+apex	III-shape?	17/30	ext=.cls,.trigger,.apex; preliminary
+arduino	CLEAN	40/40	in ratchet
+asm	III-recovery	0/40	faithful C error-cost version competition (see spec)
+astro	CLEAN	40/40	in ratchet
+authzed	III-recovery?	23/30	ext=.zed; faithful C error-cost version competition (see spec)
+awk	CLEAN	40/40	in ratchet
+bash	III-stackcap?	7/8	ext=.sh,.bash; add effectiveFullParseInitialMaxStacks cap entry
+bass	CLEAN	40/40	in ratchet
+beancount	CLEAN	40/40	in ratchet
+bibtex	III-recovery?	28/30	ext=.bib; faithful C error-cost version competition (see spec)
+bicep	III-recovery?	24/30	ext=.bicep; faithful C error-cost version competition (see spec)
+bitbake	CLEAN	40/40	in ratchet
+blade	III-recovery?	17/30	ext=.blade.php; faithful C error-cost version competition (see spec)
+brightscript	III-recovery?	0/30	ext=.brs; faithful C error-cost version competition (see spec)
+c	III-recovery	21/40	faithful C error-cost version competition (see spec)
+c_sharp	III-recovery	26/40	faithful C error-cost version competition (see spec)
+caddy	III-recovery?	9/30	ext=Caddyfile; faithful C error-cost version competition (see spec)
+cairo	III-recovery?	0/30	ext=.cairo; faithful C error-cost version competition (see spec)
+capnp	CLEAN	40/40	in ratchet
+chatito	III-stackcap?	1/5	ext=.chatito; add effectiveFullParseInitialMaxStacks cap entry
+circom	III-shape?	11/30	ext=.circom; preliminary
+clojure	CLEAN	40/40	in ratchet
+cmake	CLEAN	40/40	in ratchet
+cobol	III-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
+comment	CLEAN	40/40	in ratchet
+commonlisp	III-recovery?	22/30	ext=.lisp,.cl; faithful C error-cost version competition (see spec)
+cooklang	III-stackcap?	0/3	ext=.cook; add effectiveFullParseInitialMaxStacks cap entry
+corn	CLEAN	40/40	in ratchet
+cpon	III-recovery?	9/10	ext=.cpon; faithful C error-cost version competition (see spec)
+cpp	III-recovery	10/40	faithful C error-cost version competition (see spec)
+crystal	III-perf	0/0	perf-blocker: times out at N=8 (single-file >30s); profile before parity
+css	CLEAN	40/40	in ratchet
+csv	CLEAN	40/40	in ratchet
+cuda	III-recovery?	17/30	ext=.cu,.cuh; faithful C error-cost version competition (see spec)
+cue	III-shape?	21/30	ext=.cue; preliminary
+cylc	III-recovery?	4/30	ext=.cylc; faithful C error-cost version competition (see spec)
+d	III-recovery?	14/30	ext=.d; faithful C error-cost version competition (see spec)
+dart	III-recovery?	11/30	ext=.dart; faithful C error-cost version competition (see spec)
+desktop	CLEAN	40/40	in ratchet
+devicetree	CLEAN	40/40	in ratchet
+dhall	III-unknown	23/40	needs deeper single-file diagnosis
+diff	CLEAN	40/40	in ratchet
+disassembly	III-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
+djot	III-extmap	0/0	ext=.dj; add curated source-extension mapping
+dockerfile	III-recovery?	0/30	ext=Dockerfile,.dockerfile; faithful C error-cost version competition (see spec)
+dot	CLEAN	40/40	in ratchet
+doxygen	III-recovery?	19/30	ext=.dox,.doxygen; faithful C error-cost version competition (see spec)
+dtd	III-recovery?	0/5	ext=.dtd; faithful C error-cost version competition (see spec)
+earthfile	III-recovery?	0/30	ext=Earthfile; faithful C error-cost version competition (see spec)
+ebnf	III-recovery?	0/30	ext=.ebnf; faithful C error-cost version competition (see spec)
+editorconfig	CLEAN	40/40	in ratchet
+eds	III-recovery?	0/1	ext=.eds; faithful C error-cost version competition (see spec)
+eex	CLEAN	40/40	in ratchet
+elisp	CLEAN	40/40	in ratchet
+elixir	III-unknown	0/40	needs deeper single-file diagnosis
+elm	III-recovery?	7/8	ext=.elm; faithful C error-cost version competition (see spec)
+elsa	III-recovery?	12/27	ext=.lc; faithful C error-cost version competition (see spec)
+embedded_template	CLEAN	40/40	in ratchet
+enforce	III-shape?	21/30	ext=.c; preliminary
+erlang	CLEAN	40/40	in ratchet
+facility	III-recovery?	1/4	ext=.fsd; faithful C error-cost version competition (see spec)
+faust	CLEAN	40/40	in ratchet
+fennel	III-recovery?	8/30	ext=.fnl; faithful C error-cost version competition (see spec)
+fidl	CLEAN	40/40	in ratchet
+firrtl	III-recovery?	5/27	ext=.fir; faithful C error-cost version competition (see spec)
+fish	CLEAN	40/40	in ratchet
+foam	CLEAN	40/40	in ratchet
+forth	III-stackcap	20/40	add effectiveFullParseInitialMaxStacks cap entry
+fortran	CLEAN	40/40	in ratchet
+fsharp	III-recovery?	0/8	ext=.fs,.fsi,.fsx; faithful C error-cost version competition (see spec)
+gdscript	III-scanner	1/40	re-port external scanner from pinned upstream src/scanner.c
+git_config	III-extmap	0/0	ext=.gitconfig,config; add curated source-extension mapping
+git_rebase	CLEAN	40/40	in ratchet
+gitattributes	CLEAN	40/40	in ratchet
+gitcommit	III-extmap	0/0	ext=COMMIT_EDITMSG; add curated source-extension mapping
+gitignore	CLEAN	40/40	in ratchet
+gleam	CLEAN	40/40	in ratchet
+glsl	III-recovery	11/40	faithful C error-cost version competition (see spec)
+gn	III-scanner	27/40	re-port external scanner from pinned upstream src/scanner.c
+go	CLEAN	40/40	in ratchet
+godot_resource	III-scanner	21/40	re-port external scanner from pinned upstream src/scanner.c
+gomod	CLEAN	40/40	in ratchet
+graphql	III-recovery	0/1	faithful C error-cost version competition (see spec)
+groovy	III-recovery	4/40	faithful C error-cost version competition (see spec)
+hack	CLEAN	40/40	in ratchet
+hare	III-recovery	20/40	faithful C error-cost version competition (see spec)
+haskell	III-scanner	7/40	re-port external scanner from pinned upstream src/scanner.c
+haxe	III-version	7/40	bump embedded grammar to corpus syntax version
+hcl	CLEAN	40/40	in ratchet
+heex	CLEAN	40/40	in ratchet
+hlsl	III-recovery	33/40	faithful C error-cost version competition (see spec)
+html	III-recovery	0/40	faithful C error-cost version competition (see spec)
+http	III-unknown	6/11	needs deeper single-file diagnosis
+hurl	III-recovery	13/40	faithful C error-cost version competition (see spec)
+hyprlang	III-recovery	1/2	faithful C error-cost version competition (see spec)
+ini	III-unknown	4/11	needs deeper single-file diagnosis
+janet	CLEAN	40/40	in ratchet
+java	CLEAN	40/40	in ratchet
+javascript	CLEAN	40/40	in ratchet
+jinja2	III-recovery	3/40	faithful C error-cost version competition (see spec)
+jq	CLEAN	40/40	in ratchet
+jsdoc	III-recovery?	29/30	ext=.jsdoc; faithful C error-cost version competition (see spec)
+json	CLEAN	40/40	in ratchet
+json5	CLEAN	40/40	in ratchet
+jsonnet	CLEAN	40/40	in ratchet
+julia	III-recovery	28/40	faithful C error-cost version competition (see spec)
+just	III-recovery?	2/8	ext=justfile,.just; faithful C error-cost version competition (see spec)
+kconfig	III-recovery?	13/30	ext=Kconfig; faithful C error-cost version competition (see spec)
+kdl	III-version	12/40	bump embedded grammar to corpus syntax version
+kotlin	III-unknown	17/40	needs deeper single-file diagnosis
+ledger	III-recovery	2/4	faithful C error-cost version competition (see spec)
+less	III-recovery?	10/40	faithful C error-cost version competition (see spec)
+linkerscript	III-recovery	1/40	faithful C error-cost version competition (see spec)
+liquid	III-recovery?	11/36	faithful C error-cost version competition (see spec)
+llvm	CLEAN	40/40	in ratchet
+lua	III-scanner	7/40	re-port external scanner from pinned upstream src/scanner.c
+luau	III-recovery	35/40	faithful C error-cost version competition (see spec)
+make	III-recovery?	19/20	ext=Makefile,.mk; faithful C error-cost version competition (see spec)
+markdown	III-shape?	31/40	preliminary from signature
+markdown_inline	III-shape?	13/30	ext=.md; preliminary
+matlab	III-recovery?	4/40	faithful C error-cost version competition (see spec)
+mermaid	III-recovery?	0/40	faithful C error-cost version competition (see spec)
+meson	III-recovery?	1/30	ext=meson.build; faithful C error-cost version competition (see spec)
+mojo	III-version	4/40	bump embedded grammar to corpus syntax version
+move	III-version	0/40	bump embedded grammar to corpus syntax version
+nginx	CLEAN	40/40	in ratchet
+nickel	CLEAN	40/40	in ratchet
+nim	III-recovery?	3/40	faithful C error-cost version competition (see spec)
+ninja	III-recovery	3/5	faithful C error-cost version competition (see spec)
+nix	CLEAN	40/40	in ratchet
+norg	III-scanner	0/2	re-port external scanner from pinned upstream src/scanner.c
+nushell	III-recovery?	5/40	faithful C error-cost version competition (see spec)
+objc	III-recovery?	1/40	faithful C error-cost version competition (see spec)
+ocaml	CLEAN	40/40	in ratchet
+odin	III-recovery?	13/40	faithful C error-cost version competition (see spec)
+org	III-recovery?	5/39	faithful C error-cost version competition (see spec)
+pascal	III-recovery?	0/40	faithful C error-cost version competition (see spec)
+pem	CLEAN	40/40	in ratchet
+perl	III-recovery?	0/40	faithful C error-cost version competition (see spec)
+php	CLEAN	40/40	in ratchet
+pkl	III-shape?	34/40	preliminary from signature
+powershell	III-recovery?	22/40	faithful C error-cost version competition (see spec)
+prisma	CLEAN	40/40	in ratchet
+prolog	III-recovery?	4/40	faithful C error-cost version competition (see spec)
+promql	III-recovery?	0/4	faithful C error-cost version competition (see spec)
+properties	CLEAN	40/40	in ratchet
+proto	III-recovery?	25/40	faithful C error-cost version competition (see spec)
+pug	III-recovery?	0/40	faithful C error-cost version competition (see spec)
+puppet	CLEAN	40/40	in ratchet
+purescript	III-recovery?	1/40	faithful C error-cost version competition (see spec)
+python	CLEAN	40/40	in ratchet
+ql	III-shape?	33/40	preliminary from signature
+r	III-shape?	33/40	preliminary from signature
+racket	CLEAN	40/40	in ratchet
+regex	III-stackcap?	0/1	add effectiveFullParseInitialMaxStacks cap entry
+rego	III-recovery?	7/40	faithful C error-cost version competition (see spec)
+requirements	III-recovery?	8/9	ext=requirements.txt; faithful C error-cost version competition (see spec)
+rescript	III-recovery?	23/40	faithful C error-cost version competition (see spec)
+robot	III-recovery?	28/40	faithful C error-cost version competition (see spec)
+ron	CLEAN	40/40	in ratchet
+rst	III-shape?	1/8	ext=.rst; preliminary
+ruby	III-shape?	25/40	preliminary from signature
+rust	III-recovery?	21/40	faithful C error-cost version competition (see spec)
+scala	III-recovery?	25/40	faithful C error-cost version competition (see spec)
+scheme	III-recovery	36/40	recovery-shape (4.ss/oop.ss/ez-grammar) + 5_3.ss O(N^2) perf-blocker; faithful C error-cost competition + merge-equiv perf fix
+scss	III-recovery?	6/40	faithful C error-cost version competition (see spec)
+smithy	CLEAN	40/40	in ratchet
+solidity	III-shape?	10/40	preliminary from signature
+sparql	CLEAN	40/40	in ratchet
+sql	III-recovery?	8/40	faithful C error-cost version competition (see spec)
+squirrel	CLEAN	40/40	in ratchet
+ssh_config	CLEAN	40/40	in ratchet
+starlark	CLEAN	40/40	in ratchet
+svelte	III-recovery?	37/40	faithful C error-cost version competition (see spec)
+swift	III-recovery?	0/40	faithful C error-cost version competition (see spec)
+tablegen	CLEAN	40/40	in ratchet
+tcl	III-recovery?	10/40	faithful C error-cost version competition (see spec)
+teal	III-recovery?	4/40	faithful C error-cost version competition (see spec)
+templ	III-recovery?	24/40	faithful C error-cost version competition (see spec)
+textproto	CLEAN	40/40	in ratchet
+thrift	CLEAN	40/40	in ratchet
+tlaplus	III-stackcap?	14/40	add effectiveFullParseInitialMaxStacks cap entry
+tmux	III-recovery?	0/1	ext=.tmux.conf,tmux.conf; faithful C error-cost version competition (see spec)
+todotxt	CLEAN	40/40	in ratchet
+toml	III-extmap	0/0	ext=.toml; add curated source-extension mapping
+tsx	CLEAN	40/40	in ratchet
+turtle	CLEAN	40/40	in ratchet
+twig	CLEAN	40/40	in ratchet
+typescript	CLEAN	40/40	in ratchet
+typst	III-recovery?	28/40	faithful C error-cost version competition (see spec)
+uxntal	III-recovery?	0/40	faithful C error-cost version competition (see spec)
+v	III-recovery?	25/40	faithful C error-cost version competition (see spec)
+verilog	III-recovery?	4/40	faithful C error-cost version competition (see spec)
+vhdl	III-recovery?	14/40	faithful C error-cost version competition (see spec)
+vimdoc	III-recovery?	0/30	ext=.txt; faithful C error-cost version competition (see spec)
+vue	CLEAN	40/40	in ratchet
+wat	III-recovery?	4/34	faithful C error-cost version competition (see spec)
+wgsl	III-recovery?	20/40	faithful C error-cost version competition (see spec)
+wolfram	III-recovery?	0/11	faithful C error-cost version competition (see spec)
+xml	CLEAN	40/40	in ratchet
+yaml	CLEAN	40/40	in ratchet
+yuck	CLEAN	40/40	in ratchet
+zig	III-recovery?	39/40	faithful C error-cost version competition (see spec)
