@@ -110,7 +110,7 @@ jsonnet	CLEAN	40/40	in ratchet
 julia	IV-recovery	28/40	faithful C error-cost version competition (see spec)
 just	IV-recovery?	2/8	ext=justfile,.just; faithful C error-cost version competition (see spec)
 kconfig	IV-recovery?	13/30	ext=Kconfig; faithful C error-cost version competition (see spec)
-kdl	IV-version	12/40	bump embedded grammar to corpus syntax version
+kdl	IV-recovery?	12/40	no bump exists: pin b37e3d5 == upstream HEAD (KDL v1), corpus is KDL v2; both parsers error on v2 files, residual is recovery shape; ts2go blob regen at pin verified no-op (12/40 before+after)
 kotlin	IV-unknown	17/40	needs deeper single-file diagnosis
 ledger	IV-recovery	2/4	faithful C error-cost version competition (see spec)
 less	IV-recovery?	10/40	faithful C error-cost version competition (see spec)
