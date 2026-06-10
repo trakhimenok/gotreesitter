@@ -28,7 +28,7 @@ func normalizeRubyThenStarts(root *Node, lang *Language) {
 	}
 	walkResultTree(root, func(n *Node) {
 		switch n.Type(lang) {
-		case "elsif", "if", "unless", "when":
+		case "elsif", "if", "unless", "when", "rescue":
 			normalizeRubyThenChildStarts(n, lang)
 		}
 	})

@@ -22,6 +22,12 @@ var resultCollapsedNamedLeafRules = []collapsedNamedLeafRule{
 	{languageName: "c_sharp", parentName: "implicit_type", childName: "var"},
 	{languageName: "cobol", parentName: "period", childName: "."},
 	{languageName: "COBOL", parentName: "period", childName: "."},
+	// Ruby collapses bare_string/bare_symbol -> string_content unary wrappers
+	// into a leaf; C keeps the single named string_content child over the same
+	// span. Only fires when Go's node has zero children (i.e. no escapes /
+	// interpolation, which would already materialize children in both trees).
+	{languageName: "ruby", parentName: "bare_string", childName: "string_content"},
+	{languageName: "ruby", parentName: "bare_symbol", childName: "string_content"},
 }
 
 func normalizeResultCollapsedNamedLeafChildren(root *Node, lang *Language) {
