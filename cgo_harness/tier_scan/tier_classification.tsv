@@ -45,7 +45,7 @@ devicetree	CLEAN	40/40	in ratchet
 dhall	IV-unknown	23/40	needs deeper single-file diagnosis
 diff	CLEAN	40/40	in ratchet
 disassembly	IV-scanner	0/40	re-port external scanner from pinned upstream src/scanner.c
-djot	IV-extmap	0/0	ext=.dj; add curated source-extension mapping
+djot	IV-scanner?	0/40	ext=.dj,.djot; 0/40 with 39 truncations (node_limit persists at stack cap 2: 8.4KB file blows the node budget); markdown-class inline ambiguity — re-port stateful external scanner from pinned upstream
 dockerfile	IV-recovery?	0/30	ext=Dockerfile,.dockerfile; faithful C error-cost version competition (see spec)
 dot	CLEAN	40/40	in ratchet
 doxygen	IV-recovery?	19/30	ext=.dox,.doxygen; faithful C error-cost version competition (see spec)
