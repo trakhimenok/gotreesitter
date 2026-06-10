@@ -150,7 +150,7 @@ vimdoc https://github.com/neovim/tree-sitter-vimdoc f061895a0eff1d5b90e4fb60d21d
 ssh_config https://github.com/tree-sitter-grammars/tree-sitter-ssh-config 71d2693deadaca8cdc09e38ba41d2f6042da1616 src
 puppet https://github.com/tree-sitter-grammars/tree-sitter-puppet 15f192929b7d317f5914de2b4accd37b349182a6 src .pp
 gn https://github.com/tree-sitter-grammars/tree-sitter-gn bc06955bc1e3c9ff8e9b2b2a55b38b94da923c05 src .gn,.gni
-move https://github.com/tree-sitter-grammars/tree-sitter-move b8ca25518749be10562455fd081a3dab30b93b8b src .move
+move https://github.com/aptos-labs/tree-sitter-move-on-aptos 12906b341de7cef81cf03d7d91dae51d8a9299e7 src .move
 twig https://github.com/gbprod/tree-sitter-twig 7195ee573ab5c3b3bb0e91b042e6f83ac1b11104 src .twig
 pug https://github.com/zealot128/tree-sitter-pug 13e9195370172c86a8b88184cc358b23b677cc46 src .pug,.jade
 less https://github.com/rhino1998/tree-sitter-less 2bd739e106a3485bca210cf7b6d25ba09fd10dff src .less

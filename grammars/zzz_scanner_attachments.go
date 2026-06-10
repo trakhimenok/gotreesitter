@@ -92,6 +92,7 @@ func init() {
 		"pkl":             PklExternalScanner{},
 		"c_sharp":         CSharpExternalScanner{},
 		"mojo":            MojoExternalScanner{},
+		"move":            MoveExternalScanner{},
 		"blade":           BladeExternalScanner{},
 		"angular":         AngularExternalScanner{},
 		"vue":             VueExternalScanner{},

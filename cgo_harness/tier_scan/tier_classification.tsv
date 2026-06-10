@@ -126,7 +126,7 @@ matlab	IV-recovery?	4/40	faithful C error-cost version competition (see spec)
 mermaid	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
 meson	IV-recovery?	1/30	ext=meson.build; faithful C error-cost version competition (see spec)
 mojo	IV-version	4/40	bump embedded grammar to corpus syntax version
-move	IV-version	0/40	bump embedded grammar to corpus syntax version
+move	IV-shape?	14/40	repinned to aptos-labs/tree-sitter-move-on-aptos@12906b3 (old pin errored on all 40 in BOTH parsers; new C oracle clean on 39/40); 0/40 -> 14/40; residual is Go conflict-resolution shape (generic vs binary_expression) + 12 Go-only ERROR roots
 nginx	CLEAN	40/40	in ratchet
 nickel	CLEAN	40/40	in ratchet
 nim	IV-recovery?	3/40	faithful C error-cost version competition (see spec)
