@@ -1,29 +1,29 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-10T08:54:04Z at `8c92f06d`. Parity vs the
+Generated 2026-06-10T23:20:27Z at `97bf2072`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
 | tier | count |
 | --- | --- |
-| I | 32 |
-| II | 36 |
-| III | 9 |
-| IV | 129 |
+| I | 28 |
+| II | 32 |
+| III | 7 |
+| IV | 139 |
 
-## Tier I — parity-clean, fast (32)
+## Tier I — parity-clean, fast (28)
 
-`astro`, `awk`, `clojure`, `css`, `csv`, `elisp`, `erlang`, `faust`, `fidl`, `fish`, `gitcommit`, `gleam`, `hcl`, `java`, `javascript`, `jsonnet`, `llvm`, `nickel`, `nix`, `php`, `prisma`, `puppet`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`
+`astro`, `clojure`, `css`, `csv`, `elisp`, `faust`, `fish`, `gitcommit`, `gleam`, `hcl`, `javascript`, `llvm`, `nickel`, `nix`, `php`, `prisma`, `puppet`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`, `zig`
 
-## Tier II — parity-clean, ok (36)
+## Tier II — parity-clean, ok (32)
 
-`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `typescript`, `vue`
+`arduino`, `bass`, `beancount`, `capnp`, `cmake`, `devicetree`, `editorconfig`, `foam`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `hack`, `heex`, `janet`, `jq`, `jsdoc`, `json`, `json5`, `ocaml`, `pem`, `python`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `vue`
 
-## Tier III — parity-clean, poor perf (9)
+## Tier III — parity-clean, poor perf (7)
 
-`comment`, `desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `nginx`, `properties`, `ssh_config`
+`desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `nginx`, `properties`
 
-## Tier IV — not parity-clean (129)
+## Tier IV — not parity-clean (139)
 
 | grammar | cause | parity |
 | --- | --- | --- |
@@ -33,20 +33,24 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `apex` | IV-shape? | 17/30 |
 | `asm` | IV-recovery | 0/40 |
 | `authzed` | IV-recovery? | 23/30 |
+| `awk` | IV-recovery | 28/29 |
 | `bash` | IV-recovery? | 30/40 |
 | `bibtex` | IV-recovery? | 37/40 |
 | `bicep` | IV-recovery? | 24/30 |
+| `bitbake` | IV-recovery | 35/40 |
 | `blade` | IV-recovery? | 17/30 |
 | `brightscript` | IV-recovery? | 0/30 |
 | `c` | IV-recovery | 21/40 |
 | `c_sharp` | IV-recovery | 26/40 |
 | `caddy` | IV-recovery? | 9/30 |
 | `cairo` | IV-recovery? | 0/30 |
-| `chatito` | IV-recovery | 1/5 |
+| `chatito` | IV-recovery | 4/5 |
 | `circom` | IV-shape? | 11/30 |
 | `cobol` | IV-scanner | 0/40 |
+| `comment` | IV-perf | 35/40 |
 | `commonlisp` | IV-recovery? | 22/30 |
 | `cooklang` | IV-recovery | 0/3 |
+| `corn` | IV-recovery | 22/23 |
 | `cpon` | IV-recovery? | 9/10 |
 | `cpp` | IV-recovery | 10/40 |
 | `crystal` | IV-perf | 0/0 |
@@ -59,6 +63,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `disassembly` | IV-scanner | 0/40 |
 | `djot` | IV-scanner? | 0/40 |
 | `dockerfile` | IV-recovery? | 0/30 |
+| `dot` | IV-perf | 39/40 |
 | `doxygen` | IV-recovery? | 19/30 |
 | `dtd` | IV-recovery? | 0/5 |
 | `earthfile` | IV-recovery? | 0/30 |
@@ -68,32 +73,36 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `elm` | IV-recovery? | 7/8 |
 | `elsa` | IV-recovery? | 12/27 |
 | `enforce` | IV-shape? | 21/30 |
+| `erlang` | IV-recovery | 38/40 |
 | `facility` | IV-recovery? | 1/4 |
 | `fennel` | IV-recovery? | 8/30 |
+| `fidl` | IV-shape | 39/40 |
 | `firrtl` | IV-recovery? | 5/27 |
 | `forth` | IV-unknown | 34/40 |
-| `fsharp` | IV-recovery? | 0/8 |
+| `fsharp` | IV-perf | 0/8 |
 | `gdscript` | IV-scanner | 1/40 |
 | `glsl` | IV-recovery | 11/40 |
 | `gn` | IV-scanner | 27/40 |
+| `go` | IV-recovery | 37/40 |
 | `godot_resource` | IV-scanner | 21/40 |
 | `graphql` | IV-recovery | 0/1 |
 | `groovy` | IV-recovery | 4/40 |
 | `hare` | IV-recovery | 20/40 |
 | `haskell` | IV-scanner | 7/40 |
-| `haxe` | IV-version | 7/40 |
+| `haxe` | IV-recovery | 7/40 |
 | `hlsl` | IV-recovery | 33/40 |
 | `html` | IV-recovery | 0/40 |
 | `http` | IV-unknown | 6/11 |
 | `hurl` | IV-recovery | 13/40 |
 | `hyprlang` | IV-recovery | 1/2 |
 | `ini` | IV-unknown | 4/11 |
+| `java` | IV-recovery? | 39/40 |
 | `jinja2` | IV-recovery | 3/40 |
-| `jsdoc` | IV-recovery? | 39/40 |
+| `jsonnet` | IV-recovery? | 39/40 |
 | `julia` | IV-recovery | 28/40 |
 | `just` | IV-recovery? | 2/8 |
 | `kconfig` | IV-recovery? | 13/30 |
-| `kdl` | IV-version | 12/40 |
+| `kdl` | IV-recovery | 12/40 |
 | `kotlin` | IV-unknown | 17/40 |
 | `ledger` | IV-recovery | 2/4 |
 | `less` | IV-recovery? | 10/40 |
@@ -107,8 +116,8 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `matlab` | IV-recovery? | 4/40 |
 | `mermaid` | IV-recovery? | 0/40 |
 | `meson` | IV-recovery? | 1/30 |
-| `mojo` | IV-version | 4/40 |
-| `move` | IV-version | 0/40 |
+| `mojo` | IV-recovery? | 30/40 |
+| `move` | IV-recovery? | 14/40 |
 | `nim` | IV-recovery? | 3/40 |
 | `ninja` | IV-recovery | 3/5 |
 | `norg` | IV-scanner | 0/2 |
@@ -131,7 +140,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `rego` | IV-recovery? | 7/40 |
 | `rescript` | IV-recovery? | 23/40 |
 | `robot` | IV-recovery? | 28/40 |
-| `rst` | IV-shape? | 1/8 |
+| `rst` | IV-perf | 1/8 |
 | `ruby` | IV-shape? | 25/40 |
 | `rust` | IV-recovery? | 21/40 |
 | `scala` | IV-recovery? | 25/40 |
@@ -139,6 +148,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `scss` | IV-recovery? | 6/40 |
 | `solidity` | IV-shape? | 10/40 |
 | `sql` | IV-recovery? | 8/40 |
+| `ssh_config` | IV-recovery? | 1/2 |
 | `svelte` | IV-recovery? | 37/40 |
 | `swift` | IV-recovery? | 0/40 |
 | `tcl` | IV-recovery? | 10/40 |
@@ -146,6 +156,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `templ` | IV-recovery? | 24/40 |
 | `tlaplus` | IV-unknown? | 14/40 |
 | `tmux` | IV-recovery? | 0/1 |
+| `typescript` | IV-recovery? | 38/40 |
 | `typst` | IV-recovery? | 28/40 |
 | `uxntal` | IV-recovery? | 0/40 |
 | `v` | IV-recovery? | 25/40 |
@@ -155,4 +166,3 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `wat` | IV-recovery? | 4/34 |
 | `wgsl` | IV-recovery? | 20/40 |
 | `wolfram` | IV-recovery? | 0/11 |
-| `zig` | IV-recovery? | 39/40 |
