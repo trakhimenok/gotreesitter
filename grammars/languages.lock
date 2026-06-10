@@ -150,7 +150,7 @@ vimdoc https://github.com/neovim/tree-sitter-vimdoc f061895a0eff1d5b90e4fb60d21d
 ssh_config https://github.com/tree-sitter-grammars/tree-sitter-ssh-config 71d2693deadaca8cdc09e38ba41d2f6042da1616 src
 puppet https://github.com/tree-sitter-grammars/tree-sitter-puppet 15f192929b7d317f5914de2b4accd37b349182a6 src .pp
 gn https://github.com/tree-sitter-grammars/tree-sitter-gn bc06955bc1e3c9ff8e9b2b2a55b38b94da923c05 src .gn,.gni
-move https://github.com/tree-sitter-grammars/tree-sitter-move b8ca25518749be10562455fd081a3dab30b93b8b src .move
+move https://github.com/aptos-labs/tree-sitter-move-on-aptos 12906b341de7cef81cf03d7d91dae51d8a9299e7 src .move
 twig https://github.com/gbprod/tree-sitter-twig 7195ee573ab5c3b3bb0e91b042e6f83ac1b11104 src .twig
 pug https://github.com/zealot128/tree-sitter-pug 13e9195370172c86a8b88184cc358b23b677cc46 src .pug,.jade
 less https://github.com/rhino1998/tree-sitter-less 2bd739e106a3485bca210cf7b6d25ba09fd10dff src .less
@@ -190,7 +190,7 @@ pem https://github.com/ObserverOfTime/tree-sitter-pem e525b177a229b1154fd81bc069
 crystal https://github.com/keidax/tree-sitter-crystal 51ad1411de9414b4600227553bb70953c352a627 src .cr
 elisp https://github.com/Wilfred/tree-sitter-elisp 29b4e49275f4a947ce17c8533bc20a1f97768c70 src .el
 fsharp https://github.com/ionide/tree-sitter-fsharp 5141851c278a99958469eb1736c7afc4ec738e47 fsharp/src .fs,.fsi,.fsx
-haxe https://github.com/vantreeseba/tree-sitter-haxe a55f3e2cf1e4449200fd089a80d3af642bcf5f94 src .hx
+haxe https://github.com/vantreeseba/tree-sitter-haxe f2a2394d9ca7a6099f78d8b0d178530e7c9a8e26 src .hx
 teal https://github.com/euclidianAce/tree-sitter-teal 05d276e737055e6f77a21335b7573c9d3c091e2f src .tl
 forth https://github.com/AlexanderBrevig/tree-sitter-forth 360ef13f8c609ec6d2e80782af69958b84e36cd0 src .fs,.fth,.4th
 cobol https://github.com/yutaro-sakamoto/tree-sitter-cobol e99dbdc3d800d5fa2796476efd60af91f6b43d93 src .cob,.cbl,.cpy
@@ -206,5 +206,5 @@ sparql https://github.com/GordianDziwis/tree-sitter-sparql 1ef52d35a73a2a5f2e433
 turtle https://github.com/GordianDziwis/tree-sitter-turtle 7f789ea7ef765080f71a298fc96b7c957fa24422 src .ttl
 wat https://github.com/wasm-lsp/tree-sitter-wasm 2ca28a9f9d709847bf7a3de0942a84e912f59088 wat/src .wat,.wast
 prolog https://github.com/Rukiza/tree-sitter-prolog c246cf2bf36590a3cb4de380205376d3c46208e8 src .pl,.pro
-mojo https://github.com/HerringtonDarkholme/tree-sitter-mojo 99fe918e69f087f910ef3b11eba31eb0d7e54edf src .mojo,.🔥
+mojo https://github.com/whistlebee/tree-sitter-mojo c307dab71a43add26b4715f14e2d6de2a42e6007 src .mojo,.🔥
 wolfram https://github.com/bostick/tree-sitter-wolfram 63ebdac6f040d9082d3d8fa88be96ce24549adc5 src .wl,.m,.nb

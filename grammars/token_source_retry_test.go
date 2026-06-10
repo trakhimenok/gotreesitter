@@ -19,16 +19,10 @@ func retryBudgetJavaCorpus(classCount int) []byte {
 	return []byte(b.String())
 }
 
-func retryBudgetLuaCorpus(lineCount int) []byte {
-	var b strings.Builder
-	b.Grow(lineCount * 32)
-	for i := 0; i < lineCount; i++ {
-		fmt.Fprintf(&b, "local x%d = %d\n", i, i)
-	}
-	return []byte(b.String())
-}
-
-func TestParseWithTokenSourceRetriesNodeLimitForJavaAndLua(t *testing.T) {
+// Lua used to ride this path too, but it now parses via the DFA lexer plus
+// LuaExternalScanner (C-faithful) and no longer registers a token source
+// factory, so only the token-source backends (java) exercise this retry.
+func TestParseWithTokenSourceRetriesNodeLimitForJava(t *testing.T) {
 	t.Setenv("GOT_PARSE_NODE_LIMIT_SCALE", "")
 	gotreesitter.ResetParseEnvConfigCacheForTests()
 
@@ -37,7 +31,6 @@ func TestParseWithTokenSourceRetriesNodeLimitForJavaAndLua(t *testing.T) {
 		src  []byte
 	}{
 		{name: "java", src: retryBudgetJavaCorpus(224)},
-		{name: "lua", src: retryBudgetLuaCorpus(224)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry := lookupByName(tc.name)

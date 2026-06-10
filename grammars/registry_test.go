@@ -144,10 +144,20 @@ func TestAuditParseSupportIncludesJavaCustomTokenSource(t *testing.T) {
 	}
 }
 
-func TestAuditParseSupportIncludesLuaCustomTokenSource(t *testing.T) {
+// Lua parses via the blob's DFA lexer plus LuaExternalScanner (a line-faithful
+// port of upstream scanner.c), not the hand-tuned LuaTokenSource — the DFA path
+// matches the C oracle where the token source diverged. The public
+// LuaTokenSource remains available to downstream callers, but the registry no
+// longer routes lua through it.
+func TestAuditParseSupportLuaUsesDFAExternalScanner(t *testing.T) {
 	report := parseSupportForLang(t, "lua")
-	if report.Backend != ParseBackendTokenSource {
-		t.Fatalf("expected lua backend %q, got %q", ParseBackendTokenSource, report.Backend)
+	if report.Backend != ParseBackendDFA && report.Backend != ParseBackendDFAPartial {
+		t.Fatalf("expected lua backend to use native DFA lexer, got %q", report.Backend)
+	}
+	if entry := lookupByName("lua"); entry == nil {
+		t.Fatal("missing registry entry for lua")
+	} else if entry.TokenSourceFactory != nil {
+		t.Fatal("lua should no longer register a token source factory")
 	}
 }
 
@@ -180,12 +190,28 @@ func TestAuditParseSupportIncludesRustDFA(t *testing.T) {
 }
 
 func TestBuiltinLanguagesAdvertiseTS2GoBlobSource(t *testing.T) {
+	entry := DetectLanguage("main.py")
+	if entry == nil {
+		t.Fatal("expected Python language for main.py")
+	}
+	if entry.GrammarSource != GrammarSourceTS2GoBlob {
+		t.Fatalf("Python GrammarSource = %q, want %q", entry.GrammarSource, GrammarSourceTS2GoBlob)
+	}
+}
+
+func TestGoAdvertisesGrammargenBlobSource(t *testing.T) {
+	// go.bin is grammargen-compiled (cmd/grammargen -lr-split -bin ...), the
+	// only builtin migrated off ts2go so far. It still ships an embedded
+	// blob, so BlobByName must keep serving it.
 	entry := DetectLanguage("main.go")
 	if entry == nil {
 		t.Fatal("expected Go language for main.go")
 	}
-	if entry.GrammarSource != GrammarSourceTS2GoBlob {
-		t.Fatalf("Go GrammarSource = %q, want %q", entry.GrammarSource, GrammarSourceTS2GoBlob)
+	if entry.GrammarSource != GrammarSourceGrammargenBlob {
+		t.Fatalf("Go GrammarSource = %q, want %q", entry.GrammarSource, GrammarSourceGrammargenBlob)
+	}
+	if blob := BlobByName("go"); len(blob) == 0 {
+		t.Fatal("BlobByName(go) returned empty; grammargen-blob languages must stay blob-served")
 	}
 }
 

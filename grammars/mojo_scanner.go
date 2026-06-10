@@ -6,31 +6,43 @@ import (
 	gotreesitter "github.com/odvcencio/gotreesitter"
 )
 
-// External token indexes for the Mojo grammar (Python-like).
+// External token indexes for the Mojo grammar
+// (whistlebee/tree-sitter-mojo, a tree-sitter-python derivative). The order
+// matches tree-sitter-python's externals minus the trailing `except`, so the
+// token indexes line up one-to-one with python for the first eleven tokens.
 const (
-	mojoTokNewline       = 0
-	mojoTokIndent        = 1
-	mojoTokDedent        = 2
-	mojoTokStringStart   = 3
-	mojoTokStringContent = 4
-	mojoTokStringEnd     = 5
-	mojoTokComment       = 6
-	mojoTokCloseParen    = 7
-	mojoTokCloseBracket  = 8
-	mojoTokCloseBrace    = 9
+	mojoTokNewline = iota
+	mojoTokIndent
+	mojoTokDedent
+	mojoTokStringStart
+	mojoTokStringContent
+	mojoTokEscapeInterpolation
+	mojoTokStringEnd
+	mojoTokComment
+	mojoTokCloseBracket
+	mojoTokCloseParen
+	mojoTokCloseBrace
+	// mojoTokExcept does not exist in the mojo grammar (python's 12th
+	// external). validSymbols has only 11 entries, so isValid(mojoTokExcept)
+	// is always false and the shared except-handling branch is dead code.
+	mojoTokExcept
 )
 
+// Concrete symbol IDs from the generated mojo grammar ExternalSymbols.
 const (
-	mojoSymNewline       gotreesitter.Symbol = 102
-	mojoSymIndent        gotreesitter.Symbol = 103
-	mojoSymDedent        gotreesitter.Symbol = 104
-	mojoSymStringStart   gotreesitter.Symbol = 105
-	mojoSymStringContent gotreesitter.Symbol = 106
-	mojoSymStringEnd     gotreesitter.Symbol = 107
+	mojoSymNewline             gotreesitter.Symbol = 108
+	mojoSymIndent              gotreesitter.Symbol = 109
+	mojoSymDedent              gotreesitter.Symbol = 110
+	mojoSymStringStart         gotreesitter.Symbol = 111
+	mojoSymStringContent       gotreesitter.Symbol = 112
+	mojoSymEscapeInterpolation gotreesitter.Symbol = 113
+	mojoSymStringEnd           gotreesitter.Symbol = 114
 )
 
-// MojoExternalScanner handles indent/dedent and string literals for Mojo.
-// Mojo is Python-like; this reuses the pythonScannerState type.
+// MojoExternalScanner is the tree-sitter-python external scanner retargeted
+// at the mojo grammar's symbol IDs. Mojo's scanner.c is byte-for-byte
+// python's scanner minus the `except` external, so the state shape and the
+// scan logic are shared with PythonExternalScanner.
 type MojoExternalScanner struct{}
 
 func (MojoExternalScanner) Create() any {
@@ -54,6 +66,7 @@ func (MojoExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, 
 	if len(s.indents) == 0 {
 		s.indents = append(s.indents, 0)
 	}
+	s.syncInsideInterpolatedString()
 
 	isValid := func(idx int) bool {
 		return idx >= 0 && idx < len(validSymbols) && validSymbols[idx]
@@ -62,13 +75,37 @@ func (MojoExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, 
 	errorRecoveryMode := isValid(mojoTokStringContent) && isValid(mojoTokIndent)
 	withinBrackets := isValid(mojoTokCloseBrace) || isValid(mojoTokCloseParen) || isValid(mojoTokCloseBracket)
 
-	// String content scanning
+	advancedOnce := false
+	if isValid(mojoTokEscapeInterpolation) && len(s.delimiters) > 0 &&
+		(lexer.Lookahead() == '{' || lexer.Lookahead() == '}') && !errorRecoveryMode {
+		delimiter := s.delimiters[len(s.delimiters)-1]
+		if delimiter.isFormat() {
+			lexer.MarkEnd()
+			isLeftBrace := lexer.Lookahead() == '{'
+			lexer.Advance(false)
+			advancedOnce = true
+			if (lexer.Lookahead() == '{' && isLeftBrace) || (lexer.Lookahead() == '}' && !isLeftBrace) {
+				lexer.Advance(false)
+				lexer.MarkEnd()
+				lexer.SetResultSymbol(mojoSymEscapeInterpolation)
+				return true
+			}
+			return false
+		}
+	}
+
 	if isValid(mojoTokStringContent) && len(s.delimiters) > 0 && !errorRecoveryMode {
 		delimiter := s.delimiters[len(s.delimiters)-1]
 		endChar := delimiter.endChar()
-		hasContent := false
+		hasContent := advancedOnce
 
 		for lexer.Lookahead() != 0 {
+			if (advancedOnce || lexer.Lookahead() == '{' || lexer.Lookahead() == '}') && delimiter.isFormat() {
+				lexer.MarkEnd()
+				lexer.SetResultSymbol(mojoSymStringContent)
+				return hasContent
+			}
+
 			if lexer.Lookahead() == '\\' {
 				if delimiter.isRaw() {
 					lexer.Advance(false)
@@ -168,7 +205,7 @@ func (MojoExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, 
 			indentLength += 8
 			lexer.Advance(true)
 		case '#':
-			if isValid(mojoTokIndent) || isValid(mojoTokDedent) || isValid(mojoTokNewline) {
+			if isValid(mojoTokIndent) || isValid(mojoTokDedent) || isValid(mojoTokNewline) || isValid(mojoTokExcept) {
 				if !foundEndOfLine {
 					return false
 				}
@@ -182,7 +219,7 @@ func (MojoExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, 
 				indentLength = 0
 				continue
 			}
-			goto mojoAfterIndentLoop
+			goto afterIndentLoop
 		case '\\':
 			lexer.Advance(true)
 			if lexer.Lookahead() == '\r' {
@@ -196,13 +233,13 @@ func (MojoExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, 
 		case 0:
 			indentLength = 0
 			foundEndOfLine = true
-			goto mojoAfterIndentLoop
+			goto afterIndentLoop
 		default:
-			goto mojoAfterIndentLoop
+			goto afterIndentLoop
 		}
 	}
 
-mojoAfterIndentLoop:
+afterIndentLoop:
 	if foundEndOfLine {
 		currentIndent := s.indents[len(s.indents)-1]
 
@@ -235,22 +272,22 @@ mojoAfterIndentLoop:
 
 		for lexer.Lookahead() != 0 {
 			switch lexer.Lookahead() {
-			case 'f', 'F':
+			case 'f', 'F', 't', 'T':
 				delimiter |= pyDelimFormat
 			case 'r', 'R':
 				delimiter |= pyDelimRaw
 			case 'b', 'B':
 				delimiter |= pyDelimBytes
 			case 'u', 'U':
-				// accepted prefix
+				// accepted prefix, no scanner flag
 			default:
-				goto mojoAfterFlags
+				goto afterFlags
 			}
 			hasFlags = true
 			lexer.Advance(false)
 		}
 
-	mojoAfterFlags:
+	afterFlags:
 		switch lexer.Lookahead() {
 		case '`':
 			delimiter |= pyDelimBackQuote

@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-10T08:13:00Z",
- "commit": "bc1596eb",
+ "generated": "2026-06-10T23:38:17Z",
+ "commit": "d6226011",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,10 +10,10 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 130,
-  "II": 35,
-  "I": 32,
-  "III": 9
+  "IV": 136,
+  "II": 34,
+  "I": 29,
+  "III": 7
  },
  "grammars": [
   {
@@ -27,14 +27,14 @@
    "grammar": "agda",
    "tier": "IV",
    "iv_cause": "IV-scanner",
-   "parity": "0/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "parity": "2/40",
+   "notes": "layout scanner, deep port needed (maple)"
   },
   {
    "grammar": "angular",
    "tier": "IV",
    "iv_cause": "IV-recovery?",
-   "parity": "26/30",
+   "parity": "35/40",
    "notes": "ext=.component.html,.ng.html; faithful C error-cost version competition (see spec)"
   },
   {
@@ -72,16 +72,17 @@
   },
   {
    "grammar": "awk",
-   "tier": "I",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "28/29",
+   "notes": "T.gawk rule-splitting vs C in-rule absorption"
   },
   {
    "grammar": "bash",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
-   "parity": "7/8",
-   "notes": "ext=.sh,.bash; add effectiveFullParseInitialMaxStacks cap entry"
+   "iv_cause": "IV-recovery?",
+   "parity": "30/40",
+   "notes": "ext=.sh; stackcap disproven (cap-256 floor entry already present); divergences are recovery-shape: go ERROR root where C recovers program (lib.sh, git-prompt.sh, git-subtree.sh) plus small child-count diffs; 1 trunc (cmd-list.sh no_stacks_alive)"
   },
   {
    "grammar": "bass",
@@ -99,8 +100,8 @@
    "grammar": "bibtex",
    "tier": "IV",
    "iv_cause": "IV-recovery?",
-   "parity": "28/30",
-   "notes": "ext=.bib; faithful C error-cost version competition (see spec)"
+   "parity": "37/40",
+   "notes": "ext=.bib; C-recovery gate tried and REVERTED (parity-neutral 37/40, run 20260610T091230Z-redwood-wave1b): gate moves 2 witnesses closer (multiple-meta-data.bib/MsBibExportFormatTest5.bib now named document root, diff localizes to root[*][1] go \"{\" vs c ERROR[..] \u2014 C wraps the brace region in ERROR where Go shifts \"{\"); ArXivQuantumMock.bib root StartByte go=0 c=1 is the root-span-leading-extras engine class (same as forth/regex)"
   },
   {
    "grammar": "bicep",
@@ -111,9 +112,10 @@
   },
   {
    "grammar": "bitbake",
-   "tier": "II",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "35/40",
+   "notes": "canonical-frame demotion (one-time reset)"
   },
   {
    "grammar": "blade",
@@ -166,9 +168,9 @@
   {
    "grammar": "chatito",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
-   "parity": "1/5",
-   "notes": "ext=.chatito; add effectiveFullParseInitialMaxStacks cap entry"
+   "iv_cause": "IV-recovery",
+   "parity": "4/5",
+   "notes": "gated; dateBooking_large.chatito roots ERROR where C keeps source (absorbing-version-must-reduce family)"
   },
   {
    "grammar": "circom",
@@ -192,15 +194,16 @@
   {
    "grammar": "cobol",
    "tier": "IV",
-   "iv_cause": "IV-scanner",
+   "iv_cause": "IV-version",
    "parity": "0/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "notes": "corpus is CICS/embedded-SQL COBOL the pinned grammar doesn't support \u2014 12/12 sampled root-ERROR in C too (maple)"
   },
   {
    "grammar": "comment",
-   "tier": "III",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-perf",
+   "parity": "35/40",
+   "notes": "trunc=5, 59x median \u2014 blowup truncation"
   },
   {
    "grammar": "commonlisp",
@@ -212,22 +215,23 @@
   {
    "grammar": "cooklang",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
+   "iv_cause": "IV-recovery",
    "parity": "0/3",
-   "notes": "ext=.cook; add effectiveFullParseInitialMaxStacks cap entry"
+   "notes": "ext=.cook; stackcap disproven (cap 2 not kept); C-recovery gate tried and REVERTED (parity stays 0/3, run 20260610T091230Z-redwood-wave1b) though it helps: trunc 3 -> 2, all roots become named recipe, complex_test_recipe now differs only by EndByte 2522 vs 2523 (the missing-trailing-newline EOF byte); frontmatter/test_recipe still truncate early (go EndByte 2383/2644 vs c 2799/2994) \u2014 go stops mid-file where C absorbs on; stage-2 EOF-byte + truncation work, then re-enable"
   },
   {
    "grammar": "corn",
-   "tier": "II",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "22/23",
+   "notes": "quoted_keys path_seg cc"
   },
   {
    "grammar": "cpon",
    "tier": "IV",
    "iv_cause": "IV-recovery?",
    "parity": "9/10",
-   "notes": "ext=.cpon; faithful C error-cost version competition (see spec)"
+   "notes": "ext=.cpon; C-recovery gate tried and REVERTED (parity-neutral 9/10, run 20260610T091230Z-redwood-wave1b): witness syntax_test_cpon.cpon document-root cc go=30 c=54 under gate (go=61 baseline) \u2014 mid-file recovery shape, not EOF class; suspect stage-2 limitation (a) multi-path pops or absorb close-out shape"
   },
   {
    "grammar": "cpp",
@@ -241,7 +245,7 @@
    "tier": "IV",
    "iv_cause": "IV-perf",
    "parity": "0/0",
-   "notes": "perf-blocker: times out at N=8 (single-file >30s); profile before parity"
+   "notes": "timeout-or-fail at 1200s canonical budget"
   },
   {
    "grammar": "css",
@@ -318,16 +322,16 @@
   {
    "grammar": "disassembly",
    "tier": "IV",
-   "iv_cause": "IV-scanner",
+   "iv_cause": "IV-version",
    "parity": "0/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "notes": "German-locale riscv objdump corpus the grammar doesn't model \u2014 10/10 C-error (maple)"
   },
   {
    "grammar": "djot",
    "tier": "IV",
-   "iv_cause": "IV-extmap",
-   "parity": "0/0",
-   "notes": "ext=.dj; add curated source-extension mapping"
+   "iv_cause": "IV-scanner?",
+   "parity": "0/40",
+   "notes": "ext=.dj,.djot; 0/40 with 39 truncations (node_limit persists at stack cap 2: 8.4KB file blows the node budget); markdown-class inline ambiguity \u2014 re-port stateful external scanner from pinned upstream; also IV-perf component (maple)"
   },
   {
    "grammar": "dockerfile",
@@ -338,9 +342,10 @@
   },
   {
    "grammar": "dot",
-   "tier": "II",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-perf",
+   "parity": "39/40",
+   "notes": "bsdarch.dot 2257x agg blowup truncation"
   },
   {
    "grammar": "doxygen",
@@ -407,7 +412,7 @@
    "tier": "IV",
    "iv_cause": "IV-recovery?",
    "parity": "7/8",
-   "notes": "ext=.elm; faithful C error-cost version competition (see spec)"
+   "notes": "ext=.elm; C-recovery gate tried and REVERTED (parity-neutral 7/8, run 20260610T091230Z-redwood-wave1b): witness Deps.elm \u2014 gate fixes root EndByte (28293) but yields file root with cc go=1 (one whole-file error region) vs c=177; aggRatio blew 18x -> 1450x under gate = stage-2 limitation (c) O(stack) cost queries; needs cost memoization + recovery-shape work"
   },
   {
    "grammar": "elsa",
@@ -431,9 +436,10 @@
   },
   {
    "grammar": "erlang",
-   "tier": "I",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-recovery",
+   "parity": "38/40",
+   "notes": "bif_SUITE ambiguity-selection + binary_SUITE blowup trunc"
   },
   {
    "grammar": "facility",
@@ -457,9 +463,10 @@
   },
   {
    "grammar": "fidl",
-   "tier": "I",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-shape",
+   "parity": "39/40",
+   "notes": "INVERSE: C fragments versioned-FIDL syntax, Go parses clean \u2014 must match C error shapes"
   },
   {
    "grammar": "firrtl",
@@ -496,16 +503,16 @@
   {
    "grammar": "fsharp",
    "tier": "IV",
-   "iv_cause": "IV-recovery?",
+   "iv_cause": "IV-perf",
    "parity": "0/8",
-   "notes": "ext=.fs,.fsi,.fsx; faithful C error-cost version competition (see spec)"
+   "notes": "timeout-or-fail at 1200s canonical budget"
   },
   {
    "grammar": "gdscript",
    "tier": "IV",
    "iv_cause": "IV-scanner",
    "parity": "1/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "notes": "body start off-by-2: C scans externals before consuming leading whitespace-extras, Go DFA skips extras first; fix in lexer/parser_dfa_token_source handoff (python handles this; maple)"
   },
   {
    "grammar": "git_config",
@@ -552,23 +559,22 @@
   },
   {
    "grammar": "gn",
-   "tier": "IV",
-   "iv_cause": "IV-scanner",
-   "parity": "27/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
-  },
-  {
-   "grammar": "go",
    "tier": "II",
    "parity": "clean",
    "perf_source": "measured"
   },
   {
-   "grammar": "godot_resource",
+   "grammar": "go",
    "tier": "IV",
-   "iv_cause": "IV-scanner",
-   "parity": "21/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "iv_cause": "IV-recovery",
+   "parity": "37/40",
+   "notes": "reader/writer_test root ERROR vs source_file (recovery class)"
+  },
+  {
+   "grammar": "godot_resource",
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "gomod",
@@ -607,15 +613,15 @@
    "grammar": "haskell",
    "tier": "IV",
    "iv_cause": "IV-scanner",
-   "parity": "7/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "parity": "11/40",
+   "notes": "layout scanner, deep port needed (maple)"
   },
   {
    "grammar": "haxe",
    "tier": "IV",
-   "iv_cause": "IV-version",
+   "iv_cause": "IV-recovery",
    "parity": "7/40",
-   "notes": "bump embedded grammar to corpus syntax version"
+   "notes": "pins at upstream HEAD; C at same pin parses corpus clean \u2014 runtime fidelity, not version (oak 2026-06-10)"
   },
   {
    "grammar": "hcl",
@@ -662,7 +668,7 @@
    "tier": "IV",
    "iv_cause": "IV-recovery",
    "parity": "1/2",
-   "notes": "faithful C error-cost version competition (see spec)"
+   "notes": "ext=.conf; C-recovery gate tried and REVERTED (parity-neutral 1/2, run 20260610T091230Z-redwood-wave1b): witness hyprland.conf root ERROR vs C configuration unchanged under gate, plus a non-recovery deep diff (root[92][9][2] go string vs c boolean) \u2014 two divergence classes; recover shape needs stage-2, the string/boolean diff needs lex/shape triage"
   },
   {
    "grammar": "ini",
@@ -679,9 +685,10 @@
   },
   {
    "grammar": "java",
-   "tier": "I",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "39/40",
+   "notes": "canonical-frame demotion (one-time reset)"
   },
   {
    "grammar": "javascript",
@@ -704,10 +711,9 @@
   },
   {
    "grammar": "jsdoc",
-   "tier": "IV",
-   "iv_cause": "IV-recovery?",
-   "parity": "29/30",
-   "notes": "ext=.jsdoc; faithful C error-cost version competition (see spec)"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "json",
@@ -723,9 +729,10 @@
   },
   {
    "grammar": "jsonnet",
-   "tier": "I",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "39/40",
+   "notes": "canonical-frame demotion (one-time reset)"
   },
   {
    "grammar": "julia",
@@ -751,9 +758,9 @@
   {
    "grammar": "kdl",
    "tier": "IV",
-   "iv_cause": "IV-version",
+   "iv_cause": "IV-recovery",
    "parity": "12/40",
-   "notes": "bump embedded grammar to corpus syntax version"
+   "notes": "pins at upstream HEAD; C at same pin parses corpus clean \u2014 runtime fidelity, not version (oak 2026-06-10)"
   },
   {
    "grammar": "kotlin",
@@ -798,10 +805,9 @@
   },
   {
    "grammar": "lua",
-   "tier": "IV",
-   "iv_cause": "IV-scanner",
-   "parity": "7/40",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "luau",
@@ -815,7 +821,7 @@
    "tier": "IV",
    "iv_cause": "IV-recovery?",
    "parity": "19/20",
-   "notes": "ext=Makefile,.mk; faithful C error-cost version competition (see spec)"
+   "notes": "ext=Makefile,.mk; C-recovery gate tried and REVERTED (parity-neutral 19/20, runs 20260610T090208Z/091230Z redwood-wave1/1b): witness Makefile (129KB, git's) root ERROR cc go=5029 vs makefile c=2114 \u2014 signature identical with gate on/off, so the divergence is decided before/outside the gated recover path (retry full-parse or pre-error fragmentation); needs witness-level diagnosis, not more gate work"
   },
   {
    "grammar": "markdown",
@@ -855,16 +861,16 @@
   {
    "grammar": "mojo",
    "tier": "IV",
-   "iv_cause": "IV-version",
-   "parity": "4/40",
-   "notes": "bump embedded grammar to corpus syntax version"
+   "iv_cause": "IV-recovery?",
+   "parity": "30/40",
+   "notes": "post-repin residual"
   },
   {
    "grammar": "move",
    "tier": "IV",
-   "iv_cause": "IV-version",
-   "parity": "0/40",
-   "notes": "bump embedded grammar to corpus syntax version"
+   "iv_cause": "IV-recovery?",
+   "parity": "14/40",
+   "notes": "post-repo-switch residual"
   },
   {
    "grammar": "nginx",
@@ -903,7 +909,7 @@
    "tier": "IV",
    "iv_cause": "IV-scanner",
    "parity": "0/2",
-   "notes": "re-port external scanner from pinned upstream src/scanner.c"
+   "notes": "mixed scanner/version, 2-file corpus (maple)"
   },
   {
    "grammar": "nushell",
@@ -1061,9 +1067,9 @@
   {
    "grammar": "regex",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
+   "iv_cause": "IV-unknown?",
    "parity": "0/1",
-   "notes": "add effectiveFullParseInitialMaxStacks cap entry"
+   "notes": "ext=.regex; stackcap disproven (default iteration_limit, cap 2 no_stacks_alive); single-file corpus with UTF-8 BOM: C roots after the BOM (StartByte 3) and parses all 2255 bytes, go roots at 0 and truncates at 390"
   },
   {
    "grammar": "rego",
@@ -1074,10 +1080,9 @@
   },
   {
    "grammar": "requirements",
-   "tier": "IV",
-   "iv_cause": "IV-recovery?",
-   "parity": "8/9",
-   "notes": "ext=requirements.txt; faithful C error-cost version competition (see spec)"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "rescript",
@@ -1102,9 +1107,9 @@
   {
    "grammar": "rst",
    "tier": "IV",
-   "iv_cause": "IV-shape?",
+   "iv_cause": "IV-perf",
    "parity": "1/8",
-   "notes": "ext=.rst; preliminary"
+   "notes": "timeout-or-fail at 1200s canonical budget"
   },
   {
    "grammar": "ruby",
@@ -1132,7 +1137,7 @@
    "tier": "IV",
    "iv_cause": "IV-recovery",
    "parity": "36/40",
-   "notes": "recovery-shape (4.ss/oop.ss/ez-grammar) + 5_3.ss O(N^2) perf-blocker; faithful C error-cost competition + merge-equiv perf fix"
+   "notes": "stage-2 clears 5/6 shape files under GOT_C_RECOVERY=scheme; held out pending s/5_3.ss measurability (>1200s)"
   },
   {
    "grammar": "scss",
@@ -1175,9 +1180,10 @@
   },
   {
    "grammar": "ssh_config",
-   "tier": "III",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "1/2",
+   "notes": "canonical-frame demotion (one-time reset)"
   },
   {
    "grammar": "starlark",
@@ -1241,9 +1247,9 @@
   {
    "grammar": "tlaplus",
    "tier": "IV",
-   "iv_cause": "IV-stackcap?",
+   "iv_cause": "IV-unknown?",
    "parity": "14/40",
-   "notes": "add effectiveFullParseInitialMaxStacks cap entry"
+   "notes": "ext=.tla; stackcap disproven (cap 2: 21\u219220 iteration_limit truncations, parity unchanged); 197x median ratio with deep truncations (go stops at 1-2KB where C parses 11-31KB) \u2014 likely jlist external-scanner-driven GLR churn"
   },
   {
    "grammar": "tmux",
@@ -1284,9 +1290,10 @@
   },
   {
    "grammar": "typescript",
-   "tier": "II",
-   "parity": "clean",
-   "perf_source": "measured"
+   "tier": "IV",
+   "iv_cause": "IV-recovery?",
+   "parity": "38/40",
+   "notes": "canonical-frame demotion (one-time reset)"
   },
   {
    "grammar": "typst",
@@ -1377,10 +1384,9 @@
   },
   {
    "grammar": "zig",
-   "tier": "IV",
-   "iv_cause": "IV-recovery?",
-   "parity": "39/40",
-   "notes": "faithful C error-cost version competition (see spec)"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   }
  ]
 }

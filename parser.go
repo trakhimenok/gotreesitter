@@ -61,7 +61,16 @@ type Parser struct {
 	isScheme             bool
 	schemeDatumSymbol    Symbol
 	schemeHasDatumSymbol bool
-	forceRawSpanAll      bool
+	// errorCostCompetition enables the faithful C error-recovery port
+	// (parser_recover_c.go) for this grammar; see errorCostCompetitionLanguage.
+	errorCostCompetition bool
+	// cNodeMemo caches per-subtree error cost and visible node count for the
+	// gated recovery, keyed on (node pointer, equivVersion) — the engine
+	// analogue of C's SubtreeHeapData.error_cost/visible_descendant_count
+	// computed once in ts_subtree_summarize_children. Cleared at parse start;
+	// nil while the gate is off.
+	cNodeMemo       map[*Node]cNodeMemoEntry
+	forceRawSpanAll bool
 	// leafInternByLang enables canonical leaf interning for this language even
 	// when the global GOT_PARSE_INTERN_LEAVES_SUBSTITUTE flag is off. Limited to
 	// languages whose GLR parses keep hundreds of stacks alive (bash, swift),
@@ -72,6 +81,7 @@ type Parser struct {
 	forceRawSpanTable                   []bool
 	spanExtendingInvisibleSymbols       []bool
 	nonSpanExtendingInvisibleSymbols    []bool
+	aliasPreservedWrapperSymbols        []bool
 	included                            []Range
 	logger                              ParserLogger
 	glrTrace                            bool // verbose GLR stack tracing
@@ -393,8 +403,10 @@ func NewParser(lang *Language) *Parser {
 		p.recoverByState, p.hasRecoverState, p.hasRecoverSymbol = buildRecoverActionsByState(lang)
 		p.hasKeywordState = buildKeywordStates(lang)
 		p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols = buildInvisibleSpanSymbolTables(lang.SymbolNames)
+		p.aliasPreservedWrapperSymbols = buildAliasPreservedWrapperSymbols(lang)
 		p.initTypeScriptContextualKeywordSymbols(lang)
 		p.initSchemeErrorRecoverySymbols(lang)
+		p.errorCostCompetition = errorCostCompetitionLanguage(lang)
 		p.rootSymbol, p.hasRootSymbol = p.inferRootSymbol()
 		p.maxConflictWidth = computeMaxConflictWidth(lang)
 	}
@@ -2256,6 +2268,16 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 	scratch.audit.beginParse()
 	scratch.merge.audit = nil
 	scratch.gss.audit = nil
+	if p.errorCostCompetitionEnabled() {
+		// Faithful C recovery port: arena nodes are pooled across parses, so
+		// stale (pointer, version) memo hits from a previous parse must be
+		// impossible.
+		if p.cNodeMemo == nil {
+			p.cNodeMemo = make(map[*Node]cNodeMemoEntry, 256)
+		} else {
+			clear(p.cNodeMemo)
+		}
+	}
 	trackChildErrors := !deferParentLinks
 
 	arena := acquireNodeArena(arenaClass)
@@ -2622,6 +2644,38 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			if s.dead || s.shifted {
 				continue
 			}
+			// Faithful C recovery port (parser_recover_c.go): an accepted
+			// version has left the version pool (C stashes its tree in
+			// finished_tree and removes the version); it must not dispatch
+			// again while other versions finish competing. Outside the gated
+			// recovery, accepted stacks never survive an iteration (the loop
+			// tail finalizes immediately), so this is unreachable there.
+			if s.accepted {
+				continue
+			}
+			// Faithful C recovery port (parser_recover_c.go): paused stacks
+			// (C StackStatusPaused) wait for the condense step after this
+			// dispatch pass to be resumed or removed.
+			if s.cPaused {
+				continue
+			}
+			// Faithful C recovery port (parser_recover_c.go): a stack already
+			// in the C error state dispatches through ts_parser__recover
+			// instead of the parse table, except for shiftable tokens.
+			if s.cRec != nil && p.errorCostCompetitionEnabled() {
+				outcome, redispatch := p.cRecoverDispatchInError(&stacks, si, tok, &nodeCount, arena, &scratch.entries, &scratch.gss, &trackChildErrors)
+				s = &stacks[si]
+				if redispatch {
+					anyReduced = true
+				}
+				switch outcome {
+				case cRecConsumed:
+					continue
+				case cRecHalted:
+					s.dead = true
+					continue
+				}
+			}
 			currentState := s.top().state
 		retryAction:
 			actionStart := time.Time{}
@@ -2677,6 +2731,18 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 					return ns
 				}
 				sameState := parseStacksShareState(stacks, currentState)
+				if tok.Symbol == errorSymbol && tok.StartByte != tok.EndByte && p.errorCostCompetitionEnabled() {
+					// Faithful C recovery port: an unlexable-run lookahead has
+					// no table actions in C either; the version pauses and the
+					// condense step decides (ts_parser__handle_error skips the
+					// strategy-1 scan for error lookaheads and absorbs it).
+					s.cPaused = true
+					if actionTiming != nil {
+						ns := recordNoActionTiming()
+						actionTiming.actionNoActionErrorNanos += ns
+					}
+					continue
+				}
 				if tok.Symbol == errorSymbol && tok.StartByte != tok.EndByte && !p.isScheme {
 					// Unlexable-run lookahead (mirrors C skipped-error lexing):
 					// absorb it into this stack as an extra ERROR leaf the way
@@ -2712,6 +2778,17 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 						needToken = true
 						if actionTiming != nil {
 							recordNoActionTiming()
+						}
+						continue
+					}
+					if p.errorCostCompetitionEnabled() {
+						// Faithful C recovery port: EOF with no action pauses;
+						// the condense step resumes via ts_parser__handle_error
+						// whose recover_eof wraps the stack in an ERROR root.
+						s.cPaused = true
+						if actionTiming != nil {
+							ns := recordNoActionTiming()
+							actionTiming.actionNoActionErrorNanos += ns
 						}
 						continue
 					}
@@ -2768,6 +2845,20 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 						}
 						goto retryAction
 					}
+				}
+				if p.errorCostCompetitionEnabled() {
+					// Faithful C recovery port: no action for the lookahead —
+					// pause the version (C detect_error / ts_stack_pause) and
+					// let the post-pass condense step resume or remove it.
+					if p.glrTrace {
+						fmt.Printf("  stack[%d] C-PAUSED: no action for sym=%d in state=%d\n", si, tok.Symbol, currentState)
+					}
+					s.cPaused = true
+					if actionTiming != nil {
+						ns := recordNoActionTiming()
+						actionTiming.actionNoActionErrorNanos += ns
+					}
+					continue
 				}
 				if len(stacks) > 1 {
 					if p.glrTrace {
@@ -3099,6 +3190,19 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			}
 		}
 
+		// Faithful C recovery port: ts_parser__condense_stack runs after each
+		// completed dispatch pass — prune versions by error cost, resume the
+		// best paused version (ts_parser__handle_error), remove the rest.
+		// Only touches passes where some stack is paused or absorbing, so
+		// clean parses are unaffected.
+		if p.errorCostCompetitionEnabled() && !anyReduced {
+			var resumed bool
+			stacks, resumed = p.cCondenseAndResume(stacks, tok, &nodeCount, arena, &scratch.entries, &scratch.gss, &trackChildErrors)
+			if resumed {
+				anyReduced = true
+			}
+		}
+
 		// After processing all stacks: determine whether to advance the
 		// token. If any stack reduced, reuse the same token (the reducing
 		// stacks have new top states and need to re-check the action for
@@ -3138,8 +3242,31 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			lastReduceDepth = -1
 			consecutiveReduces = 0
 		}
-		if accepted := compactAcceptedStacks(stacks); len(accepted) > 0 {
-			return finalize(accepted, ParseStopAccepted)
+		acceptedCount, liveUnaccepted := 0, 0
+		for i := range stacks {
+			if stacks[i].accepted {
+				acceptedCount++
+			} else if !stacks[i].dead {
+				liveUnaccepted++
+			}
+		}
+		if acceptedCount > 0 {
+			// Faithful C recovery port: C keeps parsing the remaining
+			// versions after one accepts (the accepted tree is stashed and
+			// competes in ts_parser__select_tree); finalize only when every
+			// version has accepted or halted. Without the gate, finalize on
+			// the first accept exactly as before.
+			if !p.errorCostCompetitionEnabled() || liveUnaccepted == 0 {
+				accepted := compactAcceptedStacks(stacks)
+				if p.errorCostCompetitionEnabled() {
+					// Faithful C recovery port: ts_parser__accept rebuilds the
+					// root around trailing extras before the tree competes.
+					for i := range accepted {
+						p.cAcceptRootRebuild(&accepted[i], arena, &scratch.entries, &scratch.gss)
+					}
+				}
+				return finalize(accepted, ParseStopAccepted)
+			}
 		}
 	}
 
@@ -3679,7 +3806,30 @@ func (p *Parser) updateParserStateTokenSource(ts TokenSource, stacks []glrStack,
 	if !ok || len(stacks) == 0 {
 		return
 	}
-	stateful.SetParserState(stacks[0].top().state)
+	// Faithful C recovery port (parser_recover_c.go): C versions each lex
+	// with their own state's mode, so the merged error version's ERROR_STATE
+	// mode — where every token, external tokens included, is valid — never
+	// leaks into another version's lexing. This engine lexes once for all
+	// stacks; keep absorbing stacks (head at the C error state) out of the
+	// primary-state choice and the GLR lex union while any normally-parsing
+	// stack is live. When only absorbing stacks remain, ERROR_STATE drives
+	// the lex exactly like C's error-mode lexing.
+	excludeAbsorbing := false
+	primary := stacks[0].top().state
+	if p.errorCostCompetitionEnabled() {
+		for si := range stacks {
+			if stacks[si].dead {
+				continue
+			}
+			if stacks[si].cRec != nil && stacks[si].top().state == cErrorState {
+				continue
+			}
+			primary = stacks[si].top().state
+			excludeAbsorbing = true
+			break
+		}
+	}
+	stateful.SetParserState(primary)
 	if len(stacks) == 1 || p.usesPrimaryExternalScannerStateForGLR() {
 		clearGLRStateTokenSource(stateful, scratch)
 		return
@@ -3689,9 +3839,13 @@ func (p *Parser) updateParserStateTokenSource(ts TokenSource, stacks []glrStack,
 		glrBuf = make([]StateID, 0, len(stacks))
 	}
 	for si := range stacks {
-		if !stacks[si].dead {
-			glrBuf = append(glrBuf, stacks[si].top().state)
+		if stacks[si].dead {
+			continue
 		}
+		if excludeAbsorbing && stacks[si].cRec != nil && stacks[si].top().state == cErrorState {
+			continue
+		}
+		glrBuf = append(glrBuf, stacks[si].top().state)
 	}
 	scratch.glrStates = glrBuf
 	stateful.SetGLRStates(glrBuf)

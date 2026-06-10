@@ -166,7 +166,7 @@ func retryStopRank(rt ParseRuntime) int {
 	}
 }
 
-func preferRetryTree(candidate, incumbent *Tree) bool {
+func preferRetryTree(p *Parser, candidate, incumbent *Tree) bool {
 	if candidate == nil {
 		return false
 	}
@@ -196,6 +196,17 @@ func preferRetryTree(candidate, incumbent *Tree) bool {
 	incErr := retryTreeHasError(incumbent)
 	if candErr != incErr {
 		return !candErr
+	}
+	if p != nil && p.errorCostCompetitionEnabled() {
+		// Faithful C recovery port (recovery-cost-competition.md issue 4):
+		// the retry full-parse must not replace a first-pass tree the C
+		// error-cost competition already prefers. C selects trees by
+		// ts_subtree_error_cost; with the gate on, a retry tree wins only
+		// when it is strictly cheaper. The remaining engine heuristics
+		// (notably "fewer root children") break exact cost ties only.
+		if cc, ic := p.cTreeErrorCost(candidate), p.cTreeErrorCost(incumbent); cc != ic {
+			return cc < ic
+		}
 	}
 	candStop := retryStopRank(candRT)
 	incStop := retryStopRank(incRT)
@@ -479,11 +490,14 @@ func effectiveParseMergePerKeyCap(lang *Language, mergePerKeyCap int, incrementa
 		}
 	case "lua":
 		// Lua's string/call-heavy recovery can keep redundant alternatives
-		// alive even on small files. One full-parse survivor bounds the GLR
-		// surface and brings full parses into the C-tier range; remaining
-		// string no-tree cost is handled separately.
-		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 1 {
-			return 1
+		// alive even on small files, so the cap stays below the default. It
+		// cannot drop to 1: the table-constructor field list (field
+		// (sep field)* sep?) needs two same-key survivors at each separator
+		// or the trailing-separator branch is pruned and a clean parse
+		// degrades into recovery (`t = { a = 1, b = 2, c = 3, }` grew a
+		// zero-width MISSING field with cap=1 under the DFA lexer path).
+		if !parseMaxMergePerKeyEnvConfigured() && mergePerKeyCap > 2 {
+			return 2
 		}
 	case "ruby":
 		// Ruby still needs a wider stack budget for some real-world files, but
@@ -768,7 +782,7 @@ func (p *Parser) retryFullParse(source []byte, initialMaxStacks int, tree *Tree,
 		if candidate == nil {
 			return
 		}
-		if preferRetryTree(candidate, *best) {
+		if preferRetryTree(p, candidate, *best) {
 			if *best != candidate {
 				release(*best)
 			}
@@ -844,7 +858,7 @@ func (p *Parser) retryFullParse(source []byte, initialMaxStacks int, tree *Tree,
 			// Fold the primary retry into bestTree before we overwrite
 			// nodeRetryTree, so the loser's arena is returned.
 			if retryTree != nil {
-				if preferRetryTree(retryTree, bestTree) {
+				if preferRetryTree(p, retryTree, bestTree) {
 					if bestTree != retryTree {
 						release(bestTree)
 					}

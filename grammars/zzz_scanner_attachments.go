@@ -55,6 +55,7 @@ func init() {
 		"beancount":       BeancountExternalScanner{},
 		"dtd":             DtdExternalScanner{},
 		"nix":             NixExternalScanner{},
+		"lua":             LuaExternalScanner{},
 		"luau":            LuauExternalScanner{},
 		"liquid":          LiquidExternalScanner{},
 		"wolfram":         WolframExternalScanner{},
@@ -92,6 +93,7 @@ func init() {
 		"pkl":             PklExternalScanner{},
 		"c_sharp":         CSharpExternalScanner{},
 		"mojo":            MojoExternalScanner{},
+		"move":            MoveExternalScanner{},
 		"blade":           BladeExternalScanner{},
 		"angular":         AngularExternalScanner{},
 		"vue":             VueExternalScanner{},
@@ -137,6 +139,8 @@ func init() {
 	externalLexStates := map[string][][]bool{
 		// Bash: generated from tree-sitter-bash ts_external_scanner_states.
 		"bash": bashExternalLexStates,
+		// Lua: generated from tree-sitter-lua ts_external_scanner_states.
+		"lua": luaExternalLexStates,
 		// SCSS: 6 external lex states, 4 external tokens
 		// [0]=_descendant_operator [1]=_pseudo_class_selector_colon
 		// [2]=__error_recovery [3]=_concat

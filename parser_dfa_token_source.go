@@ -109,6 +109,7 @@ func setLexerErrorRunLexState(l *Lexer, language *Language) {
 	}
 	l.errorRunLexState = 0
 	l.hasErrorRunLexState = false
+	l.errorModeRetry = false
 	if language == nil || len(language.LexModes) == 0 {
 		return
 	}
@@ -120,10 +121,19 @@ func setLexerErrorRunLexState(l *Lexer, language *Language) {
 	// skipping), and some DFA-only grammars (e.g. go) recover divergently
 	// from C when fed mid-parse error tokens. diff/elisp/jq are verified
 	// byte-faithful on the real corpus.
+	errorModeRetry := false
 	switch language.Name {
 	case "diff", "elisp", "jq":
 	default:
-		return
+		// Faithful C error-recovery port (parser_recover_c.go): gated
+		// grammars get C's complete ts_parser__lex failure behavior —
+		// error-mode retry first (returning real, often invisible tokens
+		// that the recovery absorbs as hidden error-region leaves), then
+		// skipped-run errorSymbol tokens when even LexModes[0] fails.
+		if !errorCostCompetitionLanguage(language) {
+			return
+		}
+		errorModeRetry = true
 	}
 	ls := language.LexModes[0].LexStateIndex()
 	if ls == noLookaheadLexState {
@@ -131,6 +141,7 @@ func setLexerErrorRunLexState(l *Lexer, language *Language) {
 	}
 	l.errorRunLexState = ls
 	l.hasErrorRunLexState = true
+	l.errorModeRetry = errorModeRetry
 }
 
 func initDFATokenSource(ts *dfaTokenSource, lexer *Lexer, language *Language, lookupActionIndex func(state StateID, sym Symbol) uint16, hasKeywordState []bool, externalValidByState [][]uint16) {
@@ -814,7 +825,11 @@ func (d *dfaTokenSource) scanDFATokenForState(state StateID, lexState uint32) (T
 
 	d.state = state
 	tok := d.nextTokenForLexState(lexState)
-	if d.isScheme {
+	if d.isScheme && !d.lexer.errorModeRetry {
+		// With the faithful C recovery port gated on, the lexer's error-mode
+		// retry replaces scheme's dedicated run heuristic: failed lexes
+		// surface real error-mode tokens (or errorSymbol runs) exactly like
+		// C, and re-deriving a wider run here would mask them.
 		if errTok, ok := d.schemeErrorRunToken(savedPos, savedRow, savedCol, tok); ok {
 			d.lexer.pos = savedPos
 			d.lexer.row = savedRow

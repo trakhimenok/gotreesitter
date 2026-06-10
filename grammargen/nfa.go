@@ -340,7 +340,16 @@ func (b *nfaBuilder) buildFromRegexNode(node *regexNode) (nfaFragment, error) {
 		}
 		// Build optional copies up to max
 		if maxCount < 0 {
-			// {n,} = unbounded: add a star after the required copies
+			// {n,} — mirror the C CLI's expand_tokens.rs repetition arms:
+			// (0, None) and (1, None) hit the dedicated star/plus arms, but
+			// (min>=2, None) builds its zero_or_more tail without ever wiring
+			// the min-count chain into the loop, so the loop is unreachable
+			// and the token lexes as exactly {min}. The C oracle's observed
+			// behavior is the parity spec, so truncate {n,} (n >= 2) to {n}.
+			if minCount >= 2 {
+				return cur, nil
+			}
+			// {0,} and {1,} keep true star/plus semantics.
 			star, err := b.buildFromRegexNode(node.children[0])
 			if err != nil {
 				return nfaFragment{}, err

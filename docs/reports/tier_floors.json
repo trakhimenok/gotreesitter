@@ -12,28 +12,28 @@
     "tier": "IV"
   },
   "arduino": {
-    "tier": "IV"
+    "tier": "II"
   },
   "asm": {
     "tier": "IV"
   },
   "astro": {
-    "tier": "IV"
+    "tier": "I"
   },
   "authzed": {
     "tier": "IV"
   },
   "awk": {
-    "tier": "I"
+    "tier": "IV"
   },
   "bash": {
-    "tier": "II"
+    "tier": "IV"
   },
   "bass": {
-    "tier": "IV"
+    "tier": "II"
   },
   "beancount": {
-    "tier": "IV"
+    "tier": "II"
   },
   "bibtex": {
     "tier": "IV"
@@ -48,13 +48,13 @@
     "tier": "IV"
   },
   "brightscript": {
-    "tier": "I"
+    "tier": "IV"
   },
   "c": {
-    "tier": "I"
+    "tier": "IV"
   },
   "c_sharp": {
-    "tier": "II"
+    "tier": "IV"
   },
   "caddy": {
     "tier": "IV"
@@ -63,7 +63,7 @@
     "tier": "IV"
   },
   "capnp": {
-    "tier": "IV"
+    "tier": "II"
   },
   "chatito": {
     "tier": "IV"
@@ -75,7 +75,7 @@
     "tier": "I"
   },
   "cmake": {
-    "tier": "IV"
+    "tier": "II"
   },
   "cobol": {
     "tier": "IV"
@@ -96,7 +96,7 @@
     "tier": "IV"
   },
   "cpp": {
-    "tier": "III"
+    "tier": "IV"
   },
   "crystal": {
     "tier": "IV"
@@ -105,10 +105,10 @@
     "tier": "I"
   },
   "csv": {
-    "tier": "IV"
+    "tier": "I"
   },
   "cuda": {
-    "tier": "II"
+    "tier": "IV"
   },
   "cue": {
     "tier": "IV"
@@ -123,19 +123,19 @@
     "tier": "IV"
   },
   "desktop": {
-    "tier": "IV"
+    "tier": "III"
   },
   "devicetree": {
-    "tier": "IV"
+    "tier": "II"
   },
   "dhall": {
-    "tier": "I"
-  },
-  "diff": {
     "tier": "IV"
   },
+  "diff": {
+    "tier": "III"
+  },
   "disassembly": {
-    "tier": "I"
+    "tier": "IV"
   },
   "djot": {
     "tier": "IV"
@@ -159,19 +159,19 @@
     "tier": "IV"
   },
   "editorconfig": {
-    "tier": "IV"
+    "tier": "II"
   },
   "eds": {
     "tier": "IV"
   },
   "eex": {
-    "tier": "IV"
+    "tier": "III"
   },
   "elisp": {
-    "tier": "IV"
+    "tier": "I"
   },
   "elixir": {
-    "tier": "II"
+    "tier": "IV"
   },
   "elm": {
     "tier": "IV"
@@ -180,19 +180,19 @@
     "tier": "IV"
   },
   "embedded_template": {
-    "tier": "IV"
+    "tier": "III"
   },
   "enforce": {
     "tier": "IV"
   },
   "erlang": {
-    "tier": "I"
+    "tier": "IV"
   },
   "facility": {
     "tier": "IV"
   },
   "faust": {
-    "tier": "IV"
+    "tier": "I"
   },
   "fennel": {
     "tier": "IV"
@@ -204,37 +204,37 @@
     "tier": "IV"
   },
   "fish": {
-    "tier": "IV"
+    "tier": "I"
   },
   "foam": {
-    "tier": "IV"
+    "tier": "II"
   },
   "forth": {
     "tier": "IV"
   },
   "fortran": {
-    "tier": "IV"
+    "tier": "II"
   },
   "fsharp": {
     "tier": "IV"
   },
   "gdscript": {
-    "tier": "I"
+    "tier": "IV"
   },
   "git_config": {
-    "tier": "IV"
+    "tier": "II"
   },
   "git_rebase": {
-    "tier": "IV"
+    "tier": "II"
   },
   "gitattributes": {
     "tier": "II"
   },
   "gitcommit": {
-    "tier": "IV"
+    "tier": "I"
   },
   "gitignore": {
-    "tier": "IV"
+    "tier": "II"
   },
   "gleam": {
     "tier": "I"
@@ -243,43 +243,43 @@
     "tier": "IV"
   },
   "gn": {
-    "tier": "IV"
+    "tier": "II"
   },
   "go": {
     "tier": "IV"
   },
   "godot_resource": {
-    "tier": "IV"
+    "tier": "II"
   },
   "gomod": {
-    "tier": "IV"
+    "tier": "III"
   },
   "graphql": {
     "tier": "IV"
   },
   "groovy": {
-    "tier": "I"
+    "tier": "IV"
   },
   "hack": {
-    "tier": "IV"
+    "tier": "II"
   },
   "hare": {
     "tier": "IV"
   },
   "haskell": {
-    "tier": "II"
+    "tier": "IV"
   },
   "haxe": {
     "tier": "IV"
   },
   "hcl": {
-    "tier": "IV"
+    "tier": "I"
   },
   "heex": {
-    "tier": "IV"
+    "tier": "II"
   },
   "hlsl": {
-    "tier": "II"
+    "tier": "IV"
   },
   "html": {
     "tier": "IV"
@@ -297,34 +297,34 @@
     "tier": "IV"
   },
   "janet": {
-    "tier": "IV"
+    "tier": "II"
   },
   "java": {
-    "tier": "I"
+    "tier": "IV"
   },
   "javascript": {
-    "tier": "IV"
-  },
-  "jinja2": {
     "tier": "I"
   },
-  "jq": {
+  "jinja2": {
     "tier": "IV"
+  },
+  "jq": {
+    "tier": "II"
   },
   "jsdoc": {
-    "tier": "IV"
+    "tier": "II"
   },
   "json": {
-    "tier": "IV"
+    "tier": "II"
   },
   "json5": {
     "tier": "II"
   },
   "jsonnet": {
-    "tier": "I"
+    "tier": "IV"
   },
   "julia": {
-    "tier": "II"
+    "tier": "IV"
   },
   "just": {
     "tier": "IV"
@@ -345,7 +345,7 @@
     "tier": "IV"
   },
   "linkerscript": {
-    "tier": "I"
+    "tier": "IV"
   },
   "liquid": {
     "tier": "IV"
@@ -357,7 +357,7 @@
     "tier": "I"
   },
   "luau": {
-    "tier": "I"
+    "tier": "IV"
   },
   "make": {
     "tier": "IV"
@@ -372,25 +372,25 @@
     "tier": "IV"
   },
   "mermaid": {
-    "tier": "I"
+    "tier": "IV"
   },
   "meson": {
     "tier": "IV"
   },
   "mojo": {
-    "tier": "I"
+    "tier": "IV"
   },
   "move": {
-    "tier": "I"
+    "tier": "IV"
   },
   "nginx": {
-    "tier": "IV"
+    "tier": "III"
   },
   "nickel": {
     "tier": "I"
   },
   "nim": {
-    "tier": "III"
+    "tier": "IV"
   },
   "ninja": {
     "tier": "IV"
@@ -405,7 +405,7 @@
     "tier": "IV"
   },
   "objc": {
-    "tier": "II"
+    "tier": "IV"
   },
   "ocaml": {
     "tier": "II"
@@ -417,37 +417,37 @@
     "tier": "IV"
   },
   "pascal": {
-    "tier": "I"
+    "tier": "IV"
   },
   "pem": {
-    "tier": "IV"
+    "tier": "II"
   },
   "perl": {
     "tier": "IV"
   },
   "php": {
-    "tier": "IV"
+    "tier": "I"
   },
   "pkl": {
-    "tier": "I"
+    "tier": "IV"
   },
   "powershell": {
-    "tier": "I"
+    "tier": "IV"
   },
   "prisma": {
     "tier": "I"
   },
   "prolog": {
-    "tier": "I"
+    "tier": "IV"
   },
   "promql": {
     "tier": "IV"
   },
   "properties": {
-    "tier": "IV"
+    "tier": "III"
   },
   "proto": {
-    "tier": "I"
+    "tier": "IV"
   },
   "pug": {
     "tier": "IV"
@@ -456,10 +456,10 @@
     "tier": "I"
   },
   "purescript": {
-    "tier": "II"
+    "tier": "IV"
   },
   "python": {
-    "tier": "IV"
+    "tier": "II"
   },
   "ql": {
     "tier": "IV"
@@ -468,7 +468,7 @@
     "tier": "IV"
   },
   "racket": {
-    "tier": "IV"
+    "tier": "I"
   },
   "regex": {
     "tier": "IV"
@@ -477,22 +477,22 @@
     "tier": "IV"
   },
   "requirements": {
-    "tier": "IV"
+    "tier": "II"
   },
   "rescript": {
-    "tier": "I"
+    "tier": "IV"
   },
   "robot": {
-    "tier": "I"
+    "tier": "IV"
   },
   "ron": {
-    "tier": "IV"
+    "tier": "II"
   },
   "rst": {
     "tier": "IV"
   },
   "ruby": {
-    "tier": "II"
+    "tier": "IV"
   },
   "rust": {
     "tier": "IV"
@@ -513,10 +513,10 @@
     "tier": "IV"
   },
   "sparql": {
-    "tier": "IV"
+    "tier": "II"
   },
   "sql": {
-    "tier": "III"
+    "tier": "IV"
   },
   "squirrel": {
     "tier": "I"
@@ -534,7 +534,7 @@
     "tier": "IV"
   },
   "tablegen": {
-    "tier": "IV"
+    "tier": "II"
   },
   "tcl": {
     "tier": "IV"
@@ -546,10 +546,10 @@
     "tier": "IV"
   },
   "textproto": {
-    "tier": "IV"
+    "tier": "II"
   },
   "thrift": {
-    "tier": "IV"
+    "tier": "I"
   },
   "tlaplus": {
     "tier": "IV"
@@ -558,19 +558,19 @@
     "tier": "IV"
   },
   "todotxt": {
-    "tier": "IV"
+    "tier": "II"
   },
   "toml": {
-    "tier": "IV"
+    "tier": "II"
   },
   "tsx": {
-    "tier": "IV"
+    "tier": "I"
   },
   "turtle": {
-    "tier": "IV"
+    "tier": "I"
   },
   "twig": {
-    "tier": "IV"
+    "tier": "II"
   },
   "typescript": {
     "tier": "IV"
@@ -582,22 +582,22 @@
     "tier": "IV"
   },
   "v": {
-    "tier": "II"
+    "tier": "IV"
   },
   "verilog": {
     "tier": "IV"
   },
   "vhdl": {
-    "tier": "I"
+    "tier": "IV"
   },
   "vimdoc": {
     "tier": "IV"
   },
   "vue": {
-    "tier": "IV"
+    "tier": "II"
   },
   "wat": {
-    "tier": "I"
+    "tier": "IV"
   },
   "wgsl": {
     "tier": "IV"
@@ -606,7 +606,7 @@
     "tier": "IV"
   },
   "xml": {
-    "tier": "IV"
+    "tier": "I"
   },
   "yaml": {
     "tier": "I"
