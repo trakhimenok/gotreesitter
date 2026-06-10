@@ -72,6 +72,44 @@ no-regressions rule it was backed out of the shipped engine.
    each verified to net-improve its full corpus with zero clean-grammar
    regressions (full ratchet sweep, all non-timing fields).
 
+## Minimal reproducer: why "force-reduce-before-wrap" is the crux
+
+The simplest recovery-shape failure is `requirements` on
+`pkg ; python_version >= '3.13'  # note` (a trailing comment after an
+environment marker — unparseable in BOTH parsers). The C oracle produces:
+
+```
+file
+  requirement [0:33]   "pkg ; python_version >= '3.13'"
+  ERROR [33:38]         "  # note"
+```
+
+Go shatters the line: `pkg` → ERROR, the whole line fragments, root → ERROR.
+
+Two narrow fixes were tried and REVERTED because they did not clear it:
+- Adding `requirements` to `resyncTopLevelLanguage` + a `file` root-label
+  carve-out in `resultRootBuild.syntheticRootSymbol` fixed the ROOT label and
+  preserved *most* structure, but Go still wrapped `requirement[0:33]` inside
+  an `ERROR[0:35]` instead of keeping it whole.
+
+Root cause, precisely: at the no-action point the `requirement` production is
+**in progress on the stack, not yet reduced**. The resync preservation loop
+keeps *completed* top-level siblings (those with a GOTO that reaches an
+end-accepting state) — it cannot preserve a partial one. The comment
+lookahead has NO action, so no reduce fires to complete the requirement.
+
+C completes it via `ts_parser__do_all_potential_reductions`, which applies
+reduces reachable on ANY symbol (including the end symbol) to close
+in-progress productions BEFORE wrapping the error. **This force-reduce step is
+the missing primitive** — it is what both the resync path and the absorbing
+cost-competition version need, and it is why no simple tweak clears the
+recovery bucket. Implement `forceReduceTowardCompletion(stack)` (apply
+available reduces for the end symbol until none remain, completing
+`requirement` / `function_definition` / `_sexp` / etc.), then preserve the
+now-complete sibling and wrap only the genuinely-failed suffix. Validate it on
+`requirements` (cleanest), then `c`/`jq` (already on resync — must not
+regress), then widen.
+
 ## The lexer half (already shipped, keep)
 
 The skipped-error lexing (`Lexer.NextWithErrorRuns` + `errorRunToken` +
