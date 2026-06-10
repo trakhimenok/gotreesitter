@@ -20,6 +20,7 @@ PIDS_LIMIT="4096"
 PARITY_RUN='^TestParityFreshParse$|^TestParityIncrementalParse$|^TestParityHasNoErrors$|^TestParityIssue3Repros$|^TestParityGLRCanaryGo$|^TestParityGLRCanarySet$|^TestParityGLRCapPressureTopLanguages$|^TestParityHighlight$'
 STRICT_SCALA=0
 BUILD_IMAGE=1
+EXTRA_MOUNTS=()
 
 # Ring-matrix scope: the top-50 value languages by default. The parser must
 # match tree-sitter C across this set for any parser-core change to merge.
@@ -47,6 +48,8 @@ Options:
   --run <regex>          go test -run regex for default parity command
   --strict-scala         Also run strict Scala real-world parity probe
   --no-build             Skip docker build step
+  --mount <src:dst[:ro]> Add an extra bind mount. Use this for external
+                         corpus workspaces needed by custom commands.
   -h, --help             Show this help
 
 Ring-matrix scope (GTS_PARITY_MODE, default: top50):
@@ -118,6 +121,10 @@ while [[ $# -gt 0 ]]; do
     --no-build)
       BUILD_IMAGE=0
       shift
+      ;;
+    --mount)
+      EXTRA_MOUNTS+=("$2")
+      shift 2
       ;;
     -h|--help)
       usage
@@ -206,6 +213,35 @@ if [[ -n "$CPUSET_CPUS" ]]; then
   CPUSET_ARGS+=(--cpuset-cpus "$CPUSET_CPUS")
 fi
 
+EXTRA_MOUNT_ARGS=()
+for spec in "${EXTRA_MOUNTS[@]}"; do
+  IFS=':' read -r mount_src mount_dst mount_mode extra <<< "$spec"
+  if [[ -z "${mount_src:-}" || -z "${mount_dst:-}" || -n "${extra:-}" ]]; then
+    echo "invalid --mount spec: $spec" >&2
+    exit 2
+  fi
+  if [[ ! -e "$mount_src" ]]; then
+    echo "mount source does not exist: $mount_src" >&2
+    exit 2
+  fi
+  if [[ -d "$mount_src" ]]; then
+    mount_src="$(cd "$mount_src" && pwd -P)"
+  else
+    mount_dir="$(cd "$(dirname "$mount_src")" && pwd -P)"
+    mount_src="$mount_dir/$(basename "$mount_src")"
+  fi
+  mount_arg="type=bind,src=$mount_src,dst=$mount_dst"
+  case "${mount_mode:-rw}" in
+    ro|readonly) mount_arg="$mount_arg,readonly" ;;
+    rw|"") ;;
+    *)
+      echo "invalid --mount mode in $spec" >&2
+      exit 2
+      ;;
+  esac
+  EXTRA_MOUNT_ARGS+=(--mount "$mount_arg")
+done
+
 CID="$(docker create \
   --name "$CONTAINER_NAME" \
   --init \
@@ -215,6 +251,7 @@ CID="$(docker create \
   "${CPUSET_ARGS[@]}" \
   --pids-limit "$PIDS_LIMIT" \
   --mount "type=bind,src=$REPO_ROOT,dst=/workspace" \
+  "${EXTRA_MOUNT_ARGS[@]}" \
   --mount "type=volume,src=gotreesitter-go-mod-cache,dst=/go/pkg/mod" \
   --mount "type=volume,src=gotreesitter-go-build-cache,dst=/root/.cache/go-build" \
   "${ENV_ARGS[@]}" \
@@ -242,6 +279,9 @@ STATE_ERROR="$(docker inspect -f '{{.State.Error}}' "$CID")"
   echo "oom_killed=$OOM_KILLED"
   echo "state_error=$STATE_ERROR"
   echo "repo_root=$REPO_ROOT"
+  if [[ ${#EXTRA_MOUNTS[@]} -gt 0 ]]; then
+    printf 'extra_mounts=%s\n' "$(IFS=,; echo "${EXTRA_MOUNTS[*]}")"
+  fi
   echo "out_root=$OUT_ROOT"
   echo "label=$LABEL_SLUG"
   echo "command=$INNER_CMD"

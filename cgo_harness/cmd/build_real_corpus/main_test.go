@@ -338,16 +338,29 @@ func TestCandidateMatchersForLanguageInfersKnownExtensionsAndNames(t *testing.T)
 		wantExts  []string
 		wantNames []string
 	}{
+		{lang: "bibtex", wantExts: []string{".bib"}},
+		{lang: "bicep", wantExts: []string{".bicep"}},
+		{lang: "blade", wantExts: []string{".blade.php"}},
+		{lang: "capnp", wantExts: []string{".capnp"}},
 		{lang: "dart", wantExts: []string{".dart"}},
+		{lang: "dockerfile", wantExts: []string{".dockerfile"}, wantNames: []string{"dockerfile", "containerfile", "1", "9"}},
+		{lang: "earthfile", wantExts: []string{".earth"}, wantNames: []string{"earthfile"}},
 		{lang: "erlang", wantExts: []string{".erl", ".hrl"}},
+		{lang: "git_rebase", wantExts: []string{".git-rebase-todo"}, wantNames: []string{"git-rebase-todo", "rebase-todo"}},
 		{lang: "gomod", wantNames: []string{"go.mod"}},
 		{lang: "cmake", wantExts: []string{".cmake"}, wantNames: []string{"cmakelists.txt"}},
 		{lang: "make", wantExts: []string{".mk"}, wantNames: []string{"makefile"}},
 		{lang: "markdown", wantExts: []string{".md"}, wantNames: []string{"readme.md"}},
+		{lang: "meson", wantNames: []string{"meson.build", "meson_options.txt"}},
+		{lang: "nginx", wantExts: []string{".nginx"}, wantNames: []string{"nginx.conf", "conf.nginx"}},
+		{lang: "requirements", wantNames: []string{"requirements.txt"}},
+		{lang: "ssh_config", wantNames: []string{"ssh_config", "sshd_config", "known_hosts", "authorized_keys"}},
+		{lang: "tmux", wantNames: []string{"tmux.conf", ".tmux.conf"}},
+		{lang: "todotxt", wantNames: []string{"todo.txt"}},
 	}
 
 	for _, tc := range tests {
-		gotExts, gotNames := candidateMatchersForLanguage(tc.lang, nil)
+		gotExts, gotNames, _ := candidateMatchersForLanguage(tc.lang, nil)
 		for _, want := range tc.wantExts {
 			if !containsString(gotExts, want) {
 				t.Fatalf("%s ext matchers missing %q: %#v", tc.lang, want, gotExts)
@@ -358,6 +371,78 @@ func TestCandidateMatchersForLanguageInfersKnownExtensionsAndNames(t *testing.T)
 				t.Fatalf("%s name matchers missing %q: %#v", tc.lang, want, gotNames)
 			}
 		}
+	}
+}
+
+func TestCandidateMatchersForLanguageHonorsExplicitLockMatchers(t *testing.T) {
+	gotExts, gotNames, gotPaths := candidateMatchersForLanguage("ssh_config", []string{"ssh_config", ".conf"})
+	if !containsString(gotExts, ".conf") {
+		t.Fatalf("extension matcher missing .conf: %#v", gotExts)
+	}
+	if !containsString(gotNames, "ssh_config") {
+		t.Fatalf("basename matcher missing ssh_config: %#v", gotNames)
+	}
+	for _, unexpected := range []string{"sshd_config", "known_hosts", "authorized_keys"} {
+		if containsString(gotNames, unexpected) {
+			t.Fatalf("explicit lock matchers should not add %q: %#v", unexpected, gotNames)
+		}
+	}
+	if len(gotPaths) != 0 {
+		t.Fatalf("unexpected path matchers: %#v", gotPaths)
+	}
+}
+
+func TestCandidateMatchersForLanguageHonorsExplicitPathMatchers(t *testing.T) {
+	gotExts, gotNames, gotPaths := candidateMatchersForLanguage("ini", []string{"Lib/tomllib/mypy.ini", "Tools\\jit\\mypy.ini", "./root.ini"})
+	if len(gotExts) != 0 {
+		t.Fatalf("expected no extension matchers, got %#v", gotExts)
+	}
+	if len(gotNames) != 0 {
+		t.Fatalf("expected no basename matchers, got %#v", gotNames)
+	}
+	for _, want := range []string{"lib/tomllib/mypy.ini", "tools/jit/mypy.ini", "root.ini"} {
+		if !containsString(gotPaths, want) {
+			t.Fatalf("path matcher missing %q: %#v", want, gotPaths)
+		}
+	}
+}
+
+func TestCollectCandidatesWithPathMatchersSelectsExactRelativePaths(t *testing.T) {
+	tmp := t.TempDir()
+	mustWriteSizedText(t, filepath.Join(tmp, "Lib", "tomllib", "mypy.ini"), 80)
+	mustWriteSizedText(t, filepath.Join(tmp, "Lib", "_pyrepl", "mypy.ini"), 900)
+
+	candidates, err := collectCandidatesWithMatchers(tmp, nil, nil, []string{"Lib/tomllib/mypy.ini"}, defaultMaxBytes, false)
+	if err != nil {
+		t.Fatalf("collectCandidatesWithMatchers: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("expected one exact path candidate, got %#v", candidates)
+	}
+	if got := filepath.ToSlash(candidates[0].RelPath); got != "Lib/tomllib/mypy.ini" {
+		t.Fatalf("unexpected candidate %q: %#v", got, candidates)
+	}
+}
+
+func TestCollectCandidatesMatchesCompoundExtension(t *testing.T) {
+	tmp := t.TempDir()
+	mustWriteSizedText(t, filepath.Join(tmp, "resources", "views", "welcome.blade.php"), 2048)
+	mustWriteSizedText(t, filepath.Join(tmp, "resources", "views", "plain.php"), 2048)
+
+	candidates, err := collectCandidates(tmp, []string{".blade.php"}, defaultMaxBytes, false)
+	if err != nil {
+		t.Fatalf("collectCandidates: %v", err)
+	}
+
+	seen := map[string]bool{}
+	for _, c := range candidates {
+		seen[filepath.ToSlash(c.RelPath)] = true
+	}
+	if !seen["resources/views/welcome.blade.php"] {
+		t.Fatalf("expected blade candidate missing: %#v", candidates)
+	}
+	if seen["resources/views/plain.php"] {
+		t.Fatalf("plain php should not match .blade.php: %#v", candidates)
 	}
 }
 
@@ -373,7 +458,7 @@ func TestCollectCandidatesFromRepoCacheAddsMissingMediumBucket(t *testing.T) {
 	gitRun(t, repo, "-c", "user.email=test@example.com", "-c", "user.name=test", "add", ".")
 	gitRun(t, repo, "-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "-m", "init")
 
-	candidates, err := collectCandidatesFromRepoCache(cacheRoot, primary, []string{".ts"}, nil, defaultMaxBytes, false)
+	candidates, err := collectCandidatesFromRepoCache(cacheRoot, primary, []string{".ts"}, nil, nil, defaultMaxBytes, false)
 	if err != nil {
 		t.Fatalf("collectCandidatesFromRepoCache: %v", err)
 	}
@@ -397,7 +482,7 @@ func TestCollectCandidatesFromPlainRepoCacheDirectoryAddsCandidates(t *testing.T
 	}
 	mustWriteSizedText(t, filepath.Join(repo, "src", "example.ts"), 4096)
 
-	candidates, err := collectCandidatesFromRepoCache(cacheRoot, primary, []string{".ts"}, nil, defaultMaxBytes, false)
+	candidates, err := collectCandidatesFromRepoCache(cacheRoot, primary, []string{".ts"}, nil, nil, defaultMaxBytes, false)
 	if err != nil {
 		t.Fatalf("collectCandidatesFromRepoCache: %v", err)
 	}
@@ -426,7 +511,7 @@ func TestCollectCandidatesFromRepoCacheSkipsPrimaryBasenameDuplicate(t *testing.
 	mustWriteSizedText(t, filepath.Join(dup, "src", "skip.R"), 4096)
 	mustWriteSizedText(t, filepath.Join(other, "src", "keep.R"), 4096)
 
-	candidates, err := collectCandidatesFromRepoCache(cacheRoot, primary, []string{".R", ".r"}, nil, defaultMaxBytes, false)
+	candidates, err := collectCandidatesFromRepoCache(cacheRoot, primary, []string{".R", ".r"}, nil, nil, defaultMaxBytes, false)
 	if err != nil {
 		t.Fatalf("collectCandidatesFromRepoCache: %v", err)
 	}
@@ -435,6 +520,50 @@ func TestCollectCandidatesFromRepoCacheSkipsPrimaryBasenameDuplicate(t *testing.
 	}
 	if got := filepath.ToSlash(candidates[0].RelPath); got != "src/keep.R" {
 		t.Fatalf("RelPath = %q, want %q", got, "src/keep.R")
+	}
+}
+
+func TestCollectLanguageCorpusCandidatesExternalOnlySkipsPrimaryRepo(t *testing.T) {
+	primary := t.TempDir()
+	cacheRoot := t.TempDir()
+	external := filepath.Join(cacheRoot, "json-corpus")
+	if err := os.MkdirAll(filepath.Join(primary, "src"), 0o755); err != nil {
+		t.Fatalf("mkdir primary: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(external, "data"), 0o755); err != nil {
+		t.Fatalf("mkdir external: %v", err)
+	}
+	mustWriteSizedText(t, filepath.Join(primary, "src", "grammar.json"), 4096)
+	mustWriteSizedText(t, filepath.Join(external, "data", "sample.json"), 4096)
+
+	entry := lockEntry{Name: "json", Exts: []string{".json"}}
+	candidates, warnings, err := collectLanguageCorpusCandidates(
+		"json",
+		entry,
+		primary,
+		nil,
+		filepath.Join(t.TempDir(), "work"),
+		cacheRoot,
+		defaultMaxBytes,
+		defaultMediumMin,
+		defaultLargeMin,
+		false,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("collectLanguageCorpusCandidates: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", warnings)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %#v, want one external candidate", candidates)
+	}
+	if got, want := candidates[0].SourceRoot, external; got != want {
+		t.Fatalf("SourceRoot = %q, want %q", got, want)
+	}
+	if got, want := filepath.ToSlash(candidates[0].RelPath), "data/sample.json"; got != want {
+		t.Fatalf("RelPath = %q, want %q", got, want)
 	}
 }
 
@@ -470,6 +599,147 @@ func TestLoadProfileSupportsPinnedSecondarySources(t *testing.T) {
 	}
 }
 
+func TestResolveLanguageListAllUsesSortedLockEntries(t *testing.T) {
+	lockEntries := map[string]lockEntry{
+		"python": {Name: "python"},
+		"go":     {Name: "go"},
+		"rust":   {Name: "rust"},
+	}
+	profilePath, profile, langs, err := resolveLanguageList("", "all", "", lockEntries)
+	if err != nil {
+		t.Fatalf("resolveLanguageList: %v", err)
+	}
+	if profilePath != "" {
+		t.Fatalf("profilePath = %q, want empty", profilePath)
+	}
+	if profile.Name != "all" {
+		t.Fatalf("profile.Name = %q, want all", profile.Name)
+	}
+	want := []string{"go", "python", "rust"}
+	if strings.Join(langs, ",") != strings.Join(want, ",") {
+		t.Fatalf("langs = %#v, want %#v", langs, want)
+	}
+}
+
+func TestResolveLanguageListAllRequiresLockEntries(t *testing.T) {
+	if _, _, _, err := resolveLanguageList("", "all", "", nil); err == nil {
+		t.Fatal("expected error for empty lock entries")
+	}
+}
+
+func TestResolveLanguageListInlineStillDedupes(t *testing.T) {
+	_, profile, langs, err := resolveLanguageList("", "go, python,go", "", nil)
+	if err != nil {
+		t.Fatalf("resolveLanguageList: %v", err)
+	}
+	if profile.Name != "inline" {
+		t.Fatalf("profile.Name = %q, want inline", profile.Name)
+	}
+	want := []string{"go", "python"}
+	if strings.Join(langs, ",") != strings.Join(want, ",") {
+		t.Fatalf("langs = %#v, want %#v", langs, want)
+	}
+}
+
+func TestResolveLanguageListFileParsesGeneratedBatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "langs.txt")
+	mustWriteText(t, path, strings.Join([]string{
+		"# from real_corpus_inventory -select missing-corpus",
+		"go",
+		"python,rust",
+		"  go  # duplicate",
+		"",
+	}, "\n"))
+
+	profilePath, profile, langs, err := resolveLanguageList("", "top50", path, nil)
+	if err != nil {
+		t.Fatalf("resolveLanguageList: %v", err)
+	}
+	if profilePath != "" {
+		t.Fatalf("profilePath = %q, want empty", profilePath)
+	}
+	if profile.Name != "file" {
+		t.Fatalf("profile.Name = %q, want file", profile.Name)
+	}
+	want := []string{"go", "python", "rust"}
+	if strings.Join(langs, ",") != strings.Join(want, ",") {
+		t.Fatalf("langs = %#v, want %#v", langs, want)
+	}
+}
+
+func TestResolveLanguageListFileRejectsAmbiguousSources(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "langs.txt")
+	mustWriteText(t, path, "go\n")
+	if _, _, _, err := resolveLanguageList("profile.json", "top50", path, nil); err == nil {
+		t.Fatal("expected error for profile plus langs-file")
+	}
+	if _, _, _, err := resolveLanguageList("", "go", path, nil); err == nil {
+		t.Fatal("expected error for explicit langs plus langs-file")
+	}
+}
+
+func TestLoadLanguageListFileRequiresLanguages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "langs.txt")
+	mustWriteText(t, path, "# empty\n\n")
+	if _, err := loadLanguageListFile(path); err == nil {
+		t.Fatal("expected error for empty language list")
+	}
+}
+
+func TestMergeExistingCorpusManifestReplacesOnlySelectedLanguages(t *testing.T) {
+	existing := corpusManifest{
+		Languages: []string{"go", "python", "zig", "ini"},
+		Entries: []corpusManifestEntry{
+			{Language: "go", Bucket: "small", SourcePath: "old.go", OutputPath: "corpus/go/old.go"},
+			{Language: "python", Bucket: "small", SourcePath: "keep.py", OutputPath: "corpus/python/keep.py"},
+			{Language: "zig", Bucket: "small", SourcePath: "stale.zig", OutputPath: "corpus/zig/stale.zig"},
+		},
+		Missing: []string{"zig", "ini"},
+	}
+	current := corpusManifest{
+		Languages: []string{"go", "zig"},
+		Entries: []corpusManifestEntry{
+			{Language: "go", Bucket: "large", SourcePath: "new.go", OutputPath: "corpus/go/new.go"},
+		},
+		Missing: []string{"zig"},
+	}
+
+	merged := mergeExistingCorpusManifest(existing, current, []string{"go", "zig"})
+	if got, want := strings.Join(merged.Languages, ","), "go,ini,python,zig"; got != want {
+		t.Fatalf("Languages = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(merged.Missing, ","), "ini,zig"; got != want {
+		t.Fatalf("Missing = %q, want %q", got, want)
+	}
+	if len(merged.Entries) != 2 {
+		t.Fatalf("Entries = %#v, want 2 entries", merged.Entries)
+	}
+	gotByLang := map[string]string{}
+	for _, entry := range merged.Entries {
+		gotByLang[entry.Language] = entry.SourcePath
+	}
+	if gotByLang["python"] != "keep.py" {
+		t.Fatalf("python entry not preserved: %#v", merged.Entries)
+	}
+	if gotByLang["go"] != "new.go" {
+		t.Fatalf("go entry not replaced: %#v", merged.Entries)
+	}
+	if _, ok := gotByLang["zig"]; ok {
+		t.Fatalf("zig stale entry should have been removed: %#v", merged.Entries)
+	}
+}
+
+func TestLoadExistingCorpusManifestMissingFileIsOptional(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	_, ok, err := loadExistingCorpusManifest(path)
+	if err != nil {
+		t.Fatalf("loadExistingCorpusManifest: %v", err)
+	}
+	if ok {
+		t.Fatal("missing manifest should report ok=false")
+	}
+}
+
 func TestCollectCandidatesFromProfileSourcesUsesPinnedRepoAndSubdir(t *testing.T) {
 	cacheRoot := t.TempDir()
 	sourceRepo := t.TempDir()
@@ -484,7 +754,7 @@ func TestCollectCandidatesFromProfileSourcesUsesPinnedRepoAndSubdir(t *testing.T
 		RepoURL:  sourceRepo,
 		Commit:   commit,
 		Subdir:   "pkg",
-	}}, cacheRoot, []string{".clj"}, nil, defaultMaxBytes, false)
+	}}, cacheRoot, []string{".clj"}, nil, nil, defaultMaxBytes, false)
 	if err != nil {
 		t.Fatalf("collectCandidatesFromProfileSources: %v", err)
 	}
@@ -624,6 +894,16 @@ func mustWriteSizedText(t *testing.T, path string, size int) {
 	}
 	buf[size-1] = '\n'
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func mustWriteText(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }

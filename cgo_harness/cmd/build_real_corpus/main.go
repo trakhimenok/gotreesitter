@@ -14,8 +14,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/odvcencio/gotreesitter/grammars"
 )
 
 const (
@@ -85,26 +88,34 @@ func main() {
 		lockPath          string
 		profilePath       string
 		langsRaw          string
+		langsFile         string
 		outDir            string
 		workDir           string
 		repoCachePath     string
 		keepWorkDir       bool
 		includeFixtures   bool
+		mergeExisting     bool
+		externalOnly      bool
 		maxFilesPerBucket int
 		minSmallBytes     int
 		minMediumBytes    int
 		minLargeBytes     int
 		maxBytes          int
+		printLangs        bool
 	)
 
 	flag.StringVar(&lockPath, "lock", "", "path to grammars/languages.lock (auto-detected when empty)")
 	flag.StringVar(&profilePath, "profile", "", "optional profile JSON path (e.g. cgo_harness/testdata/top50_manifest.json)")
-	flag.StringVar(&langsRaw, "langs", "top50", "language list: top50 or comma-separated names")
+	flag.StringVar(&langsRaw, "langs", "top50", "language list: all, top50, or comma-separated names")
+	flag.StringVar(&langsFile, "langs-file", "", "newline-, whitespace-, or comma-separated language list path")
 	flag.StringVar(&outDir, "out", "cgo_harness/corpus_real", "output corpus directory")
 	flag.StringVar(&workDir, "work-dir", "", "temporary clone work directory (default: temp dir)")
 	flag.StringVar(&repoCachePath, "repo-cache", os.Getenv("GTS_PARITY_REPO_CACHE"), "optional root of cached git repos to mine for missing buckets")
 	flag.BoolVar(&keepWorkDir, "keep-work-dir", false, "keep work directory after command exits")
 	flag.BoolVar(&includeFixtures, "include-fixtures", false, "include upstream grammar corpus/tests/fixtures instead of restricting selection to real-world/example-style files")
+	flag.BoolVar(&mergeExisting, "merge-existing", false, "merge with out/manifest.json, replacing only selected languages")
+	flag.BoolVar(&externalOnly, "external-only", false, "select corpus candidates only from profile sources and repo-cache, not the locked grammar repo")
+	flag.BoolVar(&printLangs, "print-langs", false, "print the resolved language list and exit without cloning or writing corpus files")
 	flag.IntVar(&maxFilesPerBucket, "max-files-per-bucket", 1, "max files selected per bucket per language")
 	flag.IntVar(&minSmallBytes, "min-small-bytes", defaultSmallMin, "minimum bytes for small bucket")
 	flag.IntVar(&minMediumBytes, "min-medium-bytes", defaultMediumMin, "minimum bytes for medium bucket")
@@ -128,18 +139,25 @@ func main() {
 		fatalf("parse lock: %v", err)
 	}
 
-	resolvedProfilePath, profile, languages, err := resolveLanguageList(profilePath, langsRaw)
+	resolvedProfilePath, profile, languages, err := resolveLanguageList(profilePath, langsRaw, langsFile, lockEntries)
 	if err != nil {
 		fatalf("resolve languages: %v", err)
 	}
 	if len(languages) == 0 {
 		fatalf("no languages selected")
 	}
+	if printLangs {
+		for _, lang := range languages {
+			fmt.Println(lang)
+		}
+		return
+	}
 	profileSources := groupProfileSources(profile.Sources)
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		fatalf("create out dir: %v", err)
 	}
+	manifestPath := filepath.Join(outDir, "manifest.json")
 
 	createdWorkDir := false
 	if strings.TrimSpace(workDir) == "" {
@@ -170,6 +188,15 @@ func main() {
 		MaxFilesPerBucket: maxFilesPerBucket,
 		Entries:           make([]corpusManifestEntry, 0, len(languages)*3*maxFilesPerBucket),
 	}
+	if mergeExisting {
+		existing, ok, err := loadExistingCorpusManifest(manifestPath)
+		if err != nil {
+			fatalf("load existing manifest: %v", err)
+		}
+		if ok {
+			manifest = mergeExistingCorpusManifest(existing, manifest, languages)
+		}
+	}
 
 	repoRoot := filepath.Join(workDir, "repos")
 	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
@@ -192,28 +219,26 @@ func main() {
 			continue
 		}
 
-		candidateExts, candidateNames := candidateMatchersForLanguage(lang, entry.Exts)
-		candidates, err := collectCandidatesWithNames(repoDir, candidateExts, candidateNames, maxBytes, includeFixtures)
+		candidates, warnings, err := collectLanguageCorpusCandidates(
+			lang,
+			entry,
+			repoDir,
+			profileSources,
+			repoRoot,
+			repoCachePath,
+			maxBytes,
+			minMediumBytes,
+			minLargeBytes,
+			includeFixtures,
+			externalOnly,
+		)
 		if err != nil {
 			manifest.Missing = append(manifest.Missing, lang)
 			fmt.Fprintf(os.Stderr, "[warn] collect candidates failed for %q: %v\n", lang, err)
 			continue
 		}
-		if needsRepoCacheFallback(candidates, minMediumBytes, minLargeBytes) {
-			extra, err := collectCandidatesFromProfileSources(profileSources[lang], repoRoot, candidateExts, candidateNames, maxBytes, includeFixtures)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[warn] profile-source fallback failed for %q: %v\n", lang, err)
-			} else if len(extra) > 0 {
-				candidates = appendUniqueCorpusFiles(candidates, extra)
-			}
-		}
-		if needsRepoCacheFallback(candidates, minMediumBytes, minLargeBytes) {
-			extra, err := collectCandidatesFromRepoCache(repoCachePath, repoDir, candidateExts, candidateNames, maxBytes, includeFixtures)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[warn] repo-cache fallback failed for %q: %v\n", lang, err)
-			} else if len(extra) > 0 {
-				candidates = appendUniqueCorpusFiles(candidates, extra)
-			}
+		for _, warning := range warnings {
+			fmt.Fprintf(os.Stderr, "[warn] %s\n", warning)
 		}
 		if len(candidates) == 0 {
 			manifest.Missing = append(manifest.Missing, lang)
@@ -271,7 +296,6 @@ func main() {
 	})
 	sort.Strings(manifest.Missing)
 
-	manifestPath := filepath.Join(outDir, "manifest.json")
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		fatalf("marshal manifest: %v", err)
@@ -287,6 +311,74 @@ func main() {
 	if len(manifest.Missing) > 0 {
 		fmt.Printf("Missing/failed: %d (%s)\n", len(manifest.Missing), strings.Join(manifest.Missing, ", "))
 	}
+}
+
+func loadExistingCorpusManifest(path string) (corpusManifest, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return corpusManifest{}, false, nil
+		}
+		return corpusManifest{}, false, err
+	}
+	var manifest corpusManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return corpusManifest{}, false, fmt.Errorf("decode %s: %w", path, err)
+	}
+	return manifest, true, nil
+}
+
+func mergeExistingCorpusManifest(existing, current corpusManifest, replaceLanguages []string) corpusManifest {
+	replace := make(map[string]struct{}, len(replaceLanguages))
+	for _, lang := range replaceLanguages {
+		lang = strings.TrimSpace(lang)
+		if lang != "" {
+			replace[lang] = struct{}{}
+		}
+	}
+
+	merged := current
+	merged.Languages = sortedUnion(existing.Languages, current.Languages)
+	merged.Entries = make([]corpusManifestEntry, 0, len(existing.Entries)+len(current.Entries))
+	for _, entry := range existing.Entries {
+		if _, ok := replace[entry.Language]; ok {
+			continue
+		}
+		merged.Entries = append(merged.Entries, entry)
+	}
+	merged.Entries = append(merged.Entries, current.Entries...)
+	merged.Missing = make([]string, 0, len(existing.Missing)+len(current.Missing))
+	for _, lang := range existing.Missing {
+		if _, ok := replace[lang]; ok {
+			continue
+		}
+		merged.Missing = append(merged.Missing, lang)
+	}
+	merged.Missing = append(merged.Missing, current.Missing...)
+	merged.Missing = sortedUnique(merged.Missing)
+	return merged
+}
+
+func sortedUnion(left, right []string) []string {
+	return sortedUnique(append(append([]string(nil), left...), right...))
+}
+
+func sortedUnique(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 type repoMetadata struct {
@@ -344,7 +436,25 @@ func sameDir(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
-func resolveLanguageList(profilePath, langsRaw string) (string, profileFile, []string, error) {
+func resolveLanguageList(profilePath, langsRaw, langsFile string, lockEntries map[string]lockEntry) (string, profileFile, []string, error) {
+	if strings.TrimSpace(langsFile) != "" {
+		if strings.TrimSpace(profilePath) != "" {
+			return "", profileFile{}, nil, fmt.Errorf("set only one of -profile or -langs-file")
+		}
+		if !isDefaultLanguageSelector(langsRaw) {
+			return "", profileFile{}, nil, fmt.Errorf("set only one of -langs or -langs-file")
+		}
+		p, err := resolvePath(langsFile, []string{langsFile})
+		if err != nil {
+			return "", profileFile{}, nil, err
+		}
+		langs, err := loadLanguageListFile(p)
+		if err != nil {
+			return "", profileFile{}, nil, err
+		}
+		profile := profileFile{Name: "file", Languages: langs}
+		return "", profile, profile.Languages, nil
+	}
 	if strings.TrimSpace(profilePath) != "" {
 		p, err := resolvePath(profilePath, []string{profilePath})
 		if err != nil {
@@ -358,6 +468,13 @@ func resolveLanguageList(profilePath, langsRaw string) (string, profileFile, []s
 	}
 	value := strings.TrimSpace(langsRaw)
 	switch value {
+	case "all", "lock", "locked", "all206":
+		langs := languagesFromLock(lockEntries)
+		if len(langs) == 0 {
+			return "", profileFile{}, nil, fmt.Errorf("no languages available from lock")
+		}
+		profile := profileFile{Name: "all", Languages: langs}
+		return "", profile, profile.Languages, nil
 	case "", "top50", "top":
 		listPath, err := resolveTop50Path()
 		if err != nil {
@@ -382,6 +499,46 @@ func resolveLanguageList(profilePath, langsRaw string) (string, profileFile, []s
 		profile := profileFile{Name: "inline", Languages: dedupe(out)}
 		return "", profile, profile.Languages, nil
 	}
+}
+
+func isDefaultLanguageSelector(value string) bool {
+	value = strings.TrimSpace(value)
+	return value == "" || value == "top50"
+}
+
+func languagesFromLock(lockEntries map[string]lockEntry) []string {
+	out := make([]string, 0, len(lockEntries))
+	for name := range lockEntries {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func loadLanguageListFile(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	text := strings.ReplaceAll(string(data), ",", " ")
+	var out []string
+	for _, rawLine := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if idx := strings.IndexByte(line, '#'); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		for _, field := range strings.Fields(line) {
+			out = append(out, field)
+		}
+	}
+	out = dedupe(out)
+	if len(out) == 0 {
+		return nil, fmt.Errorf("language list %s is empty", path)
+	}
+	return out, nil
 }
 
 func loadProfile(path string) (profileFile, error) {
@@ -573,10 +730,18 @@ func collectCandidates(repoDir string, exts []string, maxBytes int, includeFixtu
 }
 
 func collectCandidatesWithNames(repoDir string, exts, names []string, maxBytes int, includeFixtures bool) ([]corpusFile, error) {
-	return collectCandidatesWithNamesFromRoot(repoDir, repoDir, exts, names, maxBytes, includeFixtures)
+	return collectCandidatesWithMatchers(repoDir, exts, names, nil, maxBytes, includeFixtures)
+}
+
+func collectCandidatesWithMatchers(repoDir string, exts, names, paths []string, maxBytes int, includeFixtures bool) ([]corpusFile, error) {
+	return collectCandidatesWithMatchersFromRoot(repoDir, repoDir, exts, names, paths, maxBytes, includeFixtures)
 }
 
 func collectCandidatesWithNamesFromRoot(sourceRoot, walkRoot string, exts, names []string, maxBytes int, includeFixtures bool) ([]corpusFile, error) {
+	return collectCandidatesWithMatchersFromRoot(sourceRoot, walkRoot, exts, names, nil, maxBytes, includeFixtures)
+}
+
+func collectCandidatesWithMatchersFromRoot(sourceRoot, walkRoot string, exts, names, paths []string, maxBytes int, includeFixtures bool) ([]corpusFile, error) {
 	seen := map[string]struct{}{}
 	out := make([]corpusFile, 0, 256)
 	extSet := map[string]struct{}{}
@@ -591,30 +756,39 @@ func collectCandidatesWithNamesFromRoot(sourceRoot, walkRoot string, exts, names
 		}
 		nameSet[name] = struct{}{}
 	}
+	pathSet := map[string]struct{}{}
+	for _, path := range paths {
+		path = normalizeRelativeMatcherPath(path)
+		if path == "" {
+			continue
+		}
+		pathSet[path] = struct{}{}
+	}
 
 	addFile := func(absPath string, d fs.DirEntry, requireKnownExt bool) {
 		if d.IsDir() {
 			return
 		}
+		rel, err := filepath.Rel(sourceRoot, absPath)
+		if err != nil {
+			return
+		}
+		relSlash := normalizeRelativeMatcherPath(rel)
+		_, pathMatched := pathSet[relSlash]
 		base := strings.ToLower(filepath.Base(absPath))
-		if requireKnownExt && len(extSet) > 0 {
-			ext := strings.ToLower(filepath.Ext(absPath))
-			if _, ok := extSet[ext]; !ok {
+		if !pathMatched && requireKnownExt && len(extSet) > 0 {
+			if !pathHasAllowedExtension(absPath, extSet) {
 				if _, ok := nameSet[base]; !ok {
 					return
 				}
 			}
 		}
-		if requireKnownExt && len(extSet) == 0 && len(nameSet) > 0 {
+		if !pathMatched && requireKnownExt && len(extSet) == 0 && len(nameSet) > 0 {
 			if _, ok := nameSet[base]; !ok {
 				return
 			}
 		}
-		rel, err := filepath.Rel(sourceRoot, absPath)
-		if err != nil {
-			return
-		}
-		if !looksCorpusCandidatePath(rel, includeFixtures, nameSet) {
+		if !pathMatched && !looksCorpusCandidatePath(rel, includeFixtures, nameSet) {
 			return
 		}
 		if _, ok := seen[rel]; ok {
@@ -628,7 +802,7 @@ func collectCandidatesWithNamesFromRoot(sourceRoot, walkRoot string, exts, names
 		if size > int64(maxBytes) {
 			return
 		}
-		if size < defaultSmallMin && !allowUndersizedSourceCandidate(rel, extSet, nameSet) {
+		if size < defaultSmallMin && !pathMatched && !allowUndersizedSourceCandidate(rel, extSet, nameSet) {
 			return
 		}
 		if !looksText(absPath) {
@@ -692,24 +866,24 @@ func collectCandidatesWithNamesFromRoot(sourceRoot, walkRoot string, exts, names
 				return nil
 			}
 		}
+		rel, err := filepath.Rel(sourceRoot, path)
+		if err != nil {
+			return nil
+		}
+		_, pathMatched := pathSet[normalizeRelativeMatcherPath(rel)]
 		if len(extSet) > 0 {
-			ext := strings.ToLower(filepath.Ext(path))
-			if _, ok := extSet[ext]; !ok {
+			if !pathHasAllowedExtension(path, extSet) {
 				base := strings.ToLower(filepath.Base(path))
-				if _, ok := nameSet[base]; !ok {
+				if _, ok := nameSet[base]; !ok && !pathMatched {
 					return nil
 				}
 			}
-		} else if len(nameSet) > 0 {
+		} else if len(nameSet) > 0 || len(pathSet) > 0 {
 			base := strings.ToLower(filepath.Base(path))
-			if _, ok := nameSet[base]; !ok {
+			if _, ok := nameSet[base]; !ok && !pathMatched {
 				return nil
 			}
 		} else {
-			rel, err := filepath.Rel(sourceRoot, path)
-			if err != nil {
-				return nil
-			}
 			if !looksGenericSourcePath(rel, includeFixtures) {
 				return nil
 			}
@@ -727,7 +901,50 @@ func collectCandidatesWithNamesFromRoot(sourceRoot, walkRoot string, exts, names
 	return out, nil
 }
 
-func collectCandidatesFromProfileSources(sources []profileSource, checkoutRoot string, exts []string, names []string, maxBytes int, includeFixtures bool) ([]corpusFile, error) {
+func collectLanguageCorpusCandidates(
+	lang string,
+	entry lockEntry,
+	repoDir string,
+	profileSources map[string][]profileSource,
+	repoRoot string,
+	repoCachePath string,
+	maxBytes int,
+	minMediumBytes int,
+	minLargeBytes int,
+	includeFixtures bool,
+	externalOnly bool,
+) ([]corpusFile, []string, error) {
+	candidateExts, candidateNames, candidatePaths := candidateMatchersForLanguage(lang, entry.Exts)
+	var candidates []corpusFile
+	var err error
+	if !externalOnly {
+		candidates, err = collectCandidatesWithMatchers(repoDir, candidateExts, candidateNames, candidatePaths, maxBytes, includeFixtures)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	var warnings []string
+	if externalOnly || needsRepoCacheFallback(candidates, minMediumBytes, minLargeBytes) {
+		extra, err := collectCandidatesFromProfileSources(profileSources[lang], repoRoot, candidateExts, candidateNames, candidatePaths, maxBytes, includeFixtures)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("profile-source fallback failed for %q: %v", lang, err))
+		} else if len(extra) > 0 {
+			candidates = appendUniqueCorpusFiles(candidates, extra)
+		}
+	}
+	if externalOnly || needsRepoCacheFallback(candidates, minMediumBytes, minLargeBytes) {
+		extra, err := collectCandidatesFromRepoCache(repoCachePath, repoDir, candidateExts, candidateNames, candidatePaths, maxBytes, includeFixtures)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("repo-cache fallback failed for %q: %v", lang, err))
+		} else if len(extra) > 0 {
+			candidates = appendUniqueCorpusFiles(candidates, extra)
+		}
+	}
+	return candidates, warnings, nil
+}
+
+func collectCandidatesFromProfileSources(sources []profileSource, checkoutRoot string, exts []string, names []string, paths []string, maxBytes int, includeFixtures bool) ([]corpusFile, error) {
 	if len(sources) == 0 {
 		return nil, nil
 	}
@@ -747,7 +964,7 @@ func collectCandidatesFromProfileSources(sources []profileSource, checkoutRoot s
 				continue
 			}
 		}
-		candidates, err := collectCandidatesWithNamesFromRoot(repoDir, walkRoot, exts, names, maxBytes, includeFixtures)
+		candidates, err := collectCandidatesWithMatchersFromRoot(repoDir, walkRoot, exts, names, paths, maxBytes, includeFixtures)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s@%s: %v", src.RepoURL, shortCommit(src.Commit), err))
 			continue
@@ -760,7 +977,7 @@ func collectCandidatesFromProfileSources(sources []profileSource, checkoutRoot s
 	return out, nil
 }
 
-func collectCandidatesFromRepoCache(repoCachePath, primaryRepoDir string, exts []string, names []string, maxBytes int, includeFixtures bool) ([]corpusFile, error) {
+func collectCandidatesFromRepoCache(repoCachePath, primaryRepoDir string, exts []string, names []string, paths []string, maxBytes int, includeFixtures bool) ([]corpusFile, error) {
 	if strings.TrimSpace(repoCachePath) == "" {
 		return nil, nil
 	}
@@ -774,7 +991,7 @@ func collectCandidatesFromRepoCache(repoCachePath, primaryRepoDir string, exts [
 		if sameDir(root, primaryRepoDir) || filepath.Base(filepath.Clean(root)) == primaryBase {
 			continue
 		}
-		candidates, err := collectCandidatesWithNames(root, exts, names, maxBytes, includeFixtures)
+		candidates, err := collectCandidatesWithMatchers(root, exts, names, paths, maxBytes, includeFixtures)
 		if err != nil {
 			continue
 		}
@@ -900,34 +1117,148 @@ func profileSourceCheckoutKey(src profileSource) string {
 	return base + "-" + shortCommit(src.Commit)
 }
 
-func candidateMatchersForLanguage(lang string, exts []string) ([]string, []string) {
-	outExts := append([]string(nil), exts...)
-	names := make([]string, 0, 2)
-	if len(outExts) > 0 {
-		return outExts, names
+func candidateMatchersForLanguage(lang string, exts []string) ([]string, []string, []string) {
+	outExts, names, paths := splitCandidateMatchers(exts)
+	if len(outExts) != 0 || len(names) != 0 || len(paths) != 0 {
+		return outExts, names, paths
 	}
+	outExts = registryExtensionsForLanguage(lang)
 	switch lang {
 	case "awk":
-		outExts = append(outExts, ".awk", ".gawk")
+		outExts = appendUniqueString(outExts, ".awk")
+		outExts = appendUniqueString(outExts, ".gawk")
+	case "caddy":
+		names = appendUniqueString(names, "caddyfile")
 	case "cmake":
-		outExts = append(outExts, ".cmake")
-		names = append(names, "cmakelists.txt")
+		outExts = appendUniqueString(outExts, ".cmake")
+		names = appendUniqueString(names, "cmakelists.txt")
 	case "d":
-		outExts = append(outExts, ".d", ".di")
+		outExts = appendUniqueString(outExts, ".d")
+		outExts = appendUniqueString(outExts, ".di")
 	case "dart":
-		outExts = append(outExts, ".dart")
+		outExts = appendUniqueString(outExts, ".dart")
+	case "dockerfile":
+		outExts = appendUniqueString(outExts, ".dockerfile")
+		names = appendUniqueString(names, "dockerfile")
+		names = appendUniqueString(names, "containerfile")
+		for i := 1; i <= 9; i++ {
+			names = appendUniqueString(names, strconv.Itoa(i))
+		}
+	case "earthfile":
+		outExts = appendUniqueString(outExts, ".earth")
+		names = appendUniqueString(names, "earthfile")
 	case "erlang":
-		outExts = append(outExts, ".erl", ".hrl")
+		outExts = appendUniqueString(outExts, ".erl")
+		outExts = appendUniqueString(outExts, ".hrl")
+	case "git_rebase":
+		outExts = appendUniqueString(outExts, ".git-rebase-todo")
+		names = appendUniqueString(names, "git-rebase-todo")
+		names = appendUniqueString(names, "rebase-todo")
 	case "gomod":
-		names = append(names, "go.mod")
+		names = appendUniqueString(names, "go.mod")
 	case "make":
-		outExts = append(outExts, ".mk")
-		names = append(names, "makefile")
+		outExts = appendUniqueString(outExts, ".mk")
+		names = appendUniqueString(names, "makefile")
 	case "markdown":
-		outExts = append(outExts, ".md")
-		names = append(names, "readme.md")
+		outExts = appendUniqueString(outExts, ".md")
+		names = appendUniqueString(names, "readme.md")
+	case "meson":
+		names = appendUniqueString(names, "meson.build")
+		names = appendUniqueString(names, "meson_options.txt")
+	case "nginx":
+		outExts = appendUniqueString(outExts, ".nginx")
+		names = appendUniqueString(names, "nginx.conf")
+		names = appendUniqueString(names, "conf.nginx")
+	case "requirements":
+		names = appendUniqueString(names, "requirements.txt")
+	case "ssh_config":
+		names = appendUniqueString(names, "ssh_config")
+		names = appendUniqueString(names, "sshd_config")
+		names = appendUniqueString(names, "known_hosts")
+		names = appendUniqueString(names, "authorized_keys")
+	case "tmux":
+		names = appendUniqueString(names, "tmux.conf")
+		names = appendUniqueString(names, ".tmux.conf")
+	case "todotxt":
+		names = appendUniqueString(names, "todo.txt")
 	}
-	return outExts, names
+	return outExts, names, paths
+}
+
+func splitCandidateMatchers(values []string) ([]string, []string, []string) {
+	var exts []string
+	var names []string
+	var paths []string
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if strings.ContainsAny(value, `/\`) {
+			paths = appendUniqueString(paths, normalizeRelativeMatcherPath(value))
+		} else if strings.HasPrefix(value, ".") {
+			exts = appendUniqueString(exts, value)
+		} else {
+			names = appendUniqueString(names, value)
+		}
+	}
+	return exts, names, paths
+}
+
+func normalizeRelativeMatcherPath(path string) string {
+	path = strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
+	path = strings.ToLower(filepath.ToSlash(filepath.Clean(filepath.FromSlash(path))))
+	if path == "." {
+		return ""
+	}
+	return path
+}
+
+func appendUniqueString(values []string, value string) []string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if strings.ToLower(strings.TrimSpace(existing)) == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func registryExtensionsForLanguage(lang string) []string {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if lang == "" {
+		return nil
+	}
+	for _, entry := range grammars.AllLanguages() {
+		if strings.ToLower(strings.TrimSpace(entry.Name)) != lang {
+			continue
+		}
+		out := make([]string, 0, len(entry.Extensions))
+		for _, ext := range entry.Extensions {
+			ext = strings.ToLower(strings.TrimSpace(ext))
+			if ext != "" {
+				out = append(out, ext)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func pathHasAllowedExtension(path string, extSet map[string]struct{}) bool {
+	path = strings.ToLower(filepath.ToSlash(path))
+	for ext := range extSet {
+		if ext == "" {
+			continue
+		}
+		if strings.HasSuffix(path, strings.ToLower(ext)) {
+			return true
+		}
+	}
+	return false
 }
 
 func allowUndersizedSourceCandidate(rel string, extSet, nameSet map[string]struct{}) bool {

@@ -110,7 +110,7 @@ func main() {
 	flag.StringVar(&manifestPath, "manifest", "", "path to build_real_corpus manifest.json")
 	flag.StringVar(&resultsPath, "results", "", "path to corpus_parity results.jsonl")
 	flag.StringVar(&outJSON, "out-json", "real_corpus_board.json", "JSON output path")
-	flag.StringVar(&outMD, "out-md", "REAL_CORPUS_BOARD.md", "Markdown output path")
+	flag.StringVar(&outMD, "out-md", "", "optional Markdown output path")
 	flag.IntVar(&l4Limit, "l4-limit", 0, "if >0, limit L4 to the top N languages by max large-file bytes")
 	flag.StringVar(&l4Languages, "l4-languages", "", "optional comma-separated explicit L4 language subset")
 	flag.Parse()
@@ -144,12 +144,16 @@ func main() {
 	if err := writeJSON(outJSON, b); err != nil {
 		fatalf("write %s: %v", outJSON, err)
 	}
-	if err := writeMarkdown(outMD, b); err != nil {
-		fatalf("write %s: %v", outMD, err)
+	if outMD != "" {
+		if err := writeMarkdown(outMD, b); err != nil {
+			fatalf("write %s: %v", outMD, err)
+		}
 	}
 
 	fmt.Printf("wrote board json: %s\n", outJSON)
-	fmt.Printf("wrote board markdown: %s\n", outMD)
+	if outMD != "" {
+		fmt.Printf("wrote board markdown: %s\n", outMD)
+	}
 	fmt.Printf("L3: %d/%d languages green, %d/%d files green\n",
 		b.L3.GreenLangs, b.L3.ApplicableLangs, b.L3.PassingFiles, b.L3.TotalFiles)
 	fmt.Printf("L4: %d/%d languages green, %d/%d files green\n",
