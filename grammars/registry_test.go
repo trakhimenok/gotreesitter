@@ -180,12 +180,28 @@ func TestAuditParseSupportIncludesRustDFA(t *testing.T) {
 }
 
 func TestBuiltinLanguagesAdvertiseTS2GoBlobSource(t *testing.T) {
+	entry := DetectLanguage("main.py")
+	if entry == nil {
+		t.Fatal("expected Python language for main.py")
+	}
+	if entry.GrammarSource != GrammarSourceTS2GoBlob {
+		t.Fatalf("Python GrammarSource = %q, want %q", entry.GrammarSource, GrammarSourceTS2GoBlob)
+	}
+}
+
+func TestGoAdvertisesGrammargenBlobSource(t *testing.T) {
+	// go.bin is grammargen-compiled (cmd/grammargen -lr-split -bin ...), the
+	// only builtin migrated off ts2go so far. It still ships an embedded
+	// blob, so BlobByName must keep serving it.
 	entry := DetectLanguage("main.go")
 	if entry == nil {
 		t.Fatal("expected Go language for main.go")
 	}
-	if entry.GrammarSource != GrammarSourceTS2GoBlob {
-		t.Fatalf("Go GrammarSource = %q, want %q", entry.GrammarSource, GrammarSourceTS2GoBlob)
+	if entry.GrammarSource != GrammarSourceGrammargenBlob {
+		t.Fatalf("Go GrammarSource = %q, want %q", entry.GrammarSource, GrammarSourceGrammargenBlob)
+	}
+	if blob := BlobByName("go"); len(blob) == 0 {
+		t.Fatal("BlobByName(go) returned empty; grammargen-blob languages must stay blob-served")
 	}
 }
 
