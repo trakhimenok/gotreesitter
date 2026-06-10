@@ -55,6 +55,7 @@ prisma
 properties
 puppet
 python
+ql
 r
 racket
 ron
