@@ -36,7 +36,7 @@ crystal	IV-perf	0/0	perf-blocker: times out at N=8 (single-file >30s); profile b
 css	CLEAN	40/40	in ratchet
 csv	CLEAN	40/40	in ratchet
 cuda	IV-recovery?	17/30	ext=.cu,.cuh; faithful C error-cost version competition (see spec)
-cue	IV-shape?	23/30	ext=.cue; was 21/30; +2 from tree.go unescaper fix (`\(`/`\#(` names); remaining 7: `value` ChildCount go=0 c=1 (witness load/testdata/testmod/multi2/other.cue) + 1 root StartByte go=0 c=1
+cue	CLEAN	30/30	was 21/30: +2 tree.go unescaper (`\(`/`\#(`); +7 parser_result_cue.go — collapsed value leaf children (identifier/number/float) + leading-trivia root start; 30/30 vs C oracle 2026-06-10
 cylc	IV-recovery?	4/30	ext=.cylc; faithful C error-cost version competition (see spec)
 d	IV-recovery?	14/30	ext=.d; faithful C error-cost version competition (see spec)
 dart	IV-recovery?	11/30	ext=.dart; faithful C error-cost version competition (see spec)

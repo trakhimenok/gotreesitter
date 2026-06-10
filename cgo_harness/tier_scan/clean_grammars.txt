@@ -11,6 +11,7 @@ comment
 corn
 css
 csv
+cue
 desktop
 devicetree
 diff
