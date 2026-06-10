@@ -1,29 +1,29 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-10T07:49:17Z at `2c52a4b8`. Parity vs the
+Generated 2026-06-10T08:11:20Z at `a7cc807b`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
 | tier | count |
 | --- | --- |
 | I | 31 |
-| II | 33 |
+| II | 34 |
 | III | 9 |
-| IV | 133 |
+| IV | 132 |
 
 ## Tier I — parity-clean, fast (31)
 
 `astro`, `awk`, `clojure`, `css`, `csv`, `elisp`, `erlang`, `faust`, `fidl`, `fish`, `gleam`, `hcl`, `java`, `javascript`, `jsonnet`, `llvm`, `nickel`, `nix`, `php`, `prisma`, `puppet`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`
 
-## Tier II — parity-clean, ok (33)
+## Tier II — parity-clean, ok (34)
 
-`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `twig`, `typescript`, `vue`
+`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `typescript`, `vue`
 
 ## Tier III — parity-clean, poor perf (9)
 
 `comment`, `desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `nginx`, `properties`, `ssh_config`
 
-## Tier IV — not parity-clean (133)
+## Tier IV — not parity-clean (132)
 
 | grammar | cause | parity |
 | --- | --- | --- |
@@ -149,7 +149,6 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `templ` | IV-recovery? | 24/40 |
 | `tlaplus` | IV-stackcap? | 14/40 |
 | `tmux` | IV-recovery? | 0/1 |
-| `toml` | IV-extmap | 0/0 |
 | `typst` | IV-recovery? | 28/40 |
 | `uxntal` | IV-recovery? | 0/40 |
 | `v` | IV-recovery? | 25/40 |

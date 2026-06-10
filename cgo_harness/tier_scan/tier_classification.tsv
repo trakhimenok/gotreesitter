@@ -186,7 +186,7 @@ thrift	CLEAN	40/40	in ratchet
 tlaplus	IV-stackcap?	14/40	add effectiveFullParseInitialMaxStacks cap entry
 tmux	IV-recovery?	0/1	ext=.tmux.conf,tmux.conf; faithful C error-cost version competition (see spec)
 todotxt	CLEAN	40/40	in ratchet
-toml	IV-extmap	0/0	ext=.toml; add curated source-extension mapping
+toml	CLEAN	11/11	in ratchet
 tsx	CLEAN	40/40	in ratchet
 turtle	CLEAN	40/40	in ratchet
 twig	CLEAN	40/40	in ratchet
