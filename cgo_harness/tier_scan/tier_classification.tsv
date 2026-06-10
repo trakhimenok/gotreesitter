@@ -89,7 +89,7 @@ groovy	IV-recovery	4/40	faithful C error-cost version competition (see spec)
 hack	CLEAN	40/40	in ratchet
 hare	IV-recovery	20/40	faithful C error-cost version competition (see spec)
 haskell	IV-scanner	7/40	re-port external scanner from pinned upstream src/scanner.c
-haxe	IV-version	7/40	bump embedded grammar to corpus syntax version
+haxe	IV-recovery?	7/40	bumped pin to upstream HEAD f2a2394 (metadata-only; src/ identical, parser unchanged); corpus uses modern Haxe (abstract/macro) both parsers error on, residual is recovery shape
 hcl	CLEAN	40/40	in ratchet
 heex	CLEAN	40/40	in ratchet
 hlsl	IV-recovery	33/40	faithful C error-cost version competition (see spec)
