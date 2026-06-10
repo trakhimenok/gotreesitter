@@ -5620,7 +5620,51 @@ func (p *Parser) canCollapseInvisibleUnaryWrapperSymbol(parentSym Symbol) bool {
 	if int(parentSym) >= len(meta) {
 		return false
 	}
+	if symbolMarked(p.aliasPreservedWrapperSymbols, parentSym) {
+		return false
+	}
 	return invisibleUnaryWrapperCollapsible(meta[parentSym])
+}
+
+// buildAliasPreservedWrapperSymbols marks invisible aux wrapper symbols that
+// appear in the grammar's C-side ts_non_terminal_alias_map: such wrappers can
+// be ALIASED to a visible symbol by an enclosing production, so the wrapper
+// node must survive unary reduces. Collapsing it (renaming-through to its lone
+// child) makes the later alias relabel the child instead of nesting it, e.g.
+// lua's `'\027'` produced (string_content) instead of C's
+// (string_content (escape_sequence)).
+//
+// The compiled blobs do not carry ts_non_terminal_alias_map, so the affected
+// symbols are listed per language here. Extend this table whenever a grammar's
+// alias map names an aux wrapper that an enclosing rule aliases.
+func buildAliasPreservedWrapperSymbols(lang *Language) []bool {
+	if lang == nil {
+		return nil
+	}
+	var names []string
+	switch lang.Name {
+	case "lua":
+		// ts_non_terminal_alias_map (tree-sitter-lua @ 10fe0054):
+		// aux_sym__doublequote_string_content and
+		// aux_sym__singlequote_string_content are aliased to string_content
+		// by the _quote_string productions.
+		names = []string{"_doublequote_string_content", "_singlequote_string_content"}
+	default:
+		return nil
+	}
+	var out []bool
+	for i, name := range lang.SymbolNames {
+		for _, want := range names {
+			if name != want {
+				continue
+			}
+			if out == nil {
+				out = make([]bool, len(lang.SymbolNames))
+			}
+			out[i] = true
+		}
+	}
+	return out
 }
 
 func (p *Parser) collapsibleRawUnarySelfReduction(act ParseAction, tok Token, arena *nodeArena, entries []stackEntry, start, reducedEnd int) *Node {
@@ -5767,6 +5811,9 @@ func (p *Parser) canCollapseInvisibleUnaryWrapper(parentSym Symbol, child *Node)
 	}
 	meta := p.language.SymbolMetadata
 	if int(parentSym) >= len(meta) {
+		return false
+	}
+	if symbolMarked(p.aliasPreservedWrapperSymbols, parentSym) {
 		return false
 	}
 	return invisibleUnaryWrapperCollapsible(meta[parentSym])
@@ -6072,6 +6119,7 @@ func flattenedVisibleAliasTarget(n *Node, symbolMeta []SymbolMetadata) *Node {
 	if countFlattenedHiddenChildren(n, symbolMeta) != 1 {
 		return nil
 	}
+	root := n
 	for n != nil {
 		visible := true
 		if idx := int(n.symbol); idx < len(symbolMeta) {
@@ -6087,6 +6135,24 @@ func flattenedVisibleAliasTarget(n *Node, symbolMeta []SymbolMetadata) *Node {
 			// collapsing the layer. Returning nil routes the caller to
 			// materializeHiddenNodeForAlias, which builds the proper wrapper.
 			if len(n.children) != 0 {
+				return nil
+			}
+			// A NAMED visible leaf is a real grammar node (e.g. lua's
+			// escape_sequence inside the hidden repeat aliased to
+			// string_content). Upstream tree-sitter keeps the wrapper and
+			// nests the leaf under the alias: (string_content
+			// (escape_sequence)). Only anonymous token-shaped leaves are
+			// relabeled in place.
+			if idx := int(n.symbol); idx < len(symbolMeta) && symbolMeta[n.symbol].Named {
+				return nil
+			}
+			// Rename-through is also only sound when the leaf covers the whole
+			// hidden wrapper. When the wrapper carries extra HIDDEN tokens
+			// alongside the lone visible leaf, C tree-sitter keeps the
+			// wrapper's span. Relabeling the leaf would shrink the node to
+			// the leaf's span, so route to materializeHiddenNodeForAlias
+			// instead.
+			if n.startByte != root.startByte || n.endByte != root.endByte {
 				return nil
 			}
 			return n

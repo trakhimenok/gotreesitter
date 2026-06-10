@@ -1233,8 +1233,11 @@ func TestEffectiveParseMergePerKeyCap(t *testing.T) {
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "graphql"}, maxStacksPerMergeKey, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(graphql, default, full) = %d, want 1", got)
 	}
-	if got := effectiveParseMergePerKeyCap(&Language{Name: "lua"}, maxStacksPerMergeKey, false); got != 1 {
-		t.Fatalf("effectiveParseMergePerKeyCap(lua, default, full) = %d, want 1", got)
+	// Lua's table-constructor field list (field (sep field)* sep?) needs two
+	// same-key survivors at each separator, or the trailing-separator branch is
+	// pruned and a clean parse degrades into recovery under the DFA lexer path.
+	if got := effectiveParseMergePerKeyCap(&Language{Name: "lua"}, maxStacksPerMergeKey, false); got != 2 {
+		t.Fatalf("effectiveParseMergePerKeyCap(lua, default, full) = %d, want 2", got)
 	}
 	if got := effectiveParseMergePerKeyCap(&Language{Name: "ruby"}, maxStacksPerMergeKey, false); got != 1 {
 		t.Fatalf("effectiveParseMergePerKeyCap(ruby, default, full) = %d, want 1", got)

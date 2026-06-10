@@ -72,6 +72,7 @@ type Parser struct {
 	forceRawSpanTable                   []bool
 	spanExtendingInvisibleSymbols       []bool
 	nonSpanExtendingInvisibleSymbols    []bool
+	aliasPreservedWrapperSymbols        []bool
 	included                            []Range
 	logger                              ParserLogger
 	glrTrace                            bool // verbose GLR stack tracing
@@ -393,6 +394,7 @@ func NewParser(lang *Language) *Parser {
 		p.recoverByState, p.hasRecoverState, p.hasRecoverSymbol = buildRecoverActionsByState(lang)
 		p.hasKeywordState = buildKeywordStates(lang)
 		p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols = buildInvisibleSpanSymbolTables(lang.SymbolNames)
+		p.aliasPreservedWrapperSymbols = buildAliasPreservedWrapperSymbols(lang)
 		p.initTypeScriptContextualKeywordSymbols(lang)
 		p.initSchemeErrorRecoverySymbols(lang)
 		p.rootSymbol, p.hasRootSymbol = p.inferRootSymbol()
