@@ -19,9 +19,17 @@ import (
 type GrammarSource string
 
 const (
-	GrammarSourceUnknown    GrammarSource = "unknown"
-	GrammarSourceTS2GoBlob  GrammarSource = "ts2go_blob"
+	GrammarSourceUnknown GrammarSource = "unknown"
+	// GrammarSourceTS2GoBlob marks an embedded .bin blob compiled by the
+	// ts2go pipeline from upstream C parser tables.
+	GrammarSourceTS2GoBlob GrammarSource = "ts2go_blob"
+	// GrammarSourceGrammargen marks a language generated at runtime by
+	// grammargen (extension grammars registered via RegisterExtension);
+	// these have no embedded blob.
 	GrammarSourceGrammargen GrammarSource = "grammargen"
+	// GrammarSourceGrammargenBlob marks an embedded .bin blob compiled by
+	// grammargen (cmd/grammargen -lr-split -bin ...), e.g. go.bin.
+	GrammarSourceGrammargenBlob GrammarSource = "grammargen_blob"
 )
 
 // LangEntry holds a registered language with its grammar, extensions, and highlight query.

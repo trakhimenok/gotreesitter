@@ -42,6 +42,7 @@ janet
 java
 javascript
 jq
+jsdoc
 json
 json5
 jsonnet
@@ -57,6 +58,7 @@ properties
 puppet
 python
 racket
+requirements
 ron
 smithy
 sparql

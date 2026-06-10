@@ -222,6 +222,17 @@ func stackCompareForResultSelection(p *Parser, arena *nodeArena, a, b *glrStack,
 		}
 		return -1
 	}
+	if p != nil && p.errorCostCompetitionEnabled() {
+		// Faithful C recovery port: ts_parser__select_tree picks the tree
+		// with the lower error cost first, then the higher dynamic
+		// precedence; remaining engine keys break exact ties.
+		if ac, bc := p.cStackResultErrorCost(a), p.cStackResultErrorCost(b); ac != bc {
+			if ac < bc {
+				return 1
+			}
+			return -1
+		}
+	}
 	if !skipErrorRank {
 		if aErr, bErr := stackResultErrorRank(a, arena), stackResultErrorRank(b, arena); aErr != bErr {
 			if aErr < bErr {

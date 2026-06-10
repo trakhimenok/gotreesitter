@@ -18,7 +18,12 @@ func (b grammarBlob) close() {
 func BlobByName(name string) []byte {
 	// Resolve aliases and normalize case the same way DetectLanguageByName does.
 	entry := DetectLanguageByName(name)
-	if entry == nil || entry.GrammarSource != GrammarSourceTS2GoBlob {
+	if entry == nil {
+		return nil
+	}
+	// Only blob-backed sources have an embedded .bin to serve; runtime
+	// grammargen extensions (GrammarSourceGrammargen) do not.
+	if entry.GrammarSource != GrammarSourceTS2GoBlob && entry.GrammarSource != GrammarSourceGrammargenBlob {
 		return nil
 	}
 	blob, err := readGrammarBlob(entry.Name + ".bin")

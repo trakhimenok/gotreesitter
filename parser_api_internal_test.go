@@ -1002,7 +1002,7 @@ func TestPreferRetryTreePrefersFurtherAcceptedProgress(t *testing.T) {
 		},
 	}
 
-	if !preferRetryTree(candidate, incumbent) {
+	if !preferRetryTree(nil, candidate, incumbent) {
 		t.Fatal("preferRetryTree = false, want true for accepted full-length retry")
 	}
 }
@@ -1033,7 +1033,7 @@ func TestPreferRetryTreePrefersFewerChildrenOnEqualErrorTrees(t *testing.T) {
 		},
 	}
 
-	if !preferRetryTree(candidate, incumbent) {
+	if !preferRetryTree(nil, candidate, incumbent) {
 		t.Fatal("preferRetryTree = false, want true for smaller equal-span error tree")
 	}
 }

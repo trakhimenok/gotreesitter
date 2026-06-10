@@ -1,40 +1,40 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-10T08:13:00Z at `bc1596eb`. Parity vs the
+Generated 2026-06-10T08:54:04Z at `8c92f06d`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
 | tier | count |
 | --- | --- |
 | I | 32 |
-| II | 35 |
+| II | 36 |
 | III | 9 |
-| IV | 130 |
+| IV | 129 |
 
 ## Tier I — parity-clean, fast (32)
 
 `astro`, `awk`, `clojure`, `css`, `csv`, `elisp`, `erlang`, `faust`, `fidl`, `fish`, `gitcommit`, `gleam`, `hcl`, `java`, `javascript`, `jsonnet`, `llvm`, `nickel`, `nix`, `php`, `prisma`, `puppet`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`
 
-## Tier II — parity-clean, ok (35)
+## Tier II — parity-clean, ok (36)
 
-`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `typescript`, `vue`
+`arduino`, `bass`, `beancount`, `bitbake`, `capnp`, `cmake`, `corn`, `devicetree`, `dot`, `editorconfig`, `foam`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `go`, `hack`, `heex`, `janet`, `jq`, `json`, `json5`, `ocaml`, `pem`, `python`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `typescript`, `vue`
 
 ## Tier III — parity-clean, poor perf (9)
 
 `comment`, `desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `nginx`, `properties`, `ssh_config`
 
-## Tier IV — not parity-clean (130)
+## Tier IV — not parity-clean (129)
 
 | grammar | cause | parity |
 | --- | --- | --- |
 | `ada` | IV-shape? | 24/30 |
 | `agda` | IV-scanner | 0/40 |
-| `angular` | IV-recovery? | 26/30 |
+| `angular` | IV-recovery? | 35/40 |
 | `apex` | IV-shape? | 17/30 |
 | `asm` | IV-recovery | 0/40 |
 | `authzed` | IV-recovery? | 23/30 |
-| `bash` | IV-stackcap? | 7/8 |
-| `bibtex` | IV-recovery? | 28/30 |
+| `bash` | IV-recovery? | 30/40 |
+| `bibtex` | IV-recovery? | 37/40 |
 | `bicep` | IV-recovery? | 24/30 |
 | `blade` | IV-recovery? | 17/30 |
 | `brightscript` | IV-recovery? | 0/30 |
@@ -42,11 +42,11 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `c_sharp` | IV-recovery | 26/40 |
 | `caddy` | IV-recovery? | 9/30 |
 | `cairo` | IV-recovery? | 0/30 |
-| `chatito` | IV-stackcap? | 1/5 |
+| `chatito` | IV-recovery | 1/5 |
 | `circom` | IV-shape? | 11/30 |
 | `cobol` | IV-scanner | 0/40 |
 | `commonlisp` | IV-recovery? | 22/30 |
-| `cooklang` | IV-stackcap? | 0/3 |
+| `cooklang` | IV-recovery | 0/3 |
 | `cpon` | IV-recovery? | 9/10 |
 | `cpp` | IV-recovery | 10/40 |
 | `crystal` | IV-perf | 0/0 |
@@ -57,7 +57,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `dart` | IV-recovery? | 11/30 |
 | `dhall` | IV-unknown | 23/40 |
 | `disassembly` | IV-scanner | 0/40 |
-| `djot` | IV-extmap | 0/0 |
+| `djot` | IV-scanner? | 0/40 |
 | `dockerfile` | IV-recovery? | 0/30 |
 | `doxygen` | IV-recovery? | 19/30 |
 | `dtd` | IV-recovery? | 0/5 |
@@ -89,7 +89,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `hyprlang` | IV-recovery | 1/2 |
 | `ini` | IV-unknown | 4/11 |
 | `jinja2` | IV-recovery | 3/40 |
-| `jsdoc` | IV-recovery? | 29/30 |
+| `jsdoc` | IV-recovery? | 39/40 |
 | `julia` | IV-recovery | 28/40 |
 | `just` | IV-recovery? | 2/8 |
 | `kconfig` | IV-recovery? | 13/30 |
@@ -127,9 +127,8 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `purescript` | IV-recovery? | 1/40 |
 | `ql` | IV-shape? | 33/40 |
 | `r` | IV-shape? | 33/40 |
-| `regex` | IV-stackcap? | 0/1 |
+| `regex` | IV-unknown? | 0/1 |
 | `rego` | IV-recovery? | 7/40 |
-| `requirements` | IV-recovery? | 8/9 |
 | `rescript` | IV-recovery? | 23/40 |
 | `robot` | IV-recovery? | 28/40 |
 | `rst` | IV-shape? | 1/8 |
@@ -145,7 +144,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `tcl` | IV-recovery? | 10/40 |
 | `teal` | IV-recovery? | 4/40 |
 | `templ` | IV-recovery? | 24/40 |
-| `tlaplus` | IV-stackcap? | 14/40 |
+| `tlaplus` | IV-unknown? | 14/40 |
 | `tmux` | IV-recovery? | 0/1 |
 | `typst` | IV-recovery? | 28/40 |
 | `uxntal` | IV-recovery? | 0/40 |
