@@ -61,6 +61,9 @@ type Parser struct {
 	isScheme             bool
 	schemeDatumSymbol    Symbol
 	schemeHasDatumSymbol bool
+	// errorCostCompetition enables the faithful C error-recovery port
+	// (parser_recover_c.go) for this grammar; see errorCostCompetitionLanguage.
+	errorCostCompetition bool
 	forceRawSpanAll      bool
 	// leafInternByLang enables canonical leaf interning for this language even
 	// when the global GOT_PARSE_INTERN_LEAVES_SUBSTITUTE flag is off. Limited to
@@ -395,6 +398,7 @@ func NewParser(lang *Language) *Parser {
 		p.spanExtendingInvisibleSymbols, p.nonSpanExtendingInvisibleSymbols = buildInvisibleSpanSymbolTables(lang.SymbolNames)
 		p.initTypeScriptContextualKeywordSymbols(lang)
 		p.initSchemeErrorRecoverySymbols(lang)
+		p.errorCostCompetition = errorCostCompetitionLanguage(lang)
 		p.rootSymbol, p.hasRootSymbol = p.inferRootSymbol()
 		p.maxConflictWidth = computeMaxConflictWidth(lang)
 	}
@@ -2621,6 +2625,23 @@ func (p *Parser) parseInternal(source []byte, ts TokenSource, reuse *reuseCursor
 			s := &stacks[si]
 			if s.dead || s.shifted {
 				continue
+			}
+			// Faithful C recovery port (parser_recover_c.go): a stack already
+			// in the C error state dispatches through ts_parser__recover
+			// instead of the parse table, except for extra-shiftable tokens.
+			if s.cRec != nil && p.errorCostCompetitionEnabled() {
+				outcome, redispatch := p.cRecoverDispatchInError(&stacks, si, tok, &nodeCount, arena, &scratch.entries, &scratch.gss, &trackChildErrors)
+				s = &stacks[si]
+				if redispatch {
+					anyReduced = true
+				}
+				switch outcome {
+				case cRecConsumed:
+					continue
+				case cRecHalted:
+					s.dead = true
+					continue
+				}
 			}
 			currentState := s.top().state
 		retryAction:
