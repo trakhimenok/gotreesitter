@@ -13,6 +13,10 @@ ts2go
 tsquery
 parity_report
 benchgate
+cgo_harness/real_corpus_bench_report
+
+# Local benchmark run data
+cgo_harness/bench/runs/
 
 # Logs
 *.log
