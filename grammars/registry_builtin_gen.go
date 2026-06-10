@@ -885,7 +885,7 @@ func registerBuiltinLanguages() {
 		Extensions:     []string{".move"},
 		Language:       MoveLanguage,
 		GrammarSource:  GrammarSourceTS2GoBlob,
-		HighlightQuery: "\"module\" @keyword\n(hex_address) @number\n(identifier) @type\n",
+		HighlightQuery: "\"module\" @keyword\n(num_literal) @number\n(address_literal) @number\n(line_comment) @comment\n(block_comment) @comment\n(identifier) @type\n",
 	})
 	Register(LangEntry{
 		Name:           "nginx",
