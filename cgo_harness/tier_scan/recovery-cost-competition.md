@@ -1,7 +1,7 @@
-# Spec: faithful C error-cost version competition (III-recovery unlock)
+# Spec: faithful C error-cost version competition (IV-recovery unlock)
 
-The largest tier-IV bucket — ~90 grammars classed `III-recovery` /
-`III-recovery?` (asm, c, cpp, c_sharp, glsl, graphql, groovy, hare, html,
+The largest tier-IV bucket — ~90 grammars classed `IV-recovery` /
+`IV-recovery?` (asm, c, cpp, c_sharp, glsl, graphql, groovy, hare, html,
 julia, luau, ninja, scheme, zig, typst, …) — all share one root cause and
 one fix. This is the highest-leverage remaining correctness lever.
 

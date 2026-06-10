@@ -8,23 +8,38 @@ zero: every non-clean grammar must carry a named, assessed sub-tier in
 `tier_classification.tsv`, and the committed ratchet (`clean_grammars.txt`)
 makes clean→incorrect regressions release-blocking.
 
-## Tier taxonomy (`tier_classification.tsv`)
+## Tier taxonomy
 
-Every grammar with a corpus is one of:
+One tier scale for the whole program (canonical: `docs/reports/tier-ratchet.md`).
+**Parity vs C is the hard gate; performance is the sub-rank.** A grammar that
+is not byte-clean against the C oracle is **tier IV, full stop** — a fast
+wrong parser is worthless. Tiers I–III are reserved for parity-clean grammars,
+ranked by performance:
 
-| tier | meaning | fix recipe |
+| tier | meaning | rule |
 | --- | --- | --- |
-| `CLEAN` | 100% real-corpus parity, in the ratchet | — |
-| `III-recovery` | both parsers see errors, but C contains damage locally where Go fragments / roots ERROR | faithful C error-cost version competition (see `recovery-cost-competition.md`) |
-| `III-scanner` | Go external-scanner port diverges from C (over/under-permissive, token boundaries) | re-port `grammars/<g>_scanner.go` from pinned upstream `src/scanner.c` |
-| `III-version` | most corpus files error in BOTH parsers — corpus uses syntax newer than the embedded grammar | bump the embedded grammar version |
-| `III-stackcap` | divergence/truncation clears or shrinks at `GOT_GLR_MAX_STACKS=2` | add an `effectiveFullParseInitialMaxStacks` cap entry |
-| `III-extmap` | zero/few files measured under the current extension set | add a curated source-extension mapping |
-| `III-perf` | cannot measure within timeout (O(N²) or pathological file) | profile/fix before parity (overlaps the perf push) |
-| `III-unknown` | diagnosed but does not fit a single bucket | deeper single-file diagnosis |
-| `IV-unassessed` | **the tier we keep empty** — a measured incorrect parse nobody has triaged | run the diagnosis workflow / `TestFirstDiffDiag` |
+| `I` | parity-clean, fast | ≤1.5× C full-parse, cold ≤5ms, blob ≤150KB |
+| `II` | parity-clean, ok | ≤8× C full-parse, cold ≤20ms |
+| `III` | parity-clean, poor | >8× C, or cold >20ms, or blob >400KB |
+| `IV` | **not parity-clean** (any divergence, truncation, or unmeasured parity) | fix parity — see sub-causes below |
 
-A `?` suffix (e.g. `III-recovery?`) marks a *preliminary* classification
+### Tier-IV sub-causes (`tier_classification.tsv`)
+
+Every tier-IV grammar carries a named, assessed sub-cause:
+
+| sub-cause | meaning | fix recipe |
+| --- | --- | --- |
+| `IV-recovery` | both parsers see errors, but C contains damage locally where Go fragments / roots ERROR | faithful C error-cost version competition (see `recovery-cost-competition.md`) |
+| `IV-shape` | tree-shape divergence without error nodes | per-grammar diagnosis (`TestFirstDiffDiag`) |
+| `IV-scanner` | Go external-scanner port diverges from C (over/under-permissive, token boundaries) | re-port `grammars/<g>_scanner.go` from pinned upstream `src/scanner.c` |
+| `IV-version` | most corpus files error in BOTH parsers — corpus uses syntax newer than the embedded grammar | bump the embedded grammar version |
+| `IV-stackcap` | divergence/truncation clears or shrinks at `GOT_GLR_MAX_STACKS=2` | add an `effectiveFullParseInitialMaxStacks` cap entry |
+| `IV-extmap` | zero/few files measured under the current extension set | add a curated source-extension mapping |
+| `IV-perf` | cannot measure within timeout (O(N²) or pathological file) | profile/fix before parity (overlaps the perf push) |
+| `IV-unknown` | diagnosed but does not fit a single bucket | deeper single-file diagnosis |
+| `IV-unassessed` | **the state we keep empty** — a measured incorrect parse nobody has triaged | run the diagnosis workflow / `TestFirstDiffDiag` |
+
+A `?` suffix (e.g. `IV-recovery?`) marks a *preliminary* classification
 inferred from the measure signature (parity%, errTree, trunc) rather than a
 per-file diagnosis — these get confirmed when the full diagnosis workflow
 re-runs. The scan fails (exit 1) if any tier-IV grammar is `IV-unassessed`

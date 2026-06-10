@@ -114,11 +114,13 @@ if [ -n "$newly_clean" ]; then
   echo "$newly_clean" | sed 's/^/  /'
 fi
 
-# Tier-IV characterization gate. Every non-clean grammar must carry a named
-# assessed tier in tier_classification.tsv (III-recovery / III-scanner /
-# III-version / III-stackcap / III-extmap / III-perf / III-unknown). An
-# UNCHARACTERIZED tier-IV grammar (no row, or tier 'IV-unassessed') is the
-# tier we drive to zero: a measured incorrect parse nobody has triaged.
+# Tier-IV characterization gate. Tier IV = not parity-clean, full stop
+# (tiers I-III are perf ranks reserved for parity-clean grammars). Every
+# non-clean grammar must carry a named assessed IV sub-cause in
+# tier_classification.tsv (IV-recovery / IV-scanner / IV-shape / IV-version /
+# IV-stackcap / IV-extmap / IV-perf / IV-unknown). An UNCHARACTERIZED tier-IV
+# grammar (no row, or tier 'IV-unassessed') is the state we drive to zero: a
+# measured incorrect parse nobody has triaged.
 CLASS_TSV="$HARNESS/tier_scan/tier_classification.tsv"
 if [ -f "$CLASS_TSV" ]; then
   echo
@@ -132,7 +134,7 @@ if [ -f "$CLASS_TSV" ]; then
     fi
   done < "$TIER_IV_OUT"
   if [ -n "$uncharacterized" ]; then
-    echo "UNCHARACTERIZED TIER IV (must be triaged into a III-* tier):"
+    echo "UNCHARACTERIZED TIER IV (must be triaged into an IV-* sub-cause):"
     for g in $uncharacterized; do echo "  $g"; done
     status=1
   else
