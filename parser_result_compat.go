@@ -39,7 +39,7 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 	case "awk":
 		normalizeAwkCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "bibtex":
-		normalizeRootLeadingTriviaStart(ctx.root, ctx.source)
+		normalizeBibtexCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "bash":
 		normalizeBashProgramVariableAssignments(ctx.root, ctx.lang)
 		normalizeBashGeneratedCommandAssignments(ctx.root, ctx.source, ctx.lang)

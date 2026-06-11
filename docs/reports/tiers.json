@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T09:26:03Z",
- "commit": "20c9f802",
+ "generated": "2026-06-11T09:37:27Z",
+ "commit": "a928a408",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,9 +10,9 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 122,
+  "IV": 121,
   "II": 40,
-  "I": 36,
+  "I": 37,
   "III": 8
  },
  "grammars": [
@@ -98,10 +98,9 @@
   },
   {
    "grammar": "bibtex",
-   "tier": "IV",
-   "iv_cause": "IV-recovery?",
-   "parity": "37/40",
-   "notes": "ext=.bib; C-recovery gate tried and REVERTED (parity-neutral 37/40, run 20260610T091230Z-redwood-wave1b): gate moves 2 witnesses closer (multiple-meta-data.bib/MsBibExportFormatTest5.bib now named document root, diff localizes to root[*][1] go \"{\" vs c ERROR[..] \u2014 C wraps the brace region in ERROR where Go shifts \"{\"); ArXivQuantumMock.bib root StartByte go=0 c=1 is the root-span-leading-extras engine class (same as forth/regex)"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "bicep",

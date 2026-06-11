@@ -11,7 +11,6 @@ awk	IV-recovery	28/29	T.gawk rule-splitting vs C in-rule absorption
 bash	IV-recovery?	30/40	ext=.sh; stackcap disproven (cap-256 floor entry already present); divergences are recovery-shape: go ERROR root where C recovers program (lib.sh, git-prompt.sh, git-subtree.sh) plus small child-count diffs; 1 trunc (cmd-list.sh no_stacks_alive)
 bass	CLEAN	40/40	in ratchet
 beancount	CLEAN	40/40	in ratchet
-bibtex	IV-recovery?	37/40	ext=.bib; C-recovery gate tried and REVERTED (parity-neutral 37/40, run 20260610T091230Z-redwood-wave1b): gate moves 2 witnesses closer (multiple-meta-data.bib/MsBibExportFormatTest5.bib now named document root, diff localizes to root[*][1] go "{" vs c ERROR[..] — C wraps the brace region in ERROR where Go shifts "{"); ArXivQuantumMock.bib root StartByte go=0 c=1 is the root-span-leading-extras engine class (same as forth/regex)
 bicep	IV-recovery?	24/30	ext=.bicep; faithful C error-cost version competition (see spec)
 bitbake	IV-recovery	35/40	canonical-frame demotion (one-time reset)
 blade	IV-recovery?	17/30	ext=.blade.php; faithful C error-cost version competition (see spec)

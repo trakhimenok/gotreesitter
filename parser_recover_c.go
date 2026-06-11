@@ -149,6 +149,11 @@ func errorCostCompetitionLanguage(lang *Language) bool {
 		// function_definition — IV-shape (grammar coverage), not recoverable
 		// by the cost competition. Strict subset of baseline (zero new).
 		return true
+	case "bibtex":
+		// Tier-IV bibtex remeasure at a928a408: 38/40 baseline. C recovery keeps
+		// the two malformed JabRef witnesses under a document root; the remaining
+		// missing-entry-key span shape is normalized in parser_result_bibtex.go.
+		return true
 	case "corn":
 		// Tier-IV scanner residual: quoted_keys.corn needs C's recovery-cost
 		// election to preserve the source_file/object envelope before the

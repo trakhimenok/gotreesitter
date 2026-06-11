@@ -2,6 +2,7 @@ arduino
 astro
 bass
 beancount
+bibtex
 capnp
 chatito
 clojure
