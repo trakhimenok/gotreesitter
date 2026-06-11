@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T09:05:31Z",
- "commit": "37de38fd",
+ "generated": "2026-06-11T09:26:03Z",
+ "commit": "20c9f802",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,9 +10,9 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 123,
+  "IV": 122,
   "II": 40,
-  "I": 35,
+  "I": 36,
   "III": 8
  },
  "grammars": [
@@ -502,10 +502,9 @@
   },
   {
    "grammar": "gdscript",
-   "tier": "IV",
-   "iv_cause": "IV-scanner",
-   "parity": "1/40",
-   "notes": "body start off-by-2: C scans externals before consuming leading whitespace-extras, Go DFA skips extras first; fix in lexer/parser_dfa_token_source handoff (python handles this; maple)"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "git_config",

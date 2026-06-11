@@ -90,7 +90,7 @@
     "tier": "IV"
   },
   "corn": {
-    "tier": "IV"
+    "tier": "II"
   },
   "cpon": {
     "tier": "II"
@@ -111,7 +111,7 @@
     "tier": "IV"
   },
   "cue": {
-    "tier": "IV"
+    "tier": "I"
   },
   "cylc": {
     "tier": "IV"
@@ -129,7 +129,7 @@
     "tier": "II"
   },
   "dhall": {
-    "tier": "IV"
+    "tier": "I"
   },
   "diff": {
     "tier": "III"
@@ -198,7 +198,7 @@
     "tier": "IV"
   },
   "fidl": {
-    "tier": "IV"
+    "tier": "I"
   },
   "firrtl": {
     "tier": "IV"
@@ -210,7 +210,7 @@
     "tier": "II"
   },
   "forth": {
-    "tier": "IV"
+    "tier": "II"
   },
   "fortran": {
     "tier": "II"
@@ -219,7 +219,7 @@
     "tier": "IV"
   },
   "gdscript": {
-    "tier": "IV"
+    "tier": "I"
   },
   "git_config": {
     "tier": "II"
@@ -285,7 +285,7 @@
     "tier": "IV"
   },
   "http": {
-    "tier": "IV"
+    "tier": "III"
   },
   "hurl": {
     "tier": "IV"

@@ -28,6 +28,7 @@ fortran
 git_config
 git_rebase
 gitattributes
+gdscript
 gitcommit
 gitignore
 gleam
