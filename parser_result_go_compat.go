@@ -82,28 +82,35 @@ func normalizeGoDotLeafChildren(root *Node, source []byte, lang *Language) {
 		return
 	}
 	childNamed := symbolIsNamed(lang, childSym)
-	var walk func(*Node)
-	walk = func(n *Node) {
-		if n == nil {
-			return
+	// Iterative DFS with an explicit stack: source trees can nest or chain
+	// deeply enough that callback recursion overflows the goroutine stack
+	// (fatal, unrecoverable) — see issue #110.
+	stack := []*Node{root}
+	push := func(n *Node) {
+		if n != nil {
+			stack = append(stack, n)
 		}
+	}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
 		childCount := resultChildCount(n)
 		if n.symbol == parentSym && childCount == 0 {
 			normalizeGoDotLeafNode(n, source, childSym, childNamed)
-			return
+			continue
 		}
 		if n.ownerArena == nil || n.childIndex > finalChildSidecarIndexBase {
 			for _, child := range n.children {
-				walk(child)
+				push(child)
 			}
-			return
+			continue
 		}
 		view := resultMutableChildrenForMutation(n)
 		if !view.hasFinalChildRefs() {
 			for i := 0; i < childCount; i++ {
-				walk(resultChildAt(n, i))
+				push(resultChildAt(n, i))
 			}
-			return
+			continue
 		}
 		for i := 0; i < view.Len(); i++ {
 			entry, ok := view.Entry(i)
@@ -113,10 +120,9 @@ func normalizeGoDotLeafChildren(root *Node, source []byte, lang *Language) {
 			if stackEntryNodeSymbol(entry) != parentSym && stackEntryNodeChildCount(entry) == 0 {
 				continue
 			}
-			walk(resultChildAt(n, i))
+			push(resultChildAt(n, i))
 		}
 	}
-	walk(root)
 }
 
 func normalizeGoDotLeafNode(n *Node, source []byte, childSym Symbol, childNamed bool) {
