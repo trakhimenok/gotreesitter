@@ -17,6 +17,7 @@ embedded_template
 faust
 fish
 foam
+forth
 fortran
 git_config
 git_rebase

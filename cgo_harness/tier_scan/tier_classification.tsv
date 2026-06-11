@@ -69,7 +69,7 @@ fidl	IV-shape	39/40	INVERSE: C fragments versioned-FIDL syntax, Go parses clean 
 firrtl	IV-recovery?	5/27	ext=.fir; faithful C error-cost version competition (see spec)
 fish	CLEAN	40/40	in ratchet
 foam	CLEAN	40/40	in ratchet
-forth	IV-unknown	34/40	cap=2 landed (20/40 -> 34/40, medianRatio 110x -> 3.8x; caps 1/3 identical); remaining 4 files are the engine-level leading-whitespace root-span divergence (Go root starts at 0, C after leading extras — repro: parse "\nhex\n"), 2 are childcount/trunc (ncexcompiler.fs go-cc=18 c-cc=105, mach.fs go-cc=29 c-cc=40)
+forth	CLEAN	40/40	in ratchet; cap=2 plus root-leading-trivia normalization and missing end_definition recovery for unterminated word_definition (verified 2026-06-11)
 fortran	CLEAN	40/40	in ratchet
 fsharp	IV-perf	0/8	timeout-or-fail at 1200s canonical budget
 gdscript	IV-scanner	1/40	body start off-by-2: C scans externals before consuming leading whitespace-extras, Go DFA skips extras first; fix in lexer/parser_dfa_token_source handoff (python handles this; maple)

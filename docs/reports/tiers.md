@@ -1,29 +1,29 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-11T07:16:29Z at `1621b504`. Parity vs the
+Generated 2026-06-11T07:32:37Z at `324d0a49`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
 | tier | count |
 | --- | --- |
 | I | 32 |
-| II | 36 |
+| II | 37 |
 | III | 7 |
-| IV | 131 |
+| IV | 130 |
 
 ## Tier I — parity-clean, fast (32)
 
 `astro`, `clojure`, `css`, `csv`, `elisp`, `faust`, `fish`, `gitcommit`, `gleam`, `hcl`, `java`, `javascript`, `llvm`, `lua`, `nickel`, `nix`, `php`, `pkl`, `prisma`, `puppet`, `r`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`, `zig`
 
-## Tier II — parity-clean, ok (36)
+## Tier II — parity-clean, ok (37)
 
-`arduino`, `bass`, `beancount`, `capnp`, `cmake`, `devicetree`, `editorconfig`, `foam`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `gn`, `godot_resource`, `hack`, `heex`, `janet`, `jq`, `jsdoc`, `json`, `json5`, `markdown`, `ocaml`, `pem`, `python`, `ql`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `vue`
+`arduino`, `bass`, `beancount`, `capnp`, `cmake`, `devicetree`, `editorconfig`, `foam`, `forth`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `gn`, `godot_resource`, `hack`, `heex`, `janet`, `jq`, `jsdoc`, `json`, `json5`, `markdown`, `ocaml`, `pem`, `python`, `ql`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `vue`
 
 ## Tier III — parity-clean, poor perf (7)
 
 `desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `nginx`, `properties`
 
-## Tier IV — not parity-clean (131)
+## Tier IV — not parity-clean (130)
 
 | grammar | cause | parity |
 | --- | --- | --- |
@@ -78,7 +78,6 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `fennel` | IV-recovery? | 8/30 |
 | `fidl` | IV-shape | 39/40 |
 | `firrtl` | IV-recovery? | 5/27 |
-| `forth` | IV-unknown | 34/40 |
 | `fsharp` | IV-perf | 0/8 |
 | `gdscript` | IV-scanner | 1/40 |
 | `glsl` | IV-recovery | 11/40 |

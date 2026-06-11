@@ -12,6 +12,21 @@ func bytesAreTrivia(b []byte) bool {
 	return true
 }
 
+func normalizeRootLeadingTriviaStart(root *Node, source []byte) {
+	if root == nil || len(source) == 0 || resultChildCount(root) == 0 {
+		return
+	}
+	first := resultChildAt(root, 0)
+	if first == nil || root.startByte >= first.startByte || int(first.startByte) > len(source) {
+		return
+	}
+	if !bytesAreTrivia(source[root.startByte:first.startByte]) {
+		return
+	}
+	root.startByte = first.startByte
+	root.startPoint = first.startPoint
+}
+
 func lastNonTriviaByteEnd(source []byte) uint32 {
 	for i := len(source); i > 0; i-- {
 		switch source[i-1] {

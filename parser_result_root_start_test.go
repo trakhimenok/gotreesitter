@@ -25,6 +25,7 @@ func TestRootStartsAtFirstNonWhitespaceByte(t *testing.T) {
 		{"css leading newlines", grammars.CssLanguage(), "\n\na { color: red; }\n", 2},
 		{"css no leading trivia", grammars.CssLanguage(), "a { color: red; }\n", 0},
 		{"css leading comment keeps byte 0", grammars.CssLanguage(), "/* c */\na { color: red; }\n", 0},
+		{"forth leading newline", grammars.ForthLanguage(), "\nhex\n", 1},
 		{"squirrel leading whitespace", grammars.SquirrelLanguage(), "\n\tx <- 1\n", 2},
 		{"regex leading bom", grammars.RegexLanguage(), "\xef\xbb\xbfa", 3},
 		{"regex leading bom and whitespace", grammars.RegexLanguage(), "\xef\xbb\xbf\na", 4},
