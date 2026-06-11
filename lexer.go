@@ -1,9 +1,12 @@
 package gotreesitter
 
 import (
+	"bytes"
 	"unicode/utf8"
 	"unsafe"
 )
+
+var utf8BOM = []byte{0xef, 0xbb, 0xbf}
 
 // Point is a row/column position in source text.
 type Point struct {
@@ -96,6 +99,7 @@ func (l *Lexer) NextWithErrorRuns(startState uint32) Token {
 }
 
 func (l *Lexer) next(startState uint32, emitErrorRuns bool) Token {
+	l.skipLeadingBOM()
 	// C ts_parser__lex resets to the lex call's start position (before any
 	// whitespace the failed attempt skipped) when it switches to error-mode
 	// lexing; capture it for the errorModeRetry branch below.
@@ -145,6 +149,14 @@ func (l *Lexer) next(startState uint32, emitErrorRuns bool) Token {
 		// No accepting state was found. Skip one rune as error recovery.
 		l.skipOneRune()
 	}
+}
+
+func (l *Lexer) skipLeadingBOM() {
+	if l == nil || l.pos != 0 || !bytes.HasPrefix(l.source, utf8BOM) {
+		return
+	}
+	l.pos = len(utf8BOM)
+	l.col = uint32(len(utf8BOM))
 }
 
 // canLexAt reports whether the DFA can lex a token (or whitespace skip)

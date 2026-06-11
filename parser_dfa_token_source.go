@@ -330,6 +330,9 @@ func (d *dfaTokenSource) Close() {
 var DebugDFA atomic.Bool
 
 func (d *dfaTokenSource) Next() Token {
+	if d != nil && d.lexer != nil {
+		d.lexer.skipLeadingBOM()
+	}
 	startPos := 0
 	if perfCountersEnabled {
 		startPos = d.lexer.pos

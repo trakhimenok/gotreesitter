@@ -26,7 +26,12 @@ func normalizeSquirrelCompatibility(root *Node, source []byte, lang *Language) {
 // firstNonTriviaByteStart returns the byte offset of the first non-whitespace
 // byte in source, or 0 when source is entirely whitespace.
 func firstNonTriviaByteStart(source []byte) uint32 {
-	for i := 0; i < len(source); i++ {
+	start := 0
+	if len(source) >= len(utf8BOM) &&
+		source[0] == utf8BOM[0] && source[1] == utf8BOM[1] && source[2] == utf8BOM[2] {
+		start = len(utf8BOM)
+	}
+	for i := start; i < len(source); i++ {
 		switch source[i] {
 		case ' ', '\t', '\n', '\r', '\f':
 			continue

@@ -26,6 +26,8 @@ func TestRootStartsAtFirstNonWhitespaceByte(t *testing.T) {
 		{"css no leading trivia", grammars.CssLanguage(), "a { color: red; }\n", 0},
 		{"css leading comment keeps byte 0", grammars.CssLanguage(), "/* c */\na { color: red; }\n", 0},
 		{"squirrel leading whitespace", grammars.SquirrelLanguage(), "\n\tx <- 1\n", 2},
+		{"regex leading bom", grammars.RegexLanguage(), "\xef\xbb\xbfa", 3},
+		{"regex leading bom and whitespace", grammars.RegexLanguage(), "\xef\xbb\xbf\na", 4},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
