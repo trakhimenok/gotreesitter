@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // Assoc is the associativity of a production.
@@ -1617,10 +1619,85 @@ func extractTokenStringValue(r *Rule) string {
 	return ""
 }
 
-// escapeAnonymousName escapes special characters in anonymous terminal display
-// names to match tree-sitter C behavior. Currently only ? is escaped to \?.
+// escapeAnonymousName normalizes anonymous terminal display names to match
+// tree-sitter C behavior.
 func escapeAnonymousName(s string) string {
+	s = decodeAnonymousNameUnicodeEscapes(s)
 	return strings.ReplaceAll(s, "?", `\?`)
+}
+
+func decodeAnonymousNameUnicodeEscapes(s string) string {
+	if !strings.Contains(s, `\u`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, next, ok := parseAnonymousNameUnicodeEscape(s, i)
+		if ok {
+			b.WriteRune(r)
+			i = next
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+func parseAnonymousNameUnicodeEscape(s string, i int) (rune, int, bool) {
+	if i+2 > len(s) || s[i] != '\\' || s[i+1] != 'u' {
+		return 0, i, false
+	}
+	if i+2 < len(s) && s[i+2] == '{' {
+		end := strings.IndexByte(s[i+3:], '}')
+		if end < 0 {
+			return 0, i, false
+		}
+		hex := s[i+3 : i+3+end]
+		if hex == "" {
+			return 0, i, false
+		}
+		r, ok := parseAnonymousNameUnicodeHex(hex)
+		if !ok || utf16.IsSurrogate(r) {
+			return 0, i, false
+		}
+		return r, i + 3 + end + 1, true
+	}
+	if i+6 > len(s) {
+		return 0, i, false
+	}
+	hex := s[i+2 : i+6]
+	r, ok := parseAnonymousNameUnicodeHex(hex)
+	if !ok {
+		return 0, i, false
+	}
+	if utf16.IsSurrogate(r) {
+		if r < 0xD800 || r > 0xDBFF {
+			return 0, i, false
+		}
+		if i+12 > len(s) || s[i+6] != '\\' || s[i+7] != 'u' {
+			return 0, i, false
+		}
+		r2, ok := parseAnonymousNameUnicodeHex(s[i+8 : i+12])
+		if !ok || r2 < 0xDC00 || r2 > 0xDFFF {
+			return 0, i, false
+		}
+		return utf16.DecodeRune(r, r2), i + 12, true
+	}
+	return r, i + 6, true
+}
+
+func parseAnonymousNameUnicodeHex(hex string) (rune, bool) {
+	n, err := strconv.ParseUint(hex, 16, 32)
+	if err != nil {
+		return 0, false
+	}
+	r := rune(n)
+	if !utf8.ValidRune(r) && !utf16.IsSurrogate(r) {
+		return 0, false
+	}
+	return r, true
 }
 
 // aliasWrapsRepeatishContent reports whether the inner of an Alias is a
@@ -1693,12 +1770,12 @@ func ruleReachesAlias(r *Rule, gRules map[string]*Rule, seen map[string]bool, de
 	return false
 }
 
-
 // prepareRule normalizes a rule tree for production extraction:
-// - Expands Optional(x) → Choice(x, Blank())
-// - Replaces Repeat(x) and Repeat1(x) with auxiliary nonterminal symbols
-// - Hoists Alias(Repeat/Repeat1(X), name) into an aux nonterminal so the
-//   alias attaches to a single child slot
+//   - Expands Optional(x) → Choice(x, Blank())
+//   - Replaces Repeat(x) and Repeat1(x) with auxiliary nonterminal symbols
+//   - Hoists Alias(Repeat/Repeat1(X), name) into an aux nonterminal so the
+//     alias attaches to a single child slot
+//
 // This handles repeat/repeat1 at ALL levels including the root.
 func prepareRule(r *Rule, parentName string, st *symbolTable, auxRules map[string]*Rule, auxOrigins map[string]map[string]bool, counter *int) *Rule {
 	if r == nil {

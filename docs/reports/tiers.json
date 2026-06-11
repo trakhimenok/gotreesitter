@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T07:39:08Z",
- "commit": "041a03f3",
+ "generated": "2026-06-11T07:48:19Z",
+ "commit": "b2a42786",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,9 +10,9 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 129,
+  "IV": 128,
   "II": 37,
-  "I": 33,
+  "I": 34,
   "III": 7
  },
  "grammars": [
@@ -307,10 +307,9 @@
   },
   {
    "grammar": "dhall",
-   "tier": "IV",
-   "iv_cause": "IV-unknown",
-   "parity": "23/40",
-   "notes": "needs deeper single-file diagnosis"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "diff",

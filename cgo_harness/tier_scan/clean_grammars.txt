@@ -10,6 +10,7 @@ csv
 cue
 desktop
 devicetree
+dhall
 diff
 editorconfig
 eex

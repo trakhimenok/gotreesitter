@@ -2,6 +2,63 @@ package grammargen
 
 import "testing"
 
+func TestEscapeAnonymousNameDecodesUnicodeEscapes(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "fixed arrow", in: `\u2192`, want: "→"},
+		{name: "braced lambda", in: `\u{03BB}`, want: "λ"},
+		{name: "decoded question still escaped", in: `\u003F`, want: `\?`},
+		{name: "literal question still escaped", in: "?", want: `\?`},
+		{name: "surrogate pair", in: `\uD83D\uDE00`, want: "😀"},
+		{name: "invalid fixed escape", in: `\uZZZZ`, want: `\uZZZZ`},
+		{name: "incomplete fixed escape", in: `\u219`, want: `\u219`},
+		{name: "unpaired high surrogate", in: `\uD83D`, want: `\uD83D`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeAnonymousName(tt.in); got != tt.want {
+				t.Fatalf("escapeAnonymousName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeUsesDecodedUnicodeAnonymousDisplayName(t *testing.T) {
+	g := NewGrammar("unicode_anonymous_display")
+	g.Define("source_file", Seq(
+		Str(`\u2192`),
+		Str(`\u003F`),
+	))
+
+	ng, err := Normalize(g)
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+
+	foundArrow := false
+	foundQuestion := false
+	for _, sym := range ng.Symbols {
+		switch sym.Name {
+		case "→":
+			foundArrow = true
+		case `\?`:
+			foundQuestion = true
+		case `\u2192`, `\u003F`:
+			t.Fatalf("found undecoded anonymous display name %q", sym.Name)
+		}
+	}
+	if !foundArrow {
+		t.Fatal("missing decoded arrow anonymous display name")
+	}
+	if !foundQuestion {
+		t.Fatal("missing decoded+escaped question anonymous display name")
+	}
+}
+
 func TestNormalizeSeparatesAnonymousStringAndPatternTerminals(t *testing.T) {
 	g := NewGrammar("terminal_collision")
 	g.Define("source_file", Seq(

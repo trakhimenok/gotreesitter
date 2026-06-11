@@ -96,3 +96,43 @@ func TestEmbeddedReduceChainHints(t *testing.T) {
 		})
 	}
 }
+
+func TestDhallUnicodeAnonymousSymbolNamesDecodeOnLoad(t *testing.T) {
+	t.Cleanup(func() { PurgeEmbeddedLanguageCache() })
+
+	lang := DhallLanguage()
+	sym, ok := lang.SymbolByName("\u2192")
+	if !ok {
+		t.Fatal("DhallLanguage missing decoded anonymous arrow symbol")
+	}
+	if int(sym) >= len(lang.SymbolNames) {
+		t.Fatalf("arrow symbol %d out of SymbolNames range %d", sym, len(lang.SymbolNames))
+	}
+	if got := lang.SymbolNames[sym]; got != "\u2192" {
+		t.Fatalf("SymbolNames[%d] = %q, want decoded arrow", sym, got)
+	}
+	if int(sym) >= len(lang.SymbolMetadata) {
+		t.Fatalf("arrow symbol %d out of SymbolMetadata range %d", sym, len(lang.SymbolMetadata))
+	}
+	meta := lang.SymbolMetadata[sym]
+	if meta.Name != "\u2192" || !meta.Visible || meta.Named {
+		t.Fatalf("arrow metadata = %+v, want visible anonymous decoded arrow", meta)
+	}
+	if _, ok := lang.SymbolByName(`\u2192`); ok {
+		t.Fatal("DhallLanguage still exposes escaped arrow symbol name")
+	}
+}
+
+func TestDecodeDhallAnonymousUnicodeEscapesPreservesInvalidEscapes(t *testing.T) {
+	cases := []string{
+		`\uZZZZ`,
+		`\u219`,
+		`\uD83D`,
+		`\u{}`,
+	}
+	for _, tc := range cases {
+		if got := decodeDhallAnonymousUnicodeEscapes(tc); got != tc {
+			t.Fatalf("decodeDhallAnonymousUnicodeEscapes(%q) = %q, want unchanged", tc, got)
+		}
+	}
+}
