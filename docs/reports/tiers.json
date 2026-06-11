@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T07:48:19Z",
- "commit": "b2a42786",
+ "generated": "2026-06-11T07:54:28Z",
+ "commit": "0527f52c",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,8 +10,8 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 128,
-  "II": 37,
+  "IV": 127,
+  "II": 38,
   "I": 34,
   "III": 7
  },
@@ -167,10 +167,9 @@
   },
   {
    "grammar": "chatito",
-   "tier": "IV",
-   "iv_cause": "IV-recovery",
-   "parity": "4/5",
-   "notes": "gated; dateBooking_large.chatito roots ERROR where C keeps source (absorbing-version-must-reduce family)"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "circom",

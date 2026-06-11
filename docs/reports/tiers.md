@@ -1,29 +1,29 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-11T07:48:19Z at `b2a42786`. Parity vs the
+Generated 2026-06-11T07:54:28Z at `0527f52c`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
 | tier | count |
 | --- | --- |
 | I | 34 |
-| II | 37 |
+| II | 38 |
 | III | 7 |
-| IV | 128 |
+| IV | 127 |
 
 ## Tier I — parity-clean, fast (34)
 
 `astro`, `clojure`, `css`, `csv`, `cue`, `dhall`, `elisp`, `faust`, `fish`, `gitcommit`, `gleam`, `hcl`, `java`, `javascript`, `llvm`, `lua`, `nickel`, `nix`, `php`, `pkl`, `prisma`, `puppet`, `r`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`, `zig`
 
-## Tier II — parity-clean, ok (37)
+## Tier II — parity-clean, ok (38)
 
-`arduino`, `bass`, `beancount`, `capnp`, `cmake`, `devicetree`, `editorconfig`, `foam`, `forth`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `gn`, `godot_resource`, `hack`, `heex`, `janet`, `jq`, `jsdoc`, `json`, `json5`, `markdown`, `ocaml`, `pem`, `python`, `ql`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `vue`
+`arduino`, `bass`, `beancount`, `capnp`, `chatito`, `cmake`, `devicetree`, `editorconfig`, `foam`, `forth`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `gn`, `godot_resource`, `hack`, `heex`, `janet`, `jq`, `jsdoc`, `json`, `json5`, `markdown`, `ocaml`, `pem`, `python`, `ql`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `vue`
 
 ## Tier III — parity-clean, poor perf (7)
 
 `desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `nginx`, `properties`
 
-## Tier IV — not parity-clean (128)
+## Tier IV — not parity-clean (127)
 
 | grammar | cause | parity |
 | --- | --- | --- |
@@ -44,7 +44,6 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `c_sharp` | IV-recovery | 26/40 |
 | `caddy` | IV-recovery? | 9/30 |
 | `cairo` | IV-recovery? | 0/30 |
-| `chatito` | IV-recovery | 4/5 |
 | `circom` | IV-shape? | 11/30 |
 | `cobol` | IV-version | 0/40 |
 | `comment` | IV-perf | 35/40 |

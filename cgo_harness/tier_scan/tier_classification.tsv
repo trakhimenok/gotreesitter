@@ -21,7 +21,7 @@ c_sharp	IV-recovery	26/40	faithful C error-cost version competition (see spec)
 caddy	IV-recovery?	9/30	ext=Caddyfile; faithful C error-cost version competition (see spec)
 cairo	IV-recovery?	0/30	ext=.cairo; faithful C error-cost version competition (see spec)
 capnp	CLEAN	40/40	in ratchet
-chatito	IV-recovery	4/5	gated; dateBooking_large.chatito roots ERROR where C keeps source (absorbing-version-must-reduce family)
+chatito	CLEAN	5/5	trailing EOF alias-body recovery normalized to C on dateBooking_large.chatito
 circom	IV-shape?	11/30	ext=.circom; preliminary
 clojure	CLEAN	40/40	in ratchet
 cmake	CLEAN	40/40	in ratchet

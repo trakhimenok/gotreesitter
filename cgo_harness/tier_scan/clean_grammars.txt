@@ -3,6 +3,7 @@ astro
 bass
 beancount
 capnp
+chatito
 clojure
 cmake
 css
