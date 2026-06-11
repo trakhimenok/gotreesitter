@@ -94,7 +94,7 @@ hcl	CLEAN	40/40	in ratchet
 heex	CLEAN	40/40	in ratchet
 hlsl	IV-recovery	33/40	faithful C error-cost version competition (see spec)
 html	IV-recovery	0/40	faithful C error-cost version competition (see spec)
-http	IV-unknown	6/11	needs deeper single-file diagnosis
+http	CLEAN	11/11	full available HTTP corpus parity in Docker after section-fold compatibility fix (2026-06-11)
 hurl	IV-recovery	13/40	faithful C error-cost version competition (see spec)
 hyprlang	IV-recovery	1/2	ext=.conf; C-recovery gate tried and REVERTED (parity-neutral 1/2, run 20260610T091230Z-redwood-wave1b): witness hyprland.conf root ERROR vs C configuration unchanged under gate, plus a non-recovery deep diff (root[92][9][2] go string vs c boolean) — two divergence classes; recover shape needs stage-2, the string/boolean diff needs lex/shape triage
 ini	IV-unknown	4/11	needs deeper single-file diagnosis

@@ -91,6 +91,8 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeHCLConfigFileRoot(ctx.root, ctx.lang)
 	case "html":
 		normalizeHTMLCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "http":
+		normalizeHTTPCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "ini":
 		normalizeIniSectionStarts(ctx.root, ctx.lang)
 	case "java":
