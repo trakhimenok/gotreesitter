@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T08:54:04Z",
- "commit": "8d62df0c",
+ "generated": "2026-06-11T09:05:31Z",
+ "commit": "37de38fd",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,8 +10,8 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 124,
-  "II": 39,
+  "IV": 123,
+  "II": 40,
   "I": 35,
   "III": 8
  },
@@ -226,10 +226,9 @@
   },
   {
    "grammar": "cpon",
-   "tier": "IV",
-   "iv_cause": "IV-recovery?",
-   "parity": "9/10",
-   "notes": "ext=.cpon; C-recovery gate tried and REVERTED (parity-neutral 9/10, run 20260610T091230Z-redwood-wave1b): witness syntax_test_cpon.cpon document-root cc go=30 c=54 under gate (go=61 baseline) \u2014 mid-file recovery shape, not EOF class; suspect stage-2 limitation (a) multi-path pops or absorb close-out shape"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "cpp",

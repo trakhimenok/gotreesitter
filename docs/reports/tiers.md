@@ -1,29 +1,29 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-11T08:54:04Z at `8d62df0c`. Parity vs the
+Generated 2026-06-11T09:05:31Z at `37de38fd`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
 | tier | count |
 | --- | --- |
 | I | 35 |
-| II | 39 |
+| II | 40 |
 | III | 8 |
-| IV | 124 |
+| IV | 123 |
 
 ## Tier I — parity-clean, fast (35)
 
 `astro`, `clojure`, `css`, `csv`, `cue`, `dhall`, `elisp`, `faust`, `fidl`, `fish`, `gitcommit`, `gleam`, `hcl`, `java`, `javascript`, `llvm`, `lua`, `nickel`, `nix`, `php`, `pkl`, `prisma`, `puppet`, `r`, `racket`, `smithy`, `squirrel`, `starlark`, `thrift`, `tsx`, `turtle`, `xml`, `yaml`, `yuck`, `zig`
 
-## Tier II — parity-clean, ok (39)
+## Tier II — parity-clean, ok (40)
 
-`arduino`, `bass`, `beancount`, `capnp`, `chatito`, `cmake`, `corn`, `devicetree`, `editorconfig`, `foam`, `forth`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `gn`, `godot_resource`, `hack`, `heex`, `janet`, `jq`, `jsdoc`, `json`, `json5`, `markdown`, `ocaml`, `pem`, `python`, `ql`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `vue`
+`arduino`, `bass`, `beancount`, `capnp`, `chatito`, `cmake`, `corn`, `cpon`, `devicetree`, `editorconfig`, `foam`, `forth`, `fortran`, `git_config`, `git_rebase`, `gitattributes`, `gitignore`, `gn`, `godot_resource`, `hack`, `heex`, `janet`, `jq`, `jsdoc`, `json`, `json5`, `markdown`, `ocaml`, `pem`, `python`, `ql`, `requirements`, `ron`, `sparql`, `tablegen`, `textproto`, `todotxt`, `toml`, `twig`, `vue`
 
 ## Tier III — parity-clean, poor perf (8)
 
 `desktop`, `diff`, `eex`, `embedded_template`, `gomod`, `http`, `nginx`, `properties`
 
-## Tier IV — not parity-clean (124)
+## Tier IV — not parity-clean (123)
 
 | grammar | cause | parity |
 | --- | --- | --- |
@@ -49,7 +49,6 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `comment` | IV-perf | 35/40 |
 | `commonlisp` | IV-recovery? | 22/30 |
 | `cooklang` | IV-recovery | 0/3 |
-| `cpon` | IV-recovery? | 9/10 |
 | `cpp` | IV-recovery | 10/40 |
 | `crystal` | IV-perf | 0/0 |
 | `cuda` | IV-recovery? | 17/30 |

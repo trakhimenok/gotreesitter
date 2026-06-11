@@ -30,7 +30,7 @@ comment	IV-perf	35/40	trunc=5, 59x median — blowup truncation
 commonlisp	IV-recovery?	22/30	ext=.lisp,.cl; faithful C error-cost version competition (see spec)
 cooklang	IV-recovery	0/3	ext=.cook; stackcap disproven (cap 2 not kept); C-recovery gate tried and REVERTED (parity stays 0/3, run 20260610T091230Z-redwood-wave1b) though it helps: trunc 3 -> 2, all roots become named recipe, complex_test_recipe now differs only by EndByte 2522 vs 2523 (the missing-trailing-newline EOF byte); frontmatter/test_recipe still truncate early (go EndByte 2383/2644 vs c 2799/2994) — go stops mid-file where C absorbs on; stage-2 EOF-byte + truncation work, then re-enable
 corn	CLEAN	23/23	C-recovery gate plus quoted whole-path path_seg normalization clears quoted_keys.corn
-cpon	IV-recovery?	9/10	ext=.cpon; C-recovery gate tried and REVERTED (parity-neutral 9/10, run 20260610T091230Z-redwood-wave1b): witness syntax_test_cpon.cpon document-root cc go=30 c=54 under gate (go=61 baseline) — mid-file recovery shape, not EOF class; suspect stage-2 limitation (a) multi-path pops or absorb close-out shape
+cpon	CLEAN	11/11	null literal leaf child normalized to C oracle
 cpp	IV-recovery	10/40	faithful C error-cost version competition (see spec)
 crystal	IV-perf	0/0	timeout-or-fail at 1200s canonical budget
 css	CLEAN	40/40	in ratchet; C-recovery gate (stage-2 redwood)
