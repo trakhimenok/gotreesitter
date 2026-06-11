@@ -56,6 +56,8 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeCooklangTrailingStepTail(ctx.root, ctx.source, ctx.lang)
 	case "cpon":
 		normalizeCPONCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "cue":
+		normalizeCueCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "d":
 		normalizeDCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "dart":
@@ -113,6 +115,10 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizePowerShellAssignmentOperatorTokens(ctx.root, ctx.source, ctx.lang)
 	case "pug":
 		normalizeTopLevelTrailingLineBreakSpan(ctx.root, ctx.source, ctx.lang)
+	case "ql":
+		normalizeQLCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "r":
+		normalizeRCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "python":
 		normalizePythonCompatibilityWithParser(ctx.root, ctx.source, ctx.parser, ctx.lang)
 	case "rst":
@@ -126,6 +132,8 @@ func runLanguageResultCompatibility(ctx resultCompatibilityContext) {
 		normalizeScalaCompatibility(ctx.root, ctx.source, ctx.lang)
 	case "scheme":
 		normalizeSchemeCompatibility(ctx.root, ctx.source, ctx.lang)
+	case "solidity":
+		normalizeSolidityMemberObjectWrappers(ctx.root, ctx.lang)
 	case "sql":
 		normalizeSQLRecoveredSelectRoot(ctx.root, ctx.lang)
 		normalizeSQLTrailingSelectListError(ctx.root, ctx.lang)
