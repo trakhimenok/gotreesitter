@@ -149,6 +149,11 @@ func errorCostCompetitionLanguage(lang *Language) bool {
 		// function_definition — IV-shape (grammar coverage), not recoverable
 		// by the cost competition. Strict subset of baseline (zero new).
 		return true
+	case "corn":
+		// Tier-IV scanner residual: quoted_keys.corn needs C's recovery-cost
+		// election to preserve the source_file/object envelope before the
+		// remaining quoted path_seg result shape can be normalized.
+		return true
 	}
 	return false
 }

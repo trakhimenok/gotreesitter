@@ -6,6 +6,7 @@ capnp
 chatito
 clojure
 cmake
+corn
 css
 csv
 cue
