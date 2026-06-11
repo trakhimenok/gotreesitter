@@ -65,7 +65,7 @@ erlang	IV-recovery	38/40	bif_SUITE ambiguity-selection + binary_SUITE blowup tru
 facility	IV-recovery?	1/4	ext=.fsd; faithful C error-cost version competition (see spec)
 faust	CLEAN	40/40	in ratchet
 fennel	IV-recovery?	8/30	ext=.fnl; faithful C error-cost version competition (see spec)
-fidl	IV-shape	39/40	INVERSE: C fragments versioned-FIDL syntax, Go parses clean — must match C error shapes
+fidl	CLEAN	40/40	versioned layout modifiers normalized to C oracle recovery shape
 firrtl	IV-recovery?	5/27	ext=.fir; faithful C error-cost version competition (see spec)
 fish	CLEAN	40/40	in ratchet
 foam	CLEAN	40/40	in ratchet

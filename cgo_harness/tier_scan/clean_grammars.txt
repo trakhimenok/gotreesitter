@@ -18,6 +18,7 @@ eex
 elisp
 embedded_template
 faust
+fidl
 fish
 foam
 forth

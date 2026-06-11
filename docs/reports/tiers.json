@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T08:01:18Z",
- "commit": "947bd8d4",
+ "generated": "2026-06-11T08:31:14Z",
+ "commit": "09a1597a",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,9 +10,9 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 126,
+  "IV": 125,
   "II": 38,
-  "I": 34,
+  "I": 35,
   "III": 8
  },
  "grammars": [
@@ -460,10 +460,9 @@
   },
   {
    "grammar": "fidl",
-   "tier": "IV",
-   "iv_cause": "IV-shape",
-   "parity": "39/40",
-   "notes": "INVERSE: C fragments versioned-FIDL syntax, Go parses clean \u2014 must match C error shapes"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "firrtl",
