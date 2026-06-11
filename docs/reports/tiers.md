@@ -1,6 +1,6 @@
 # Grammar tiers — unreleased
 
-Generated 2026-06-11T06:51:05Z at `cb715d2d`. Parity vs the
+Generated 2026-06-11T06:57:12Z at `9ee7c0ef`. Parity vs the
 tree-sitter C oracle is the hard gate; performance is the sub-rank
 (rules in `cgo_harness/tier_scan/README.md`).
 
@@ -50,12 +50,12 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `comment` | IV-perf | 35/40 |
 | `commonlisp` | IV-recovery? | 22/30 |
 | `cooklang` | IV-recovery | 0/3 |
-| `corn` | IV-recovery | 22/23 |
+| `corn` | IV-scanner | 22/23 |
 | `cpon` | IV-recovery? | 9/10 |
 | `cpp` | IV-recovery | 10/40 |
 | `crystal` | IV-perf | 0/0 |
 | `cuda` | IV-recovery? | 17/30 |
-| `cue` | IV-shape? | 21/30 |
+| `cue` | IV-recovery | 39/40 |
 | `cylc` | IV-recovery? | 4/30 |
 | `d` | IV-recovery? | 14/30 |
 | `dart` | IV-recovery? | 11/30 |
@@ -108,7 +108,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `liquid` | IV-recovery? | 11/36 |
 | `luau` | IV-recovery | 35/40 |
 | `make` | IV-recovery? | 19/20 |
-| `markdown_inline` | IV-shape? | 13/30 |
+| `markdown_inline` | IV-scanner | 38/40 |
 | `matlab` | IV-recovery? | 4/40 |
 | `mermaid` | IV-recovery? | 0/40 |
 | `meson` | IV-recovery? | 1/30 |
@@ -137,7 +137,7 @@ tree-sitter C oracle is the hard gate; performance is the sub-rank
 | `ruby` | IV-shape? | 25/40 |
 | `rust` | IV-recovery? | 21/40 |
 | `scala` | IV-recovery? | 25/40 |
-| `scheme` | IV-recovery | 36/40 |
+| `scheme` | IV-perf | 36/40 |
 | `scss` | IV-recovery? | 6/40 |
 | `solidity` | IV-shape? | 10/40 |
 | `sql` | IV-recovery? | 8/40 |

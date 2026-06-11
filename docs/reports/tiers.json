@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T06:51:05Z",
- "commit": "cb715d2d",
+ "generated": "2026-06-11T06:57:12Z",
+ "commit": "9ee7c0ef",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -222,9 +222,9 @@
   {
    "grammar": "corn",
    "tier": "IV",
-   "iv_cause": "IV-recovery",
+   "iv_cause": "IV-scanner",
    "parity": "22/23",
-   "notes": "quoted_keys path_seg cc"
+   "notes": "quoted_keys path_seg cc; scanner residual verified after redwood stage-3"
   },
   {
    "grammar": "cpon",
@@ -269,9 +269,9 @@
   {
    "grammar": "cue",
    "tier": "IV",
-   "iv_cause": "IV-shape?",
-   "parity": "21/30",
-   "notes": "ext=.cue; preliminary"
+   "iv_cause": "IV-recovery",
+   "parity": "39/40",
+   "notes": "error-tree residual verified after willow shape fixes"
   },
   {
    "grammar": "cylc",
@@ -832,9 +832,9 @@
   {
    "grammar": "markdown_inline",
    "tier": "IV",
-   "iv_cause": "IV-shape?",
-   "parity": "13/30",
-   "notes": "ext=.md; preliminary"
+   "iv_cause": "IV-scanner",
+   "parity": "38/40",
+   "notes": "ext=.md; scanner/truncation residual verified after willow shape fixes"
   },
   {
    "grammar": "matlab",
@@ -1131,9 +1131,9 @@
   {
    "grammar": "scheme",
    "tier": "IV",
-   "iv_cause": "IV-recovery",
+   "iv_cause": "IV-perf",
    "parity": "36/40",
-   "notes": "stage-2 clears 5/6 shape files under GOT_C_RECOVERY=scheme; held out pending s/5_3.ss measurability (>1200s)"
+   "notes": "stage-2 clears 5/6 shape files under GOT_C_RECOVERY=scheme; s/5_3.ss is a GLR merge wall and remains the perf blocker"
   },
   {
    "grammar": "scss",
