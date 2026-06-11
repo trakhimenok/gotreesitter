@@ -28,6 +28,25 @@ var resultCollapsedNamedLeafRules = []collapsedNamedLeafRule{
 	// interpolation, which would already materialize children in both trees).
 	{languageName: "ruby", parentName: "bare_string", childName: "string_content"},
 	{languageName: "ruby", parentName: "bare_symbol", childName: "string_content"},
+	// Apex wraps its contextual / DML / trigger-event keywords as a named node
+	// over the anonymous keyword token (`keyword -> 'keyword'`). Go collapses
+	// these single-token wrappers to a leaf; C keeps the anonymous token child.
+	// Verified exhaustively against the apex corpus: every collapsed instance's
+	// C child is the same-named anonymous token over the identical span.
+	{languageName: "apex", parentName: "after_delete", childName: "after_delete"},
+	{languageName: "apex", parentName: "after_insert", childName: "after_insert"},
+	{languageName: "apex", parentName: "after_undelete", childName: "after_undelete"},
+	{languageName: "apex", parentName: "after_update", childName: "after_update"},
+	{languageName: "apex", parentName: "before_delete", childName: "before_delete"},
+	{languageName: "apex", parentName: "before_insert", childName: "before_insert"},
+	{languageName: "apex", parentName: "before_update", childName: "before_update"},
+	{languageName: "apex", parentName: "delete", childName: "delete"},
+	{languageName: "apex", parentName: "insert", childName: "insert"},
+	{languageName: "apex", parentName: "super", childName: "super"},
+	{languageName: "apex", parentName: "system", childName: "system"},
+	{languageName: "apex", parentName: "undelete", childName: "undelete"},
+	{languageName: "apex", parentName: "upsert", childName: "upsert"},
+	{languageName: "apex", parentName: "user", childName: "user"},
 }
 
 func normalizeResultCollapsedNamedLeafChildren(root *Node, lang *Language) {
