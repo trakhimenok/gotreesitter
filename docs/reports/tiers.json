@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-10T23:38:17Z",
- "commit": "d6226011",
+ "generated": "2026-06-11T06:51:05Z",
+ "commit": "cb715d2d",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,9 +10,9 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 136,
-  "II": 34,
-  "I": 29,
+  "IV": 132,
+  "II": 36,
+  "I": 31,
   "III": 7
  },
  "grammars": [
@@ -825,10 +825,9 @@
   },
   {
    "grammar": "markdown",
-   "tier": "IV",
-   "iv_cause": "IV-shape?",
-   "parity": "31/40",
-   "notes": "preliminary from signature"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "markdown_inline",
@@ -973,10 +972,9 @@
   },
   {
    "grammar": "pkl",
-   "tier": "IV",
-   "iv_cause": "IV-shape?",
-   "parity": "34/40",
-   "notes": "preliminary from signature"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "powershell",
@@ -1046,17 +1044,15 @@
   },
   {
    "grammar": "ql",
-   "tier": "IV",
-   "iv_cause": "IV-shape?",
-   "parity": "33/40",
-   "notes": "preliminary from signature"
+   "tier": "II",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "r",
-   "tier": "IV",
-   "iv_cause": "IV-shape?",
-   "parity": "33/40",
-   "notes": "preliminary from signature"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "racket",

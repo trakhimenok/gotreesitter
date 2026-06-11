@@ -120,7 +120,7 @@ llvm	CLEAN	40/40	in ratchet
 lua	CLEAN	40/40	in ratchet; scanner.c port + DFA routing (maple 2026-06-10)
 luau	IV-recovery	35/40	faithful C error-cost version competition (see spec)
 make	IV-recovery?	19/20	ext=Makefile,.mk; C-recovery gate tried and REVERTED (parity-neutral 19/20, runs 20260610T090208Z/091230Z redwood-wave1/1b): witness Makefile (129KB, git's) root ERROR cc go=5029 vs makefile c=2114 — signature identical with gate on/off, so the divergence is decided before/outside the gated recover path (retry full-parse or pre-error fragmentation); needs witness-level diagnosis, not more gate work
-markdown	IV-shape?	31/40	preliminary from signature
+markdown	CLEAN	40/40	in ratchet; verified after willow shape fixes
 markdown_inline	IV-shape?	13/30	ext=.md; preliminary
 matlab	IV-recovery?	4/40	faithful C error-cost version competition (see spec)
 mermaid	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
@@ -142,7 +142,7 @@ pascal	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
 pem	CLEAN	40/40	in ratchet
 perl	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
 php	CLEAN	40/40	in ratchet
-pkl	IV-shape?	34/40	preliminary from signature
+pkl	CLEAN	40/40	in ratchet; verified after willow shape fixes
 powershell	IV-recovery?	22/40	faithful C error-cost version competition (see spec)
 prisma	CLEAN	40/40	in ratchet
 prolog	IV-recovery?	4/40	faithful C error-cost version competition (see spec)
@@ -153,8 +153,8 @@ pug	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
 puppet	CLEAN	40/40	in ratchet
 purescript	IV-recovery?	1/40	faithful C error-cost version competition (see spec)
 python	CLEAN	40/40	in ratchet
-ql	IV-shape?	33/40	preliminary from signature
-r	IV-shape?	33/40	preliminary from signature
+ql	CLEAN	40/40	in ratchet; verified after willow shape fixes
+r	CLEAN	40/40	in ratchet; verified after willow shape fixes
 racket	CLEAN	40/40	in ratchet
 regex	IV-unknown?	0/1	ext=.regex; stackcap disproven (default iteration_limit, cap 2 no_stacks_alive); single-file corpus with UTF-8 BOM: C roots after the BOM (StartByte 3) and parses all 2255 bytes, go roots at 0 and truncates at 390
 rego	IV-recovery?	7/40	faithful C error-cost version competition (see spec)

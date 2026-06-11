@@ -363,7 +363,7 @@
     "tier": "IV"
   },
   "markdown": {
-    "tier": "IV"
+    "tier": "II"
   },
   "markdown_inline": {
     "tier": "IV"
@@ -429,7 +429,7 @@
     "tier": "I"
   },
   "pkl": {
-    "tier": "IV"
+    "tier": "I"
   },
   "powershell": {
     "tier": "IV"
@@ -462,10 +462,10 @@
     "tier": "II"
   },
   "ql": {
-    "tier": "IV"
+    "tier": "II"
   },
   "r": {
-    "tier": "IV"
+    "tier": "I"
   },
   "racket": {
     "tier": "I"
