@@ -3711,6 +3711,40 @@ func extendParentSpanToWindow(parent *Node, entries []stackEntry, start, reduced
 			parent.startPoint = n.startPoint
 		}
 	}
+	// Leading zero-width invisible structural children: extend startByte back to
+	// the earliest one. C's ts_subtree_set_children seeds the parent extent from
+	// its FIRST child unconditionally, including a hidden zero-width opener like
+	// gdscript's `_indent` (emitted at the line break, before its block's first
+	// visible statement). buildReduceChildren drops such openers, and the
+	// general invisible-recovery scan below requires byte-contiguity with the
+	// current parent.startByte — which a zero-width opener separated from the
+	// first visible child by leading indentation whitespace fails. Scanning only
+	// the genuine prefix (stop at the first visible child) keeps this exactly to
+	// C's "first child" rule: when the first child is visible (e.g. python's
+	// class_definition opens with `class`), the loop breaks immediately and the
+	// span is untouched; it fires only when the leading child really is a hidden
+	// zero-width marker (gdscript class_body). cf. gdscript class_body[13:32]
+	// vs the dropped-opener Go shape class_body[15:32].
+	for i := start; i < reducedEnd; i++ {
+		n := stackEntryNode(entries[i])
+		if n == nil {
+			continue
+		}
+		if n.isExtra() {
+			continue
+		}
+		visible := true
+		if int(n.symbol) < len(symbolMeta) {
+			visible = symbolMeta[n.symbol].Visible
+		}
+		if visible {
+			break // first visible child seeds the extent; nothing earlier to add
+		}
+		if n.startByte == n.endByte && n.startByte < parent.startByte {
+			parent.startByte = n.startByte
+			parent.startPoint = n.startPoint
+		}
+	}
 	// Invisible non-extra children: extend parent span for entries that
 	// buildReduceChildren drops or inlines away.
 	//
