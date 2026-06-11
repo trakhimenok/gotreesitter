@@ -116,6 +116,33 @@ func errorCostCompetitionLanguage(lang *Language) bool {
 		// Stage-2 (redwood): 38/40 -> 40/40 (fcall.hack / fcall_tc.hack
 		// root ERROR vs script cleared by the stage-2 primitives).
 		return true
+	case "svelte":
+		// Stage-3 (redwood) re-sweep: 37/40 -> 38/40 on the full real corpus.
+		// The gate cleared one main.svelte copy whose document root was a
+		// whole-file ERROR at baseline (now a named document) and lifted the
+		// surviving main.svelte copies' roots from ERROR to document. The
+		// gate-ON diverging file set is a strict subset of baseline's (zero
+		// new divergers); the remaining miss is a deep const_tag/raw_text
+		// recovery-shape diff inside a single malformed copy — IV-recovery.
+		return true
+	case "forth":
+		// Stage-3 (redwood) re-sweep: 38/40 -> 39/40 on the full real corpus.
+		// mach.fs cleared; ncexcompiler.fs improved from a root child-count
+		// shatter (cc 42 vs 105) to a single trailing word_definition whose
+		// missing end_definition (the zero-width ";" C inserts at EOF) is not
+		// re-synthesized after earlier in-file recovery state accumulates.
+		// Strict subset of baseline's divergers (zero new). Remaining miss is
+		// IV-recovery (missing-terminator completion under accumulated error).
+		return true
+	case "bitbake":
+		// Stage-3 (redwood) re-sweep: 35/40 -> 36/40 on the full real corpus.
+		// delay.bb cleared; cmake/meson/devtool/bbb recipes lifted from
+		// whole-file ERROR roots to named recipe roots (now off-by-one child
+		// counts). The residual diff is bitbake shell-function syntax
+		// (do_x () { ... }) that the Go tables do not reduce to
+		// function_definition — IV-shape (grammar coverage), not recoverable
+		// by the cost competition. Strict subset of baseline (zero new).
+		return true
 	}
 	return false
 }
