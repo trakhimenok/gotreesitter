@@ -16,8 +16,8 @@ const (
 	gdsTokStringEnd
 	gdsTokStringNameStart
 	gdsTokNodePathStart
-	gdsTokCloseBracket
 	gdsTokCloseParen
+	gdsTokCloseBracket
 	gdsTokCloseBrace
 	gdsTokComma
 	gdsTokBodyEnd

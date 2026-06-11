@@ -72,7 +72,7 @@ foam	CLEAN	40/40	in ratchet
 forth	CLEAN	40/40	in ratchet; cap=2 plus root-leading-trivia normalization and missing end_definition recovery for unterminated word_definition (verified 2026-06-11)
 fortran	CLEAN	40/40	in ratchet
 fsharp	IV-perf	0/8	timeout-or-fail at 1200s canonical budget
-gdscript	IV-scanner	1/40	body start off-by-2: C scans externals before consuming leading whitespace-extras, Go DFA skips extras first; fix in lexer/parser_dfa_token_source handoff (python handles this; maple)
+gdscript	CLEAN	40/40	repeatable zero-width _dedent in DFA external loop guard; scanner token order aligned with upstream C (verified 2026-06-11)
 git_config	CLEAN	7/7	in ratchet
 git_rebase	CLEAN	40/40	in ratchet
 gitattributes	CLEAN	40/40	in ratchet
