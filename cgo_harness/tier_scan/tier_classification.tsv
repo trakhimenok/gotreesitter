@@ -174,7 +174,7 @@ sql	IV-recovery?	8/40	faithful C error-cost version competition (see spec)
 squirrel	CLEAN	40/40	in ratchet
 ssh_config	IV-recovery?	1/2	canonical-frame demotion (one-time reset)
 starlark	CLEAN	40/40	in ratchet
-svelte	IV-recovery?	37/40	faithful C error-cost version competition (see spec)
+svelte	CLEAN	40/40	in ratchet; recovered raw-text ERROR compatibility normalized to C oracle (verified 2026-06-11)
 swift	IV-recovery?	0/40	faithful C error-cost version competition (see spec)
 tablegen	CLEAN	40/40	in ratchet
 tcl	IV-recovery?	10/40	faithful C error-cost version competition (see spec)

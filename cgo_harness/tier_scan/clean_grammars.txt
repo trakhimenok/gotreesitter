@@ -70,6 +70,7 @@ smithy
 sparql
 squirrel
 starlark
+svelte
 tablegen
 textproto
 thrift
