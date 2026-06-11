@@ -36,7 +36,7 @@ crystal	IV-perf	0/0	timeout-or-fail at 1200s canonical budget
 css	CLEAN	40/40	in ratchet; C-recovery gate (stage-2 redwood)
 csv	CLEAN	40/40	in ratchet
 cuda	IV-recovery?	17/30	ext=.cu,.cuh; faithful C error-cost version competition (see spec)
-cue	IV-recovery	39/40	error-tree residual verified after willow shape fixes
+cue	CLEAN	40/40	in ratchet; C-recovery gate (stage-3 redwood)
 cylc	IV-recovery?	4/30	ext=.cylc; faithful C error-cost version competition (see spec)
 d	IV-recovery?	14/30	ext=.d; faithful C error-cost version competition (see spec)
 dart	IV-recovery?	11/30	ext=.dart; faithful C error-cost version competition (see spec)

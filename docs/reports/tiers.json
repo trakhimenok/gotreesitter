@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T07:32:37Z",
- "commit": "324d0a49",
+ "generated": "2026-06-11T07:39:08Z",
+ "commit": "041a03f3",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,9 +10,9 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 130,
+  "IV": 129,
   "II": 37,
-  "I": 32,
+  "I": 33,
   "III": 7
  },
  "grammars": [
@@ -268,10 +268,9 @@
   },
   {
    "grammar": "cue",
-   "tier": "IV",
-   "iv_cause": "IV-recovery",
-   "parity": "39/40",
-   "notes": "error-tree residual verified after willow shape fixes"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "cylc",

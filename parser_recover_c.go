@@ -116,6 +116,12 @@ func errorCostCompetitionLanguage(lang *Language) bool {
 		// Stage-2 (redwood): 38/40 -> 40/40 (fcall.hack / fcall_tc.hack
 		// root ERROR vs script cleared by the stage-2 primitives).
 		return true
+	case "cue":
+		// Stage-3 (redwood): 39/40 -> 40/40 on the full real corpus. The
+		// residual prod.cue witness was a 35-byte recovery fragment where C
+		// keeps source_file as the root and embeds the error tree; the faithful
+		// C recovery gate matches that shape with zero new divergers.
+		return true
 	case "svelte":
 		// Stage-3 (redwood) re-sweep: 37/40 -> 38/40 on the full real corpus.
 		// The gate cleared one main.svelte copy whose document root was a
