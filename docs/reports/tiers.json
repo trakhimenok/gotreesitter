@@ -1,6 +1,6 @@
 {
- "generated": "2026-06-11T06:57:12Z",
- "commit": "9ee7c0ef",
+ "generated": "2026-06-11T07:16:29Z",
+ "commit": "1621b504",
  "version": "unreleased",
  "tier_rules": {
   "I": "parity-clean and <=1.5x C full-parse, cold <=5ms, blob <=150KB",
@@ -10,9 +10,9 @@
   "unranked": "parity-clean; perf measurement pending"
  },
  "histogram": {
-  "IV": 132,
+  "IV": 131,
   "II": 36,
-  "I": 31,
+  "I": 32,
   "III": 7
  },
  "grammars": [
@@ -685,10 +685,9 @@
   },
   {
    "grammar": "java",
-   "tier": "IV",
-   "iv_cause": "IV-recovery?",
-   "parity": "39/40",
-   "notes": "canonical-frame demotion (one-time reset)"
+   "tier": "I",
+   "parity": "clean",
+   "perf_source": "measured"
   },
   {
    "grammar": "javascript",

@@ -309,6 +309,14 @@ func effectiveFullParseInitialMaxStacks(lang *Language, initialMaxStacks int) in
 		if initialMaxStacks == maxGLRStacks {
 			initialMaxStacks = 6
 		}
+	case "java":
+		// Annotated Java classes with nested declarations can accept with a
+		// root ERROR before the retry widener fires. A bounded cap of 14 keeps
+		// the class-declaration branch alive and clears the 40-file canonical
+		// corpus while preserving explicit overrides.
+		if initialMaxStacks == maxGLRStacks {
+			initialMaxStacks = 14
+		}
 	case "tsx":
 		// React-heavy TSX still needs a wider steady-state budget than plain
 		// JavaScript; lower caps misparse real generic-call cases even when they
